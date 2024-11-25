@@ -22,7 +22,7 @@ and the return type of the passed functions has to be the same. E.g., if all are
 and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments will result in widening.
 """
 function DirichletHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Real}; 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
-                              𝐴_y::Union{Function,Nothing}=nothing, ∇𝐴::Union{Function,Nothing}=nothing, N=31)
+                              𝐴_y::Union{Function,Nothing}=nothing, N=63)
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1] # area dimensions
 
     M = 2N + 1
@@ -33,8 +33,10 @@ function DirichletHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<
     f = dx/Lx * dy/Ly
 
     u = [𝑈(x, y) for x in xs, y in ys]
-    U = FFTW.r2r(u, FFTW.RODFT00) * f |> dct_to_matrix
-    
+
+    F = FFTW.plan_r2r(u, FFTW.RODFT00)
+    U = F * u * f |> dct_to_matrix
+
     Δ = Diagonal([-π^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:N for jy in 1:N])
     
     if 𝐴_x === nothing
@@ -42,17 +44,13 @@ function DirichletHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<
     else
         a_x = [𝐴_x(x, y) for x in xs, y in ys]
         a_y = [𝐴_y(x, y) for x in xs, y in ys]
-        # ∇a = [∇𝐴(x, y) for x in xs, y in ys]
         
-        A_x = FFTW.r2r(a_x, FFTW.RODFT00) * f |> dct_to_matrix
-        A_y = FFTW.r2r(a_y, FFTW.RODFT00) * f |> dct_to_matrix
-        # ∇A = FFTW.r2r(∇a, FFTW.RODFT00) * f |> dct_to_matrix
+        A_x = F * a_x * f |> dct_to_matrix
+        A_y = F * a_y * f |> dct_to_matrix
         
         ∂_x = make_∂_x(N, Lx)
         ∂_y = make_∂_y(N, Ly)
         
-        # H = -Δ + im*∇A + 2im*(A_x * ∂_x + A_y * ∂_y) + A_x^2 + A_y^2 + U
-        # H = -Δ + 2im*(A_x * ∂_x + A_y * ∂_y) + A_x^2 + A_y^2 + U
         H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
     end
     return DirichletHamiltonian(xlims, ylims, Lx, Ly, H)

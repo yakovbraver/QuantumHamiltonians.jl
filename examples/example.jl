@@ -4,33 +4,39 @@ using .XSpaceHamiltonians
 using Plots, DelimitedFiles
 plotlyjs()
 cmap_rainbow = cgrad(:rainbow_bgyrm_35_85_c69_n256);
+cmap_cyclic = cgrad(:cyclic_mrybm_35_75_c68_n256);
 theme(:dark, size=(600, 500))
 
-function 𝑈(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
-    (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y; ϵ, ϵc, χ)^2 * 2ϵ^2 * (1+ϵc^2)
+function 𝑈(x::Real, y::Real)
+    (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y)^2 * 2ϵ^2 * (1+ϵc^2)
 end
 
-function 𝐴_x(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
-    sin(2y) .* ϵc .* sin(χ) ./ 𝛼(x, y; ϵ, ϵc, χ)
+function 𝐴_x(x::Real, y::Real)
+    sin(2y) .* ϵc .* sin(χ) ./ 𝛼(x, y)
 end
 
-function 𝐴_y(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
-    sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y; ϵ, ϵc, χ)
+function 𝐴_y(x::Real, y::Real)
+    sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y)
 end
 
-function ∇𝐴(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
+function ∇𝐴(x::Real, y::Real)
     ((-2ϵc*cos(χ)sin(2x) + ϵc^2 * sin(2(x-y)) + sin(2(x+y))) * ϵc * sin(2y) * sin(χ) +
      (-2ϵc*cos(χ)sin(2x) - ϵc^2 * sin(2(x-y)) + sin(2(x+y))) * ϵc * sin(2x) * sin(χ)) /
-    𝛼(x, y; ϵ, ϵc, χ)^2
+    𝛼(x, y)^2
 end
 
-function 𝛼(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
+function 𝛼(x::Real, y::Real)
     η₋ = cos(x-y); η₊ = cos(x+y)
     return ϵ^2 * (1 + ϵc^2) + η₊^2 + (ϵc*η₋)^2 - 2ϵc*η₊*η₋*cos(χ)
 end
 
-ϵ = 0.1f0
-ϵc = 1f0
+function 𝛼(x::Real, y::Real)
+    η₋ = cos(x-y); η₊ = cos(x+y)
+    return ϵ^2 * (1 + ϵc^2) + η₊^2 + (ϵc*η₋)^2 - 2ϵc*η₊*η₋*cos(χ)
+end
+
+const ϵ = 0.1f0
+const ϵc = 1f0
 
 ########## χ = 0
 
@@ -46,7 +52,7 @@ heatmap(dh.H, yaxis=:flip)
 using LinearAlgebra
 f = eigen(dh.H)
 
-xs, ys, ψ = XSpaceSSE.make_wavefunction(dh, f.vectors[:, 1], 50, 50)
+xs, ys, ψ = make_wavefunction(dh, f.vectors[:, 1], 50, 50)
 surface(xs, ys, abs2.(ψ)')
 
 ########## χ = π/2, x from -pi/2 to pi/2
@@ -55,19 +61,19 @@ surface(xs, ys, abs2.(ψ)')
 
 # define U with a shift so that the are of interest is bounded by [0, Lx] x [0, Ly]
 # this is because the basis is such that it is zero at 0, Lx, 0, and Ly.
-function 𝑈(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
+function 𝑈(x::Real, y::Real)
     x -= pi/2
-    (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y; ϵ, ϵc, χ)^2 * 2ϵ^2 * (1+ϵc^2)
+    (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y)^2 * 2ϵ^2 * (1+ϵc^2)
 end
 
-function 𝐴_x(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
+function 𝐴_x(x::Real, y::Real)
     x -= pi/2
-    sin(2y) .* ϵc .* sin(χ) ./ 𝛼(x, y; ϵ, ϵc, χ)
+    sin(2y) .* ϵc .* sin(χ) ./ 𝛼(x, y)
 end
 
-function 𝐴_y(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
+function 𝐴_y(x::Real, y::Real)
     x -= pi/2
-    sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y; ϵ, ϵc, χ)
+    sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y)
 end
 
 # the region of interest in the shifted potential
@@ -79,29 +85,29 @@ N = 2^6 - 1
 M = 2N + 1
 xs = range(xlimits[1], xlimits[2], M)
 ys = range(ylimits[1], ylimits[2], M)
-surface(xs, ys, (x, y) -> 𝑈(x, y; ϵ, ϵc, χ))
-surface(xs, ys, (x, y) -> 𝐴_x(x, y; ϵ, ϵc, χ)^2 + 𝐴_y(x, y; ϵ, ϵc, χ)^2)
+surface(xs, ys, 𝑈)
+surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 ########## χ = π/2, FULL
 
-χ = π/2 |> Float32
+const χ = π/2 |> Float32
 
-function 𝑈(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
-    (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y; ϵ, ϵc, χ)^2 * 2ϵ^2 * (1+ϵc^2)
+function 𝑈(x::Real, y::Real)
+    (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y)^2 * 2ϵ^2 * (1+ϵc^2)
 end
 
-function 𝐴_x(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
-    sin(2y) .* ϵc .* sin(χ) ./ 𝛼(x, y; ϵ, ϵc, χ)
+function 𝐴_x(x::Real, y::Real)
+    sin(2y) .* ϵc .* sin(χ) ./ 𝛼(x, y)
 end
 
-function 𝐴_y(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
-    sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y; ϵ, ϵc, χ)
+function 𝐴_y(x::Real, y::Real)
+    sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y)
 end
 
-function ∇𝐴(x::Real, y::Real; ϵ::Real, ϵc::Real, χ::Real)
+function ∇𝐴(x::Real, y::Real)
     ((-2ϵc*cos(χ)sin(2x) + ϵc^2 * sin(2(x-y)) + sin(2(x+y))) * ϵc * sin(2y) * sin(χ) +
      (-2ϵc*cos(χ)sin(2x) - ϵc^2 * sin(2(x-y)) + sin(2(x+y))) * ϵc * sin(2x) * sin(χ)) /
-    𝛼(x, y; ϵ, ϵc, χ)^2
+    𝛼(x, y)^2
 end
 
 # the region of interest in the shifted potential
@@ -118,7 +124,7 @@ surface(xs, ys, (x, y) -> 𝐴_x(x, y; ϵ, ϵc, χ)^2 + 𝐴_y(x, y; ϵ, ϵc, χ
 
 ########## Calculate
 
-dh = DirichletHamiltonian(xlimits, ylimits; 𝑈=(x, y) -> 𝑈(x, y; ϵ, ϵc, χ), 𝐴_x=(x, y) -> 𝐴_x(x, y; ϵ, ϵc, χ), 𝐴_y=(x, y) -> 𝐴_y(x, y; ϵ, ϵc, χ), N)
+@time dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N);
 heatmap(dh.H, yaxis=:flip)
 
 using LinearAlgebra
