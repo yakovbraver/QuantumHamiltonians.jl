@@ -1,16 +1,20 @@
 module XSpaceHamiltonians
 
-using FFTW
-using LinearAlgebra: BLAS, LAPACK, eigvals, Hermitian, diagind, eigen, lu, lu!, Diagonal
+import FFTW
+using ArnoldiMethod: partialschur
+using LinearAlgebra: Hermitian, diagind, Diagonal, ldiv!, factorize
+using LinearMaps: LinearMap
 
-export DirichletHamiltonian, make_wavefunction
+export DirichletHamiltonian, diagonalize!, make_wavefunction
 
-struct DirichletHamiltonian{T<:Number,S<:Number}
-    xlims::Tuple{S, S}
-    ylims::Tuple{S, S}
-    Lx::S # period along 𝑥
-    Ly::S # period along 𝑦
+mutable struct DirichletHamiltonian{R<:Real,T<:Number} # in practice `T` will be `R` or `Complex{R}`
+    xlims::Tuple{R, R}
+    ylims::Tuple{R, R}
+    Lx::R # period along 𝑥
+    Ly::R # period along 𝑦
     H::Matrix{T}
+    ε::Vector{R} # eigenvalues
+    V::Matrix{T} # eigenvectors matrix
 end
 
 """
@@ -53,7 +57,7 @@ function DirichletHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<
         
         H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
     end
-    return DirichletHamiltonian(xlims, ylims, Lx, Ly, H)
+    return DirichletHamiltonian(xlims, ylims, Lx, Ly, H, typeof(Lx)[], eltype(H)[;;])
 end
 
 """
@@ -92,20 +96,34 @@ function make_∂_y(N, Ly)
 end
 
 """
-Construct wavefunction `wf` on a grid having `nx` points in `x` and `y` direction. Use odd `nx` for nice results.
-`v` is one of the vectors output from [`q0_states`](@ref).
-Return (`xs`, `wf`), where `xs` is the grid in one dimension.
+Construct wavefunction of state number `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
+Return (`xs`, `ys`, `ψ`).
 """
-function make_wavefunction(dh::DirichletHamiltonian, v::AbstractVector{<:Number}, nx::Integer, ny::Integer)
-    (;Lx, Ly, xlims, ylims) = dh
-    N = Int(√length(v))
+function make_wavefunction(dh::DirichletHamiltonian, stateno::Integer, nx::Integer, ny::Integer)
+    (;Lx, Ly, xlims, ylims, V) = dh
+    N = Int(√size(V, 1))
     xs = range(xlims[1], xlims[2], nx)
     ys = range(ylims[1], ylims[2], ny)
-    ψ = Matrix{eltype(v)}(undef, nx, ny)
+    ψ = Matrix{eltype(V)}(undef, nx, ny)
     for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
-        ψ[ix, iy] = sum(v[(jx-1)N+jy]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jx in 1:N for jy in 1:N) * 2 / √(Lx*Ly)
+        ψ[ix, iy] = sum(V[(jx-1)N+jy, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jx in 1:N for jy in 1:N) * 2 / √(Lx*Ly)
     end
     return xs, ys, ψ
+end
+
+function diagonalize!(dh::DirichletHamiltonian; nev::Integer)
+    S, = partialschur(construct_linear_map(Hermitian(dh.H)); nev, which=:LM);
+    dh.V = S.Q
+    dh.ε = inv.(real.(S.eigenvalues))
+    
+    # S, = partialschur(Hermitian(dh.H); nev, which=:SR)
+    # dh.V = S.Q
+    # dh.ε = S.eigenvalues
+end
+
+function construct_linear_map(A)
+    F = factorize(A)
+    LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A,1), ismutating=true)
 end
 
 # """

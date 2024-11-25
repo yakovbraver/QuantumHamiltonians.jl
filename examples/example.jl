@@ -30,11 +30,6 @@ function 𝛼(x::Real, y::Real)
     return ϵ^2 * (1 + ϵc^2) + η₊^2 + (ϵc*η₋)^2 - 2ϵc*η₊*η₋*cos(χ)
 end
 
-function 𝛼(x::Real, y::Real)
-    η₋ = cos(x-y); η₊ = cos(x+y)
-    return ϵ^2 * (1 + ϵc^2) + η₊^2 + (ϵc*η₋)^2 - 2ϵc*η₊*η₋*cos(χ)
-end
-
 const ϵ = 0.1f0
 const ϵc = 1f0
 
@@ -45,14 +40,14 @@ const ϵc = 1f0
 xlimits = (0, π) .|> Float32
 ylimits = (0, π) .|> Float32
 N = 2^5-1
-dh = DirichletHamiltonian(xlimits, ylimits; 𝑈=(x, y) -> 𝑈(x, y; ϵ, ϵc, χ), N)
+dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, N)
 
 heatmap(dh.H, yaxis=:flip)
 
-using LinearAlgebra
-f = eigen(dh.H)
+@time diagonalize!(dh, nev=1);
 
-xs, ys, ψ = make_wavefunction(dh, f.vectors[:, 1], 50, 50)
+stateno = 1
+xs, ys, ψ = make_wavefunction(dh, stateno, M, M)
 surface(xs, ys, abs2.(ψ)')
 
 ########## χ = π/2, x from -pi/2 to pi/2
@@ -104,18 +99,12 @@ function 𝐴_y(x::Real, y::Real)
     sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y)
 end
 
-function ∇𝐴(x::Real, y::Real)
-    ((-2ϵc*cos(χ)sin(2x) + ϵc^2 * sin(2(x-y)) + sin(2(x+y))) * ϵc * sin(2y) * sin(χ) +
-     (-2ϵc*cos(χ)sin(2x) - ϵc^2 * sin(2(x-y)) + sin(2(x+y))) * ϵc * sin(2x) * sin(χ)) /
-    𝛼(x, y)^2
-end
-
 # the region of interest in the shifted potential
 xlimits = (0, 2π) .|> Float32
 ylimits = (0, 2π) .|> Float32
 
 # plot potential
-N = 2^6 - 1
+N = 2^7 - 1
 M = 2N + 1
 xs = range(xlimits[1], xlimits[2], M)
 ys = range(ylimits[1], ylimits[2], M)
@@ -125,14 +114,12 @@ surface(xs, ys, (x, y) -> 𝐴_x(x, y; ϵ, ϵc, χ)^2 + 𝐴_y(x, y; ϵ, ϵc, χ
 ########## Calculate
 
 @time dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N);
-heatmap(dh.H, yaxis=:flip)
 
-using LinearAlgebra
-@time f = eigen(Hermitian(dh.H));
+@time diagonalize!(dh, nev=1);
 
-xs, ys, ψ = make_wavefunction(dh, f.vectors[:, 1], M, M)
+stateno = 1
+xs, ys, ψ = make_wavefunction(dh, stateno, M, M)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
 writedlm("exact_lambda_no1_256.txt", ψ, ',')
-f.values[1]
