@@ -104,12 +104,12 @@ xlimits = (0, 2π) .|> Float32
 ylimits = (0, 2π) .|> Float32
 
 # plot potential
-N = 2^7 - 1
+N = 2^6 - 1
 M = 2N + 1
 xs = range(xlimits[1], xlimits[2], M)
 ys = range(ylimits[1], ylimits[2], M)
-surface(xs, ys, (x, y) -> 𝑈(x, y; ϵ, ϵc, χ))
-surface(xs, ys, (x, y) -> 𝐴_x(x, y; ϵ, ϵc, χ)^2 + 𝐴_y(x, y; ϵ, ϵc, χ)^2)
+surface(xs, ys, 𝑈)
+surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 ########## Calculate
 
