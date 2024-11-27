@@ -18,11 +18,11 @@ and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments
 """
 function DirichletHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Real}; 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
                               𝐴_y::Union{Function,Nothing}=nothing, N=63)
-    Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1] # area dimensions
-# TODO: perform shifting to (0, Lx) here instead of in U and A_x
+    Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1]
+
     M = 2N + 2
-    xs = range(0, Lx, M)
-    ys = range(0, Ly, M)
+    xs = range(xlims[1], xlims[2], M)
+    ys = range(ylims[1], ylims[2], M)
     
     dx, dy = Lx/M, Ly/M
     f = dx/Lx * dy/Ly
@@ -91,10 +91,10 @@ Construct wavefunction of state number `stateno` on a grid having `nx` points in
 Return (`xs`, `ys`, `ψ`).
 """
 function make_wavefunction(dh::DirichletHamiltonian, stateno::Integer, nx::Integer, ny::Integer)
-    (;Lx, Ly, xlims, ylims, V) = dh
+    (;Lx, Ly, V) = dh
     N = Int(√size(V, 1))
-    xs = range(xlims[1], xlims[2], nx)
-    ys = range(ylims[1], ylims[2], ny)
+    xs = range(0, Lx, nx)
+    ys = range(0, Ly, ny)
     ψ = Matrix{eltype(V)}(undef, nx, ny)
     for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
         ψ[ix, iy] = sum(V[(jx-1)N+jy, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jx in 1:N for jy in 1:N) * 2 / √(Lx*Ly)

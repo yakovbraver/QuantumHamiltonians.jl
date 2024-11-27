@@ -1,5 +1,4 @@
-includet("../src/XSpaceHamiltonians.jl")
-using .XSpaceHamiltonians
+using XSpaceHamiltonians
 
 using Plots, DelimitedFiles
 plotlyjs()
@@ -46,28 +45,10 @@ surface(xs, ys, abs2.(ψ)')
 
 ########## χ = π/2, x from -pi/2 to pi/2
 
-χ = π/2 |> Float32
+const χ = π/2 |> Float32
 
-# define U with a shift so that the are of interest is bounded by [0, Lx] x [0, Ly]
-# this is because the basis is such that it is zero at 0, Lx, 0, and Ly.
-function 𝑈(x::Real, y::Real)
-    x -= pi/2
-    (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y)^2 * 2ϵ^2 * (1+ϵc^2)
-end
-
-function 𝐴_x(x::Real, y::Real)
-    x -= pi/2
-    sin(2y) .* ϵc .* sin(χ) ./ 𝛼(x, y)
-end
-
-function 𝐴_y(x::Real, y::Real)
-    x -= pi/2
-    sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y)
-end
-
-# the region of interest in the shifted potential
-xlimits = (0, π) .|> Float32
-ylimits = (0, π) .|> Float32
+xlimits = (-π/2, π/2) .|> Float32
+ylimits = (-π/2, π/2) .|> Float32
 
 # plot potential
 N = 2^6 - 1
@@ -79,21 +60,8 @@ surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 ########## χ = π/2, FULL
 
-χ = π/2 |> Float32
+const χ = π/2 |> Float32
 
-function 𝑈(x::Real, y::Real)
-    (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y)^2 * 2ϵ^2 * (1+ϵc^2)
-end
-
-function 𝐴_x(x::Real, y::Real)
-    sin(2y) .* ϵc .* sin(χ) ./ 𝛼(x, y)
-end
-
-function 𝐴_y(x::Real, y::Real)
-    sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y)
-end
-
-# the region of interest in the shifted potential
 xlimits = (0, 2π) .|> Float32
 ylimits = (0, 2π) .|> Float32
 
@@ -107,8 +75,7 @@ surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 ########## Calculate
 
-@time dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N);
-
+@time dh = PeriodicHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, M=N);
 @time diagonalize!(dh, nev=1);
 
 stateno = 1
@@ -118,7 +85,8 @@ surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
 writedlm("exact_lambda_no1_256.txt", ψ, ',')
 
-@time dh = PeriodicHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, M=N);
+@time dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N);
+
 @time diagonalize!(dh, nev=1);
 
 dh.ε

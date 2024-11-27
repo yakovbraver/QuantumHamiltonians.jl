@@ -1,5 +1,4 @@
-includet("../src/XSpaceHamiltonians.jl")
-using .XSpaceHamiltonians
+using XSpaceHamiltonians
 
 using Plots
 plotlyjs()
@@ -8,27 +7,21 @@ cmap_cyclic = cgrad(:cyclic_mrybm_35_75_c68_n256);
 theme(:dark, size=(600, 500))
 
 function 𝑈(x::Real, y::Real)
-    x -= 2
-    y -= 2
     2(ϵ / (1 + ϵ^2*(x^2+y^2)))^2
 end
 
 function 𝐴_x(x::Real, y::Real)
-    x -= 2
-    y -= 2
     ϵ^2 * √(x^2+y^2) / (1 + ϵ^2*(x^2+y^2)) * sin(atan(y, x))
 end
 
 function 𝐴_y(x::Real, y::Real)
-    x -= 2
-    y -= 2
     -ϵ^2 * √(x^2+y^2) / (1 + ϵ^2*(x^2+y^2)) * cos(atan(y, x))
 end
 
 const ϵ = 10f0
 
-xlimits = (0, 4) .|> Float32
-ylimits = (0, 4) .|> Float32
+xlimits = (-2, 2) .|> Float32
+ylimits = (-2, 2) .|> Float32
 
 # plot potential
 N = 2^6-1

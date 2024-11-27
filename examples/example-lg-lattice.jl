@@ -1,5 +1,4 @@
-includet("../src/XSpaceHamiltonians.jl")
-using .XSpaceHamiltonians
+using XSpaceHamiltonians
 
 using Plots, LaTeXStrings
 plotlyjs()
@@ -7,24 +6,17 @@ cmap_rainbow = cgrad(:rainbow_bgyrm_35_85_c69_n256);
 cmap_cyclic = cgrad(:cyclic_mrybm_35_75_c68_n256);
 theme(:dark, size=(600, 500))
 
-# For the functions below, it is assumed that the arguments x, y are in [0, L].
-# In the functions, we start by shifting x, y to [-L/2, L/2], which is a shift by l = L/2
-# Then, we shift by l/2 so that the quadrant of interest is centered at (0, 0)
-
 function 𝑈(x::Real, y::Real)
-    x -= l
-    x == 0 && return x
-    y -= l
+    x == 0 && return x # return zero because shift direction is undefined
     y == 0 && return y
+    # shift so that the quadrant of interest is centered at (0, 0)
     x -= sign(x) * o
     y -= sign(y) * o
     return 2(ϵ / (1 + ϵ^2*(x^2+y^2)))^2
 end
 
 function 𝐴_x(x::Real, y::Real)
-    x -= l
     x == 0 && return x
-    y -= l
     y == 0 && return y
     x -= sign(x) * o
     y -= sign(y) * o
@@ -32,9 +24,7 @@ function 𝐴_x(x::Real, y::Real)
 end
 
 function 𝐴_y(x::Real, y::Real)
-    x -= l
     x == 0 && return x
-    y -= l
     y == 0 && return y
     x -= sign(x) * o
     y -= sign(y) * o
@@ -46,11 +36,6 @@ const ϵ = 10f0
 
 xlimits = (-4, 4) .|> Float32
 ylimits = (-4, 4) .|> Float32
-const l = (xlimits[2] - xlimits[1]) / 2 # size of each quadrant
-
-# shift so that limits go from 0 to L
-xlimits = xlimits .+ l
-ylimits = ylimits .+ l
 
 # plot potential
 N = 2^6

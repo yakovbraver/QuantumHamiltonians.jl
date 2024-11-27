@@ -27,8 +27,8 @@ function PeriodicHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:
     dx, dy = Lx/N, Ly/N
     f = dx/Lx * dy/Ly
     
-    xs = range(0, Lx-dx, N)
-    ys = range(0, Ly-dy, N)
+    xs = range(xlims[1], xlims[2]-dx, N)
+    ys = range(ylims[1], ylims[2]-dy, N)
     
     u = [𝑈(x, y) for x in xs, y in ys]
     F = FFTW.plan_rfft(u)
@@ -188,8 +188,8 @@ function make_wavefunction(dh::PeriodicHamiltonian, stateno::Integer, nx::Intege
     (;Lx, Ly, xlims, ylims, V) = dh
     B = Int(√size(V, 1))
     j_max = (B - 1) ÷ 2
-    xs = range(xlims[1], xlims[2], nx)
-    ys = range(ylims[1], ylims[2], ny)
+    xs = range(0, Lx, nx)
+    ys = range(0, Ly, ny)
     ψ = Matrix{Complex{typeof(Lx)}}(undef, nx, ny)
     for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
         ψ[ix, iy] = sum(V[(j-1)B+i, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-j_max:j_max)
