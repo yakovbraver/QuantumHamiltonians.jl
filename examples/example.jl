@@ -19,12 +19,6 @@ function 𝐴_y(x::Real, y::Real)
     sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y)
 end
 
-function ∇𝐴(x::Real, y::Real)
-    ((-2ϵc*cos(χ)sin(2x) + ϵc^2 * sin(2(x-y)) + sin(2(x+y))) * ϵc * sin(2y) * sin(χ) +
-     (-2ϵc*cos(χ)sin(2x) - ϵc^2 * sin(2(x-y)) + sin(2(x+y))) * ϵc * sin(2x) * sin(χ)) /
-    𝛼(x, y)^2
-end
-
 function 𝛼(x::Real, y::Real)
     η₋ = cos(x-y); η₊ = cos(x+y)
     return ϵ^2 * (1 + ϵc^2) + η₊^2 + (ϵc*η₋)^2 - 2ϵc*η₊*η₋*cos(χ)
@@ -35,7 +29,7 @@ const ϵc = 1f0
 
 ########## χ = 0
 
-χ = 0f0
+const χ = 0f0
 
 xlimits = (0, π) .|> Float32
 ylimits = (0, π) .|> Float32
@@ -85,7 +79,7 @@ surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 ########## χ = π/2, FULL
 
-const χ = π/2 |> Float32
+χ = π/2 |> Float32
 
 function 𝑈(x::Real, y::Real)
     (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y)^2 * 2ϵ^2 * (1+ϵc^2)
@@ -104,8 +98,8 @@ xlimits = (0, 2π) .|> Float32
 ylimits = (0, 2π) .|> Float32
 
 # plot potential
-N = 2^6 - 1
-M = 2N + 1
+N = 2^6
+M = 2N
 xs = range(xlimits[1], xlimits[2], M)
 ys = range(ylimits[1], ylimits[2], M)
 surface(xs, ys, 𝑈)
@@ -123,3 +117,8 @@ heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
 writedlm("exact_lambda_no1_256.txt", ψ, ',')
+
+@time dh = PeriodicHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, M=N);
+@time diagonalize!(dh, nev=1);
+
+dh.ε

@@ -31,7 +31,7 @@ xlimits = (0, 4) .|> Float32
 ylimits = (0, 4) .|> Float32
 
 # plot potential
-N = 2^7-1
+N = 2^6-1
 M = 2N + 1
 xs = range(xlimits[1], xlimits[2], M)
 ys = range(ylimits[1], ylimits[2], M)
@@ -49,4 +49,4 @@ surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
 
-dh.ε[1]
+dh.ε

@@ -2,11 +2,12 @@ module XSpaceHamiltonians
 
 import FFTW
 using ArnoldiMethod: partialschur
-using LinearAlgebra: Hermitian, diagind, Diagonal, ldiv!, factorize
+using LinearAlgebra: Hermitian, diagind, Diagonal, ldiv!, factorize, eigen
 using LinearMaps: LinearMap
 using SparseArrays
+using LDLFactorizations
 
-export DirichletHamiltonian, diagonalize!, make_wavefunction
+export DirichletHamiltonian, diagonalize!, make_wavefunction, PeriodicHamiltonian
 
 mutable struct DirichletHamiltonian{R<:Real,T<:Number} # in practice `T` will be `R` or `Complex{R}`
     xlims::Tuple{R, R}
@@ -29,8 +30,8 @@ and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments
 function DirichletHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Real}; 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
                               𝐴_y::Union{Function,Nothing}=nothing, N=63)
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1] # area dimensions
-
-    M = 2N + 1
+# TODO: perform shifting to (0, Lx) here instead of in U and A_x
+    M = 2N + 2
     xs = range(0, Lx, M)
     ys = range(0, Ly, M)
     
@@ -42,7 +43,7 @@ function DirichletHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<
     F = FFTW.plan_r2r(u, FFTW.RODFT00)
     U = F * u * f |> dct_to_matrix
 
-    Δ = Diagonal([-π^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:N for jy in 1:N])
+    Δ = Diagonal(typeof(Lx)[-π^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:N for jy in 1:N])
     
     if 𝐴_x === nothing
         H = -Δ + U
@@ -66,7 +67,7 @@ Based on results of 2D DCT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y
 """
 function dct_to_matrix(u)
     M = size(u, 1)
-    N = (M-1) ÷ 2 # size of each block of the Hamiltonian
+    N = (M-2) ÷ 2 # size of each block of the Hamiltonian
     H = Matrix{eltype(u)}(undef, N^2, N^2)
     for jx in 1:N, jy in 1:N, j′x in 1:N, j′y in 1:N
         j₋x = abs(j′x-jx)
@@ -113,11 +114,15 @@ function make_wavefunction(dh::DirichletHamiltonian, stateno::Integer, nx::Integ
 end
 
 function diagonalize!(dh::DirichletHamiltonian; nev::Integer)
-    S, info = partialschur(construct_linear_map(Hermitian(dh.H)); nev, which=:LM);
-    @show info
-    dh.V = S.Q
-    dh.ε = inv.(real.(S.eigenvalues))
-    
+    if nev == 0
+        dh.ε, dh.V = eigen(Hermitian(dh.H))
+    else
+        S, info = partialschur(construct_linear_map(Hermitian(dh.H)); nev, which=:LM);
+        @show info
+        dh.V = S.Q
+        dh.ε = inv.(real.(S.eigenvalues))
+    end
+
     # S, = partialschur(Hermitian(dh.H); nev, which=:SR)
     # dh.V = S.Q
     # dh.ε = S.eigenvalues
@@ -149,7 +154,10 @@ and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments
 function PeriodicHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Real}; 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
                               𝐴_y::Union{Function,Nothing}=nothing, M=64)
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1] # area dimensions
-
+    if isodd(M)
+        @warn "`M` must be even. Reducing `M` by one."
+        M -= 1
+    end
     N = 2M
     dx, dy = Lx/N, Ly/N
     f = dx/Lx * dy/Ly
@@ -159,21 +167,22 @@ function PeriodicHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:
     
     u = [𝑈(x, y) for x in xs, y in ys]
     F = FFTW.plan_rfft(u)
-    U = F * u * f .|> real |> fft_to_matrix!
+    U = F * u * f |> fft_to_matrix!
 
-    Δ = Diagonal([-(2π)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -M:M for jy in -M:M])
+    m = M÷2
+    Δ = Diagonal([-(2π)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -m:m for jy in -m:m])
     
     if 𝐴_x === nothing
         H = -Δ + U
     else
         a_x = [𝐴_x(x, y) for x in xs, y in ys]
         a_y = [𝐴_y(x, y) for x in xs, y in ys]
+
+        A_x = F * a_x * f |> fft_to_matrix!
+        A_y = F * a_y * f |> fft_to_matrix!
         
-        A_x = F * a_x * f .|> real |> fft_to_matrix!
-        A_y = F * a_y * f .|> real |> fft_to_matrix!
-        
-        ∂_x = Diagonal([2π*im * jx/Lx for jx in -M:M for jy in -M:M])
-        ∂_y = Diagonal([2π*im * jy/Ly for jy in -M:M for jy in -M:M])
+        ∂_x = Diagonal([2π*im * jx/Lx for jx in -m:m for jy in -m:m])
+        ∂_y = Diagonal([2π*im * jy/Ly for jx in -m:m for jy in -m:m])
         
         H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
     end
@@ -293,85 +302,35 @@ function push_vals!(rows, cols, vals, counter; r_b, c_b, r, c, blocksize, val)
     vals[counter+1] = val'
 end
 
-# """
-# Calculate ground state energy dispersion for a quarter of the BZ, since ℤ₄ symmetry is assumed.
-# This quarter is discretised with `n_q` points in each direction.
-# """
-# function spectrum(gf::Hamiltonian{Float}; n_q::Integer) where {Float<:AbstractFloat}
-#     E = Matrix{Float}(undef, n_q, n_q)
+function diagonalize!(dh::PeriodicHamiltonian; nev::Integer)
+    S, info = partialschur(make_linear_map(Hermitian(dh.H)); nev, which=:LM);
+    @show info
+    dh.V = S.Q
+    dh.ε = inv.(real.(S.eigenvalues))
+end
 
-#     H = sparse(gf.H_rows, gf.H_cols, gf.H_vals)
-#     H_vals = nonzeros(H)
-#     diagidx = findall(==(0), H_vals) # find indices of diagonal elements -- we saved zeros there (see `constructH`)
+function make_linear_map(A)
+    LDL = ldl_analyze(A)
+    ldl_factorize!(A, LDL) # mutates (updates) `LDL`, does not alter `A`
+    LinearMap{eltype(A)}((y, x) -> ldiv!(y, LDL, x), size(A,1), ismutating=true)
+end
 
-#     B = Int(√size(H, 1)) # size of each block in `H`
-#     j_max = (B - 1) ÷ 2  # index for each block in `H` will run in `-j_max:j_max`, giving `B` values in total
-#     qs = range(0, 1, length=n_q) # BZ is (-1 ≤ 𝑞ₓ, 𝑞𝑦 ≤ 1), but it's enough to consider a triangle 0 ≤ 𝑞ₓ ≤ 1, 0 ≤ 𝑞𝑦 ≤ 𝑞ₓ
-#     for (iqx, qx) in enumerate(qs), iqy in iqx:n_q
-#         qy = qs[iqy]
-#         for (j, jx) in enumerate(-j_max:j_max), (i, jy) in enumerate(-j_max:j_max)
-#             H_vals[diagidx[(j-1)B+i]] = gf.u₀₀ + qx^2 + qy^2 + 4(qx*jx + qy*jy) + 4(jx^2 + jy^2)
-#         end
-#         # vals, _, _ = eigsolve(H, 1, :SR, tol=(Float == Float32 ? 1e-6 : 1e-12))
-#         vals = eigvals(Hermitian(Matrix(H)))
-#         E[iqy, iqx] = E[iqx, iqy] = vals[1]
-#     end
-#     return E
-# end
-
-# """
-# Calculate energies and wavefunctions at zero quasimomenta for `nbands` lowest bands.
-# """
-# function q0_states(gf::Hamiltonian{Float}) where {Float<:AbstractFloat}
-#     H = sparse(gf.H_rows, gf.H_cols, gf.H_vals) |> Matrix |> Hermitian
-#     B = Int(√size(H, 1)) # size of each block in `H`
-#     j_max = (B - 1) ÷ 2  # index for each block in `H` will run in `-j_max:j_max`, giving `B` values in total
-#     H[diagind(H)] .= [gf.u₀₀ + 4(jx^2 + jy^2) for jx in -j_max:j_max for jy in -j_max:j_max]
-#     f = eigen(H)
-#     return f.values, f.vectors
-# end
-
-# """
-# Construct wavefunction `wf` on a grid having `nx` points in `x` and `y` direction. Use odd `nx` for nice results.
-# `v` is one of the vectors output from [`q0_states`](@ref).
-# Return (`xs`, `wf`), where `xs` is the grid in one dimension.
-# """
-# function make_wavefunction(v::AbstractVector{<:Number}, nx::Integer)
-#     B = Int(√length(v))
-#     j_max = (B - 1) ÷ 2
-#     L = π # spatial period
-#     xs = range(0, L, nx)
-#     wf = Matrix{eltype(v)}(undef, nx, nx)
-#     for (iy, y) in enumerate(xs), (ix, x) in enumerate(xs)
-#         wf[ix, iy] = sum(v[(j-1)B+i]cis(2jx*x + 2jy*y) for (j, jx) in enumerate(-j_max:j_max)
-#                                                        for (i, jy) in enumerate(-j_max:j_max)) / L
-#     end
-#     return xs, wf
-# end
-
-# """
-# Calculate energy dispersion for all pairs of quasimomenta described by `qxs` and `qys`.
-# Save `nsaves` lowest states; if not passed, all states are saved.
-# """
-# function spectrum(gf::Hamiltonian{Float}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nsaves::Integer=0) where {Float<:AbstractFloat}
-#     H = sparse(gf.H_rows, gf.H_cols, gf.H_vals)
-#     H_vals = nonzeros(H)
-#     diagidx = findall(==(0), H_vals) # find indices of diagonal elements -- we saved zeros there (see `constructH`)
-    
-#     (nsaves == 0) && (nsaves = size(H, 1))
-#     E = Array{Float}(undef, nsaves, length(qxs), length(qys))
-
-#     M = Int(√size(H, 1)) # size of each block in `H`
-#     j_max = (M - 1) ÷ 2  # index for each block in `H` will run in `-j_max:j_max`, giving `M` values in total
-#     for (iqy, qy) in enumerate(qys), (iqx, qx) in enumerate(qxs)
-#         for (j, jx) in enumerate(-j_max:j_max), (i, jy) in enumerate(-j_max:j_max)
-#             H_vals[diagidx[(j-1)M+i]] = gf.u₀₀ + qx^2 + qy^2 + 4(qx*jx + qy*jy) + 4(jx^2 + jy^2)
-#         end
-#         # vals, _, _ = eigsolve(H, nsaves, :SR, tol=(Float == Float32 ? 1e-6 : 1e-12))
-#         vals = eigvals(Hermitian(Matrix(H)))
-#         E[:, iqx, iqy] = vals[1:nsaves]
-#     end
-#     return E
-# end
+"""
+Construct wavefunction of state number `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
+Return (`xs`, `ys`, `ψ`).
+"""
+function make_wavefunction(dh::PeriodicHamiltonian, stateno::Integer, nx::Integer, ny::Integer)
+    (;Lx, Ly, xlims, ylims, V) = dh
+    B = Int(√size(V, 1))
+    j_max = (B - 1) ÷ 2
+    xs = range(xlims[1], xlims[2], nx)
+    ys = range(ylims[1], ylims[2], ny)
+    ψ = Matrix{Complex{typeof(Lx)}}(undef, nx, ny)
+    for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
+        ψ[ix, iy] = sum(V[(j-1)B+i, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-j_max:j_max)
+                                                                         for (i, jy) in enumerate(-j_max:j_max)) / √(Lx*Ly)
+    end
+    return xs, ys, ψ
+end
 
 end

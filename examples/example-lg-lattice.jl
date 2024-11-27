@@ -68,7 +68,7 @@ dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N)
 @time diagonalize!(dh, nev=1);
 
 stateno = 1
-xs, ys, ψ = make_wavefunction(dh, stateno, 254, 254)
+xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
