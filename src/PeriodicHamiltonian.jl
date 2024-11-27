@@ -168,16 +168,16 @@ function push_vals!(rows, cols, vals, counter; r_b, c_b, r, c, blocksize, val)
 end
 
 function diagonalize!(dh::PeriodicHamiltonian; nev::Integer)
-    S, info = partialschur(make_linear_map(Hermitian(dh.H)); nev, which=:LM);
+    S, info = partialschur(sparse_linear_map(Hermitian(dh.H)); nev, which=:LM);
     @show info
     dh.V = S.Q
     dh.ε = inv.(real.(S.eigenvalues))
 end
 
-function make_linear_map(A)
+function sparse_linear_map(A)
     LDL = ldl_analyze(A)
     ldl_factorize!(A, LDL) # mutates (updates) `LDL`, does not alter `A`
-    LinearMap{eltype(A)}((y, x) -> ldiv!(y, LDL, x), size(A,1), ismutating=true)
+    LinearMap{eltype(A)}((y, x) -> ldiv!(y, LDL, x), size(A, 1), ismutating=true)
 end
 
 """
@@ -188,12 +188,12 @@ function make_wavefunction(dh::PeriodicHamiltonian, stateno::Integer, nx::Intege
     (;Lx, Ly, xlims, ylims, V) = dh
     B = Int(√size(V, 1))
     j_max = (B - 1) ÷ 2
-    xs = range(0, Lx, nx)
+    xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ys = range(0, Ly, ny)
     ψ = Matrix{Complex{typeof(Lx)}}(undef, nx, ny)
     for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
         ψ[ix, iy] = sum(V[(j-1)B+i, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-j_max:j_max)
                                                                          for (i, jy) in enumerate(-j_max:j_max)) / √(Lx*Ly)
     end
-    return xs, ys, ψ
+    return xs .+ xlims[1], ys .+ ylims[1], ψ  # return "normal" coordinates, in `x ∈ xlims` and `y ∈ ylims`
 end

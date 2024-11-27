@@ -91,33 +91,33 @@ Construct wavefunction of state number `stateno` on a grid having `nx` points in
 Return (`xs`, `ys`, `ψ`).
 """
 function make_wavefunction(dh::DirichletHamiltonian, stateno::Integer, nx::Integer, ny::Integer)
-    (;Lx, Ly, V) = dh
+    (;Lx, Ly, xlims, ylims, V) = dh
     N = Int(√size(V, 1))
-    xs = range(0, Lx, nx)
+    xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ys = range(0, Ly, ny)
     ψ = Matrix{eltype(V)}(undef, nx, ny)
     for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
         ψ[ix, iy] = sum(V[(jx-1)N+jy, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jx in 1:N for jy in 1:N) * 2 / √(Lx*Ly)
     end
-    return xs, ys, ψ
+    return xs .+ xlims[1], ys .+ ylims[1], ψ # return "normal" coordinates, in `x ∈ xlims` and `y ∈ ylims`
 end
 
+"""
+Calculate `nev` eigenvectors and eigenvalues using `ArnoldiMethod`.
+Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
+"""
 function diagonalize!(dh::DirichletHamiltonian; nev::Integer)
     if nev == 0
         dh.ε, dh.V = eigen(Hermitian(dh.H))
     else
-        S, info = partialschur(construct_linear_map(Hermitian(dh.H)); nev, which=:LM);
+        S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM); # `which=:SR` with no shift-invert does not converge
         @show info
         dh.V = S.Q
         dh.ε = inv.(real.(S.eigenvalues))
     end
-
-    # S, = partialschur(Hermitian(dh.H); nev, which=:SR)
-    # dh.V = S.Q
-    # dh.ε = S.eigenvalues
 end
 
-function construct_linear_map(A)
+function dense_linear_map(A)
     F = factorize(A)
     LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A,1), ismutating=true)
 end

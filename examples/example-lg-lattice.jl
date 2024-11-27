@@ -49,19 +49,20 @@ surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 # Calculate
 dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N)
+dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, N)
 
-@time diagonalize!(dh, nev=1);
+@time diagonalize!(dh, nev=15);
 
-stateno = 1
+stateno = 3
 xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
 
+dh.ε
+
 using DelimitedFiles
 writedlm("phi0_lg_lat.txt", transpose(ψ))
-
-dh.ε
 
 import CairoMakie
 

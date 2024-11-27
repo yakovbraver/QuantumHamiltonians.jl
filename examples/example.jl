@@ -48,7 +48,7 @@ surface(xs, ys, abs2.(ψ)')
 const χ = π/2 |> Float32
 
 xlimits = (-π/2, π/2) .|> Float32
-ylimits = (-π/2, π/2) .|> Float32
+ylimits = (0, π) .|> Float32
 
 # plot potential
 N = 2^6 - 1
@@ -86,7 +86,6 @@ heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
 writedlm("exact_lambda_no1_256.txt", ψ, ',')
 
 @time dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N);
-
-@time diagonalize!(dh, nev=1);
+@time diagonalize!(dh, nev=5);
 
 dh.ε
