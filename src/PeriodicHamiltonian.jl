@@ -35,7 +35,7 @@ function PeriodicHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:
     U = F * u * f |> fft_to_matrix!
 
     m = M÷2
-    Δ = Diagonal([-(2π)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -m:m for jy in -m:m])
+    Δ = Diagonal(typeof(Lx)[-(2π)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -m:m for jy in -m:m])
     
     if 𝐴_x === nothing
         H = -Δ + U
@@ -46,8 +46,8 @@ function PeriodicHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:
         A_x = F * a_x * f |> fft_to_matrix!
         A_y = F * a_y * f |> fft_to_matrix!
         
-        ∂_x = Diagonal([2π*im * jx/Lx for jx in -m:m for jy in -m:m])
-        ∂_y = Diagonal([2π*im * jy/Ly for jx in -m:m for jy in -m:m])
+        ∂_x = Diagonal(Complex{typeof(Lx)}[2π*im * jx/Lx for jx in -m:m for jy in -m:m])
+        ∂_y = Diagonal(Complex{typeof(Lx)}[2π*im * jy/Ly for jx in -m:m for jy in -m:m])
         
         H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
     end
