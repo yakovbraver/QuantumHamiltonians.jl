@@ -31,25 +31,27 @@ function 𝐴_y(x::Real, y::Real)
     return -ϵ^2 * √(x^2+y^2) / (1 + ϵ^2*(x^2+y^2)) * cos(atan(y, x))
 end
 
-const o = 2f0 # nodes of the lattice will be at (±o, ±o)
-const ϵ = 10f0
+Float = Float32 # operating type
 
-xlimits = (-4, 4) .|> Float32
-ylimits = (-4, 4) .|> Float32
+o::Float = 2 # nodes of the lattice will be at (±o, ±o)
+ϵ::Float = 10
+
+xlimits = (-4, 4) .|> Float
+ylimits = (-4, 4) .|> Float
 
 # plot potential
-N = 2^6
-M = 2N + 2
-xs = range(xlimits[1], xlimits[2], M)
-ys = range(ylimits[1], ylimits[2], M)
+M = 50
+N = 2M + 1
+xs = range(xlimits[1], xlimits[2], N)
+ys = range(ylimits[1], ylimits[2], N)
 heatmap(xs, ys, 𝑈, c=cmap_rainbow)
 heatmap(ys, xs, 𝐴_x, c=:coolwarm)
 heatmap(ys, xs, 𝐴_y, c=:coolwarm)
 surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 # Calculate
-dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N)
-dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, N)
+dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈, 𝐴_x, 𝐴_y)
+dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈)
 
 @time diagonalize!(dh, nev=15);
 

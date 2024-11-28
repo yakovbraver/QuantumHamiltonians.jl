@@ -18,26 +18,28 @@ function 𝐴_y(x::Real, y::Real)
     -ϵ^2 * √(x^2+y^2) / (1 + ϵ^2*(x^2+y^2)) * cos(atan(y, x))
 end
 
-const ϵ = 10f0
+Float = Float32 # operating type
 
-xlimits = (-2, 2) .|> Float32
-ylimits = (-2, 2) .|> Float32
+ϵ::Float = 10
+
+xlimits = (-2, 2) .|> Float
+ylimits = (-2, 2) .|> Float
 
 # plot potential
-N = 2^6-1
-M = 2N + 1
-xs = range(xlimits[1], xlimits[2], M)
-ys = range(ylimits[1], ylimits[2], M)
+M = 50
+N = 2M + 1 # see how the potential looks with number of points that will be used for FFT
+xs = range(xlimits[1], xlimits[2], N)
+ys = range(ylimits[1], ylimits[2], N)
 surface(xs, ys, 𝑈)
 surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 # Calculate
-dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N)
+dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈, 𝐴_x, 𝐴_y)
 
 @time diagonalize!(dh, nev=5);
 
 stateno = 1
-xs, ys, ψ = make_wavefunction(dh, stateno, M, M)
+xs, ys, ψ = make_wavefunction(dh, stateno, 50, 50)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)

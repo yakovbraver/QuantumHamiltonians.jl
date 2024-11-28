@@ -7,9 +7,8 @@ using LinearMaps: LinearMap
 using SparseArrays
 using LDLFactorizations
 
-export DirichletHamiltonian, diagonalize!, make_wavefunction, PeriodicHamiltonian
+export DenseHamiltonian, diagonalize!, make_wavefunction
 
-include("DirichletHamiltonian.jl")
-include("PeriodicHamiltonian.jl")
+include("DenseHamiltonian.jl")
 
 end
