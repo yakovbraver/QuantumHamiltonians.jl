@@ -6,6 +6,7 @@ using LinearAlgebra: Hermitian, diagind, Diagonal, ldiv!, factorize, eigen
 using LinearMaps: LinearMap
 using SparseArrays
 using LDLFactorizations
+using FLoops: @floop
 
 export DenseHamiltonian, diagonalize!, make_wavefunction
 

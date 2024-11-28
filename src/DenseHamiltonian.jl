@@ -113,10 +113,12 @@ function dct_to_matrix(u)
     N = size(u, 1) # number of points used for FFT
     M = (N-1) ÷ 2 # maximum harmonic number
     H = Matrix{eltype(u)}(undef, M^2, M^2)
-    for jx in 1:M, jy in 1:M, j′x in 1:M, j′y in 1:M
-        j₋x = abs(j′x-jx)
-        j₋y = abs(j′y-jy)
-        H[(j′x-1)M+j′y, (jx-1)M+jy] = (u[j₋x+1, j₋y+1] - u[j₋x+1, j′y+jy+1] - u[j′x+jx+1, j₋y+1] + u[j′x+jx+1, j′y+jy+1]) / 4
+    @floop for jx in 1:M
+        for jy in 1:M, j′x in 1:M, j′y in 1:M
+            j₋x = abs(j′x-jx)
+            j₋y = abs(j′y-jy)
+            H[(j′x-1)M+j′y, (jx-1)M+jy] = (u[j₋x+1, j₋y+1] - u[j₋x+1, j′y+jy+1] - u[j′x+jx+1, j₋y+1] + u[j′x+jx+1, j′y+jy+1]) / 4
+        end
     end
     return H
 end
@@ -125,38 +127,38 @@ end
 Based on results of a real 2D fft `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 """
 function dft_to_matrix(u)
-    u₀₀ = u[1, 1] # save the secular component
-    u[1, 1] = 0 # remove because it breaks the structure of the loop below if included
-
     B = size(u, 2) ÷ 2 + 1 # the size of each block; `size(u, 1)` gives the number of block-rows (= number of block-cols)
     H = zeros(eltype(u), B^2, B^2)
+    H[diagind(H)] .= u[1, 1] # save the secular component
+    u[1, 1] = 0 # remove because it breaks the structure of the loop below if included
 
     # it is assumed that u[1, 1] == 0 -- otherwise, one would also need to prevent double pushing of the diagonal elements
-    for c_u in axes(u, 2), r_u in axes(u, 1) # iterate over columns and rows of `u`
-        u[r_u, c_u] == 0 && continue
-        val = u[r_u, c_u]
-        for r_b in r_u:size(u, 1) # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `M+1`th. For actual applications, `size(u, 1) == M+1`
-            c_b = r_b - r_u + 1 # block-column where to place the value
-            if c_u < B # for `c_u` < `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block
-                for (r, c) in zip(c_u:B, 1:B+1-c_u)
-                    push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
-                end
-            elseif c_u == B # for `c_u` = `B`, the value from `c_u`th column of `u` will be put to lower left and upper right corners of the block
-                push_vals!(H; r_b, c_b, r=B, c=1, blocksize=B, val)
-                if r_b != c_b
-                    push_vals!(H; r_b, c_b, r=1, c=B, blocksize=B, val) # if we're in the diagonal block, then the upper right corner is conjugate to lower left and has already been pushed
-                end
-            else # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2M+2-c_u`th upper diagonal of the block
-                if r_b != c_b # if `r_b == c_b`, then upper diagonal of the block has already been filled by pushing the conjugate element
-                    c_u_inv = 2B - c_u
-                    for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
+    @floop for c_u in axes(u, 2)
+        for r_u in axes(u, 1) # iterate over columns and rows of `u`
+            u[r_u, c_u] == 0 && continue
+            val = u[r_u, c_u]
+            for r_b in r_u:size(u, 1) # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `M+1`th. For actual applications, `size(u, 1) == M+1`
+                c_b = r_b - r_u + 1 # block-column where to place the value
+                if c_u < B # for `c_u` < `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block
+                    for (r, c) in zip(c_u:B, 1:B+1-c_u)
                         push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
+                    end
+                elseif c_u == B # for `c_u` = `B`, the value from `c_u`th column of `u` will be put to lower left and upper right corners of the block
+                    push_vals!(H; r_b, c_b, r=B, c=1, blocksize=B, val)
+                    if r_b != c_b
+                        push_vals!(H; r_b, c_b, r=1, c=B, blocksize=B, val) # if we're in the diagonal block, then the upper right corner is conjugate to lower left and has already been pushed
+                    end
+                else # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2M+2-c_u`th upper diagonal of the block
+                    if r_b != c_b # if `r_b == c_b`, then upper diagonal of the block has already been filled by pushing the conjugate element
+                        c_u_inv = 2B - c_u
+                        for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
+                            push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
+                        end
                     end
                 end
             end
         end
     end
-    H[diagind(H)] .= u₀₀
     return H
 end
 
@@ -173,20 +175,24 @@ end
 
 function make_∂_x(M, Lx)
     ∂_x = zeros(typeof(Lx), M^2, M^2)
-    for jx in 1:M, jy in 1:M, j′x in 1+isodd(jx):2:M
-        val = 1/(j′x+jx)
-        j′x != jx && (val += 1/(j′x-jx))
-        ∂_x[(j′x-1)M+jy, (jx-1)M+jy] = 2jx/Lx * val
+    @floop for jx in 1:M
+        for jy in 1:M, j′x in 1+isodd(jx):2:M
+            val = 1/(j′x+jx)
+            j′x != jx && (val += 1/(j′x-jx))
+            ∂_x[(j′x-1)M+jy, (jx-1)M+jy] = 2jx/Lx * val
+        end
     end
     return ∂_x
 end
 
 function make_∂_y(M, Ly)
     ∂_y = zeros(typeof(Ly), M^2, M^2)
-    for jx in 1:M, jy in 1:M, j′y in 1+isodd(jy):2:M
-        val = 1/(j′y+jy)
-        j′y != jy && (val += 1/(j′y-jy))
-        ∂_y[(jx-1)M+j′y, (jx-1)M+jy] = 2jy/Ly * val
+    @floop for jx in 1:M
+        for jy in 1:M, j′y in 1+isodd(jy):2:M
+            val = 1/(j′y+jy)
+            j′y != jy && (val += 1/(j′y-jy))
+            ∂_y[(jx-1)M+j′y, (jx-1)M+jy] = 2jy/Ly * val
+        end
     end
     return ∂_y
 end
@@ -202,13 +208,17 @@ function make_wavefunction(dh::DenseHamiltonian, stateno::Integer, nx::Integer, 
     ψ = Matrix{eltype(V)}(undef, nx, ny)
     if dh.isperiodic
         B = 2M + 1
-        for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
-            ψ[ix, iy] = sum(V[(j-1)B+i, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
-                                                                             for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+        @floop for (iy, y) in enumerate(ys)
+            for (ix, x) in enumerate(xs)
+                ψ[ix, iy] = sum(V[(j-1)B+i, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
+                                                                                 for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+            end
         end
     else
-        for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
-            ψ[ix, iy] = sum(V[(jx-1)M+jy, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jx in 1:M for jy in 1:M) * 2 / √(Lx*Ly)
+        @floop for (iy, y) in enumerate(ys)
+            for (ix, x) in enumerate(xs)
+                ψ[ix, iy] = sum(V[(jx-1)M+jy, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jx in 1:M for jy in 1:M) * 2 / √(Lx*Ly)
+            end
         end
     end
     return xs .+ xlims[1], ys .+ ylims[1], ψ # return "normal" coordinates, in `x ∈ xlims` and `y ∈ ylims`
