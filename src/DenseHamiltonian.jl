@@ -4,7 +4,7 @@ mutable struct DenseHamiltonian{R<:Real,T<:Number} # in practice `T` will be `R`
     Lx::R # period along 𝑥
     Ly::R # period along 𝑦
     isperiodic::Bool
-    M::Int # maximum harmonic number (-M:M for periodic, 1:M for nonperiodic)
+    M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
     H::Matrix{T}
     ε::Vector{R} # eigenvalues
     V::Matrix{T} # eigenvectors matrix
@@ -60,7 +60,7 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
         u = [𝑈(x, y) for x in xs, y in ys]
 
         F = FFTW.plan_r2r(u, FFTW.RODFT00)
-        U = F * u * f |> dct_to_matrix
+        U = F * u * f |> real |> dct_to_matrix
 
         Δ = Diagonal(typeof(Lx)[-π^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M])
         
@@ -70,18 +70,41 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
             a_x = [𝐴_x(x, y) for x in xs, y in ys]
             a_y = [𝐴_y(x, y) for x in xs, y in ys]
             
-            A_x = F * a_x * f |> dct_to_matrix
-            A_y = F * a_y * f |> dct_to_matrix
+            A_x = F * a_x * f |> real |> dct_to_matrix
+            A_y = F * a_y * f |> real |> dct_to_matrix
             
             ∂_x = make_∂_x(M, Lx)
             ∂_y = make_∂_y(M, Ly)
             
             H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
+            # H = sum_parts(A_x, A_y, ∂_y, ∂_x, U, Δ)
         end
     end
     
     return DenseHamiltonian(xlims, ylims, Lx, Ly, isperiodic, M, H, typeof(Lx)[], eltype(H)[;;])
 end
+
+# """
+# More efficient way of calculating
+#     H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
+# Currently intended for non-periodic calculation.
+# """
+# function sum_parts(A_x::Matrix{<:Real}, A_y::Matrix{<:Real}, ∂_y::Matrix{<:Real}, ∂_x::Matrix{<:Real}, U::Matrix{<:Real}, Δ)
+#     H = complex.(U)
+#     H += -Δ
+#     unit = one(eltype(A_x))
+#     null = zero(eltype(A_x))
+#     symm!('L', 'L', unit, A_x, ∂_x, null, U) # we start using `U` as a buffer
+#     symm!('R', 'L', unit, A_x, ∂_x, unit, U)
+#     symm!('L', 'L', unit, A_y, ∂_y, unit, U)
+#     symm!('R', 'L', unit, A_y, ∂_y, unit, U)
+#     H .+= U .* im
+#     symm!('L', 'L', unit, A_x, A_x, null, U)
+#     H += U
+#     symm!('L', 'L', unit, A_y, A_y, null, U)
+#     H += U
+#     return H
+# end
 
 """
 Based on results of 2D DCT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
