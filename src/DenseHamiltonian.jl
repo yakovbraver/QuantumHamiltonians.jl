@@ -52,14 +52,14 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
         end
     else # non-periodic
         N = 2M + 1
-        dx, dy = Lx/N, Ly/N
         xs = range(xlims[1], xlims[2], N)
         ys = range(ylims[1], ylims[2], N)
+        dx, dy = xs[2]-xs[1], ys[2]-ys[1]
 
         f = dx/Lx * dy/Ly
         u = [𝑈(x, y) for x in xs, y in ys]
 
-        F = FFTW.plan_r2r(u, FFTW.RODFT00)
+        F = FFTW.plan_r2r(u, FFTW.REDFT00)
         U = F * u * f |> real |> dct_to_matrix
 
         Δ = Diagonal(typeof(Lx)[-π^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M])
