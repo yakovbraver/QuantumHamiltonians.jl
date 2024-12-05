@@ -31,6 +31,7 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
 
         f = dx/Lx * dy/Ly
         u = [𝑈(x, y) for x in xs, y in ys]
+
         F = FFTW.plan_rfft(u)
         U = F * u * f |> dft_to_matrix
     
@@ -59,8 +60,9 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
         f = dx/Lx * dy/Ly
         u = [𝑈(x, y) for x in xs, y in ys]
 
-        F = FFTW.plan_r2r(u, FFTW.REDFT00)
-        U = F * u * f |> real |> dct_to_matrix
+        F = FFTW.plan_r2r!(u, FFTW.REDFT00)
+        (F * u) .*= f
+        U = dct_to_matrix(u)
 
         Δ = Diagonal(typeof(Lx)[-π^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M])
         
@@ -70,8 +72,10 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
             a_x = [𝐴_x(x, y) for x in xs, y in ys]
             a_y = [𝐴_y(x, y) for x in xs, y in ys]
             
-            A_x = F * a_x * f |> real |> dct_to_matrix
-            A_y = F * a_y * f |> real |> dct_to_matrix
+            (F * a_x) .*= f
+            A_x = dct_to_matrix(a_x)
+            (F * a_y) .*= f
+            A_y = dct_to_matrix(a_y)
             
             ∂_x = make_∂_x(M, Lx)
             ∂_y = make_∂_y(M, Ly)
