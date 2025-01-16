@@ -1,4 +1,4 @@
-mutable struct PeriodicHamiltonian{R<:Real,T<:Number} # in practice `T` will be `R` or `Complex{R}`
+mutable struct SparseHamiltonian{R<:Real,T<:Number} # in practice `T` will be `R` or `Complex{R}`
     xlims::Tuple{R, R}
     ylims::Tuple{R, R}
     Lx::R # period along 𝑥
@@ -9,15 +9,15 @@ mutable struct PeriodicHamiltonian{R<:Real,T<:Number} # in practice `T` will be 
 end
 
 """
-Construct a `PeriodicHamiltonian` object.
+Construct a `SparseHamiltonian` object.
 Coordinate functions will be FFT'ed using harmonics from `-M` to `M`, yielding `M=2N` points.
 The size of the Hamiltonian will be `(M+1)`² × `(M+1)`².
 To make sure that the resulting Hamiltonian matrix is of the desired type `T`, the type of elements of `xlims`, `ylims`,
 and the return type of the passed functions has to be the same. E.g., if all are `Float32`, then `T` will be `Float32` if only `𝑈` is passed,
 and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments will result in widening.
 """
-function PeriodicHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Real}; 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
-                              𝐴_y::Union{Function,Nothing}=nothing, M=64)
+function SparseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Real}; 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
+                           𝐴_y::Union{Function,Nothing}=nothing, M=64)
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1] # area dimensions
     if isodd(M)
         @warn "`M` must be even. Reducing `M` by one."
@@ -51,7 +51,7 @@ function PeriodicHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:
         
         H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
     end
-    return PeriodicHamiltonian(xlims, ylims, Lx, Ly, H, typeof(Lx)[], eltype(H)[;;])
+    return SparseHamiltonian(xlims, ylims, Lx, Ly, H, typeof(Lx)[], eltype(H)[;;])
 end
 
 """
@@ -167,11 +167,11 @@ function push_vals!(rows, cols, vals, counter; r_b, c_b, r, c, blocksize, val)
     vals[counter+1] = val'
 end
 
-function diagonalize!(dh::PeriodicHamiltonian; nev::Integer)
-    S, info = partialschur(sparse_linear_map(Hermitian(dh.H)); nev, which=:LM);
+function diagonalize!(sh::SparseHamiltonian; nev::Integer)
+    S, info = partialschur(sparse_linear_map(Hermitian(sh.H)); nev, which=:LM);
     @show info
-    dh.V = S.Q
-    dh.ε = inv.(real.(S.eigenvalues))
+    sh.V = S.Q
+    sh.ε = inv.(real.(S.eigenvalues))
 end
 
 function sparse_linear_map(A)
@@ -184,8 +184,8 @@ end
 Construct wavefunction of state number `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
 Return (`xs`, `ys`, `ψ`).
 """
-function make_wavefunction(dh::PeriodicHamiltonian, stateno::Integer, nx::Integer, ny::Integer)
-    (;Lx, Ly, xlims, ylims, V) = dh
+function make_wavefunction(sh::SparseHamiltonian, stateno::Integer, nx::Integer, ny::Integer)
+    (;Lx, Ly, xlims, ylims, V) = sh
     B = Int(√size(V, 1))
     j_max = (B - 1) ÷ 2
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`

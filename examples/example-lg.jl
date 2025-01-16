@@ -18,28 +18,35 @@ function 𝐴_y(x::Real, y::Real)
     -ϵ^2 * √(x^2+y^2) / (1 + ϵ^2*(x^2+y^2)) * cos(atan(y, x))
 end
 
-const ϵ = 10f0
+Float = Float32 # operating type
 
-xlimits = (-2, 2) .|> Float32
-ylimits = (-2, 2) .|> Float32
+ϵ::Float = 1
+
+xlimits = (-4, 4) .|> Float
+ylimits = (-4, 4) .|> Float
 
 # plot potential
-N = 2^6-1
-M = 2N + 1
-xs = range(xlimits[1], xlimits[2], M)
-ys = range(ylimits[1], ylimits[2], M)
+M = 70
+N = 2M + 1 # see how the potential looks with number of points that will be used for FFT
+xs = range(xlimits[1], xlimits[2], N)
+ys = range(ylimits[1], ylimits[2], N)
 surface(xs, ys, 𝑈)
 surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 # Calculate
-dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N)
-
+@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈, 𝐴_x, 𝐴_y);
 @time diagonalize!(dh, nev=5);
+dh.ε[1:5]
 
 stateno = 1
-xs, ys, ψ = make_wavefunction(dh, stateno, M, M)
-surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+@time xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100);
+surface(xs, ys, abs2.(ψ)', xlabel="x/w_0", ylabel="y/w_0", c=cmap_rainbow, title=L"|\psi|^2")
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
 
-dh.ε
+using Measures
+theme(:dark, size=(1200, 500))
+fig_abs = heatmap(xs, ys, abs2.(ψ)', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi|^2");
+fig_phi = heatmap(xs, ys, angle.(ψ)' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title="phase", cbar_title="phase ("*L"\pi"*" rad)");
+fig_phi = heatmap(xs, ys, angle.(ψ)' ./ π, c=cmap_cyclic, xlabel=L"x/w_0", ylabel=L"y/w_0", title="phase", cbar_title="phase ("*L"\pi"*" rad)");
+plot(fig_abs, fig_phi, plot_title=L"\beta=0, \epsilon=%$ϵ"*". State no. $stateno, "*L"E=%$(round(dh.ε[stateno], sigdigits=3))", bottommargin=5mm, leftmargin=7mm, plot_titlefontcolor=:white)
+savefig("lg_wf_xy4_epsilon$(ϵ)_state$stateno.png")
