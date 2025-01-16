@@ -76,22 +76,23 @@ xlimits = (0, 2π) .|> Float
 ylimits = (0, 2π) .|> Float
 
 # plot potential
-M = 25
+M = 60
 xs = range(xlimits[1], xlimits[2], 2M)
 ys = range(ylimits[1], ylimits[2], 2M)
 surface(xs, ys, 𝑈)
 surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
+# use either sparse or dense, whichever you like. Sparse is faster but less accurate
 @time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝑈, 𝐴_x, 𝐴_y);
+@time dh = SparseHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, M=2M);
 @time diagonalize!(dh, nev=5);
 dh.ε
 
-stateno = 4
-xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100)
+stateno = 1
+@time xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100);
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
 writedlm("exact_lambda_no1_256.txt", ψ, ',')
 
-@time dh = DirichletHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, N);
 @time diagonalize!(dh, nev=5);

@@ -11,8 +11,8 @@ mutable struct DenseHamiltonian{R<:Real,T<:Number} # in practice `T` will be `R`
 end
 
 """
-Construct a `Hamiltonian` object.
-`M` is the maximum harmonic number. In the periodic case, the size of the Hamiltonian will be `M`² × `M`².
+Construct a `DenseHamiltonian` object.
+`M` is the maximum harmonic number. In the periodic case, the size of the Hamiltonian will be (`2M`)² × (`2M`)².
 In nonperiodic case, the size will be `(2M+1)`² × `(2M+1)`².
 desired size of each block of the Hamiltonian, power of 2 minus one recommended.
 To make sure that the resulting Hamiltonian matrix is of the desired type `T`, the type of elements of `xlims`, `ylims`,
@@ -236,7 +236,7 @@ function diagonalize!(dh::DenseHamiltonian; nev::Integer)
     if nev == 0
         dh.ε, dh.V = eigen(Hermitian(dh.H))
     else
-        S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM); # `which=:SR` with no shift-invert does not converge
+        S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM, tol=1e-7); # `which=:SR` with no shift-invert does not converge
         @show info
         dh.V = S.Q
         dh.ε = inv.(real.(S.eigenvalues))

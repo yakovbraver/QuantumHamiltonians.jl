@@ -8,8 +8,9 @@ using SparseArrays
 using LDLFactorizations
 using FLoops: @floop
 
-export DenseHamiltonian, diagonalize!, make_wavefunction
+export DenseHamiltonian, SparseHamiltonian, diagonalize!, make_wavefunction
 
 include("DenseHamiltonian.jl")
+include("SparseHamiltonian.jl")
 
 end
