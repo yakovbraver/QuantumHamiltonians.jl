@@ -19,7 +19,7 @@ To make sure that the resulting Hamiltonian matrix is of the desired type `T`, t
 and the return type of the passed functions has to be the same. E.g., if all are `Float32`, then `T` will be `Float32` if only `𝑈` is passed,
 and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments will result in widening.
 """
-function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Real}; isperiodic::Bool, M::Integer, 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
+function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Real}; isperiodic::Bool, M::Integer, δ::Real=1, 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
                           𝐴_y::Union{Function,Nothing}=nothing)
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1]
 
@@ -36,7 +36,7 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
         U = F * u * f |> dft_to_matrix
     
         if 𝐴_x === nothing
-            Δ = Diagonal(typeof(Lx)[-(2π)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -M:M for jy in -M:M])
+            Δ = Diagonal(typeof(Lx)[-(2π*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -M:M for jy in -M:M]) # this is δ²Δ
             H = -Δ + U
         else
             a_x = [𝐴_x(x, y) for x in xs, y in ys]
@@ -45,8 +45,8 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
             A_x = F * a_x * f |> dft_to_matrix
             A_y = F * a_y * f |> dft_to_matrix
             
-            ∂_x = Diagonal(typeof(Lx)[2π * jx/Lx for jx in -M:M for jy in -M:M]) # this is -i∂ₓ
-            ∂_y = Diagonal(typeof(Lx)[2π * jy/Ly for jx in -M:M for jy in -M:M]) # this is -i∂y
+            ∂_x = Diagonal(typeof(Lx)[2π * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
+            ∂_y = Diagonal(typeof(Lx)[2π * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
             
             # H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
             H = (∂_x - A_x)^2 + (∂_y - A_y)^2 + U
@@ -65,7 +65,7 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
         U = dct_to_matrix(u)
 
         if 𝐴_x === nothing
-            Δ = Diagonal(typeof(Lx)[-π^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M])
+            Δ = Diagonal(typeof(Lx)[-(π*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M]) # this is δ²Δ
             H = -Δ + U
         else
             a_x = [𝐴_x(x, y) for x in xs, y in ys]
@@ -81,7 +81,7 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
             
             # H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
             # H = sum_parts(A_x, A_y, ∂_y, ∂_x, U, Δ)
-            H = (-im*∂_x - A_x)^2 + (-im*∂_y - A_y)^2 + U
+            H = (-im*δ*∂_x - A_x)^2 + (-im*δ*∂_y - A_y)^2 + U
         end
     end
     

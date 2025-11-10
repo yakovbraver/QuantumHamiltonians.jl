@@ -16,7 +16,7 @@ To make sure that the resulting Hamiltonian matrix is of the desired type `T`, t
 and the return type of the passed functions has to be the same. E.g., if all are `Float32`, then `T` will be `Float32` if only `𝑈` is passed,
 and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments will result in widening.
 """
-function SparseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Real}; 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
+function SparseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Real}; δ::Real=1, 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
                            𝐴_y::Union{Function,Nothing}=nothing, M=64)
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1] # area dimensions
     if isodd(M)
@@ -37,7 +37,7 @@ function SparseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Re
     m = M÷2
     
     if 𝐴_x === nothing
-        Δ = Diagonal(typeof(Lx)[-(2π)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -m:m for jy in -m:m])
+        Δ = Diagonal(typeof(Lx)[-(2π*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -m:m for jy in -m:m]) # this is δ²Δ
         H = -Δ + U
     else
         a_x = [𝐴_x(x, y) for x in xs, y in ys]
@@ -46,8 +46,8 @@ function SparseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Re
         A_x = F * a_x * f |> fft_to_matrix!
         A_y = F * a_y * f |> fft_to_matrix!
         
-        ∂_x = Diagonal(typeof(Lx)[2π * jx/Lx for jx in -m:m for jy in -m:m]) # this is -i∂ₓ
-        ∂_y = Diagonal(typeof(Lx)[2π * jy/Ly for jx in -m:m for jy in -m:m]) # this is -i∂y
+        ∂_x = Diagonal(typeof(Lx)[2π * δ * jx/Lx for jx in -m:m for jy in -m:m]) # this is -iδ∂ₓ
+        ∂_y = Diagonal(typeof(Lx)[2π * δ * jy/Ly for jx in -m:m for jy in -m:m]) # this is -iδ∂y
 
         # H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
         H = (∂_x - A_x)^2 + (∂_y - A_y)^2 + U
