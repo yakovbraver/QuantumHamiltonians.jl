@@ -167,8 +167,8 @@ function dft_to_matrix(u)
 end
 
 """
-Push value `val` stored at (`r`, `c`) in some matrix to the block (`r_b`, `c_b`) of a sparse matrix encoded in `rows`, `cols`, `vals`.
-`counter` shows where to push. The complex-conjugate element is also pushed.
+Push value `val` to element (`r`, `c`) of the block (`r_b`, `c_b`) of `H`, with block size being `blocksize`.
+The complex-conjugate element is also pushed.
 """
 function push_vals!(H; r_b, c_b, r, c, blocksize, val)
     i = (r_b-1)*blocksize + r
@@ -236,14 +236,14 @@ function diagonalize!(dh::DenseHamiltonian; nev::Integer)
     if nev == 0
         dh.ε, dh.V = eigen(Hermitian(dh.H))
     else
-        S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM, tol=1e-7); # `which=:SR` with no shift-invert does not converge
+        S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
         @show info
         dh.V = S.Q
-        dh.ε = inv.(real.(S.eigenvalues))
+        dh.ε = inv.(real.(S.eigenvalues)) # invert back
     end
 end
 
-"Helper function for diagonalisation."
+"Helper function for diagonalisation. It encodes the in-place multiplication by the inverse (required for shift-invert)."
 function dense_linear_map(A)
     F = factorize(A)
     LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)

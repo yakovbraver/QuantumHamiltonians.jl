@@ -150,7 +150,6 @@ function fft_to_matrix!(u, d::Tuple{<:Real,<:Real}=(0, 0))
     return sparse(rows, cols, vals)
 end
 
-
 """
 Push value `val` stored at (`r`, `c`) in some matrix to the block (`r_b`, `c_b`) of a sparse matrix encoded in `rows`, `cols`, `vals`.
 `counter` shows where to push. The complex-conjugate element is also pushed.
@@ -167,13 +166,15 @@ function push_vals!(rows, cols, vals, counter; r_b, c_b, r, c, blocksize, val)
     vals[counter+1] = val'
 end
 
+"Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`."
 function diagonalize!(sh::SparseHamiltonian; nev::Integer)
-    S, info = partialschur(sparse_linear_map(Hermitian(sh.H)); nev, which=:LM);
+    S, info = partialschur(sparse_linear_map(Hermitian(sh.H)); nev, which=:LM); # using "shift-invert" (although shift is zero)
     @show info
     sh.V = S.Q
-    sh.ε = inv.(real.(S.eigenvalues))
+    sh.ε = inv.(real.(S.eigenvalues)) # invert back
 end
 
+"Helper function for diagonalisation. It encodes the in-place multiplication by the inverse (required for shift-invert)."
 function sparse_linear_map(A)
     LDL = ldl_analyze(A)
     ldl_factorize!(A, LDL) # mutates (updates) `LDL`, does not alter `A`
