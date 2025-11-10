@@ -35,9 +35,8 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
         F = FFTW.plan_rfft(u)
         U = F * u * f |> dft_to_matrix
     
-        Δ = Diagonal(typeof(Lx)[-(2π)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -M:M for jy in -M:M])
-        
         if 𝐴_x === nothing
+            Δ = Diagonal(typeof(Lx)[-(2π)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -M:M for jy in -M:M])
             H = -Δ + U
         else
             a_x = [𝐴_x(x, y) for x in xs, y in ys]
@@ -49,7 +48,8 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
             ∂_x = Diagonal(Complex{typeof(Lx)}[2π*im * jx/Lx for jx in -M:M for jy in -M:M])
             ∂_y = Diagonal(Complex{typeof(Lx)}[2π*im * jy/Ly for jx in -M:M for jy in -M:M])
             
-            H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
+            # H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
+            H = (-im*∂_x - A_x)^2 + (-im*∂_y - A_y)^2 + U
         end
     else # non-periodic
         N = 2M + 1
@@ -64,9 +64,8 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
         (F * u) .*= f
         U = dct_to_matrix(u)
 
-        Δ = Diagonal(typeof(Lx)[-π^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M])
-        
         if 𝐴_x === nothing
+            Δ = Diagonal(typeof(Lx)[-π^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M])
             H = -Δ + U
         else
             a_x = [𝐴_x(x, y) for x in xs, y in ys]
@@ -80,8 +79,9 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
             ∂_x = make_∂_x(M, Lx)
             ∂_y = make_∂_y(M, Ly)
             
-            H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
+            # H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
             # H = sum_parts(A_x, A_y, ∂_y, ∂_x, U, Δ)
+            H = (-im*∂_x - A_x)^2 + (-im*∂_y - A_y)^2 + U
         end
     end
     

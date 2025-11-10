@@ -1,7 +1,7 @@
 name = "XSpaceHamiltonians"
 uuid = "60faaa36-42bd-44c6-92a9-1db15a778fca"
-authors = ["Yakov <jakovbraver@gmail.com>"]
 version = "0.1.0"
+authors = ["Yakov <jakovbraver@gmail.com>"]
 
 [deps]
 ArnoldiMethod = "ec485272-7323-5ecc-a04f-4719b315124d"

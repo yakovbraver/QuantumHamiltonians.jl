@@ -3,7 +3,7 @@ using XSpaceHamiltonians
 using Plots, DelimitedFiles
 plotlyjs()
 cmap_rainbow = cgrad(:rainbow_bgyrm_35_85_c69_n256);
-cmap_cyclic = cgrad(:cyclic_mrybm_35_75_c68_n256);
+cmap_phase = cgrad(:RdBu_9);
 theme(:dark, size=(600, 500))
 
 function 𝑈(x::Real, y::Real)
@@ -66,7 +66,7 @@ stateno = 1
 xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
+heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ########## χ = π/2, FULL
 
@@ -92,7 +92,7 @@ stateno = 1
 @time xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100);
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
+heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 writedlm("exact_lambda_no1_256.txt", ψ, ',')
 
 @time diagonalize!(dh, nev=5);
