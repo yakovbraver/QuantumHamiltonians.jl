@@ -45,11 +45,11 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
             A_x = F * a_x * f |> dft_to_matrix
             A_y = F * a_y * f |> dft_to_matrix
             
-            ∂_x = Diagonal(Complex{typeof(Lx)}[2π*im * jx/Lx for jx in -M:M for jy in -M:M])
-            ∂_y = Diagonal(Complex{typeof(Lx)}[2π*im * jy/Ly for jx in -M:M for jy in -M:M])
+            ∂_x = Diagonal(typeof(Lx)[2π * jx/Lx for jx in -M:M for jy in -M:M]) # this is -i∂ₓ
+            ∂_y = Diagonal(typeof(Lx)[2π * jy/Ly for jx in -M:M for jy in -M:M]) # this is -i∂y
             
             # H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
-            H = (-im*∂_x - A_x)^2 + (-im*∂_y - A_y)^2 + U
+            H = (∂_x - A_x)^2 + (∂_y - A_y)^2 + U
         end
     else # non-periodic
         N = 2M + 1

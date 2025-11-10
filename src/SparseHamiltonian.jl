@@ -46,11 +46,11 @@ function SparseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Re
         A_x = F * a_x * f |> fft_to_matrix!
         A_y = F * a_y * f |> fft_to_matrix!
         
-        ∂_x = Diagonal(Complex{typeof(Lx)}[2π*im * jx/Lx for jx in -m:m for jy in -m:m])
-        ∂_y = Diagonal(Complex{typeof(Lx)}[2π*im * jy/Ly for jx in -m:m for jy in -m:m])
-        
+        ∂_x = Diagonal(typeof(Lx)[2π * jx/Lx for jx in -m:m for jy in -m:m]) # this is -i∂ₓ
+        ∂_y = Diagonal(typeof(Lx)[2π * jy/Ly for jx in -m:m for jy in -m:m]) # this is -i∂y
+
         # H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
-        H = (-im*∂_x - A_x)^2 + (-im*∂_y - A_y)^2 + U
+        H = (∂_x - A_x)^2 + (∂_y - A_y)^2 + U
     end
     return SparseHamiltonian(xlims, ylims, Lx, Ly, H, typeof(Lx)[], eltype(H)[;;])
 end
