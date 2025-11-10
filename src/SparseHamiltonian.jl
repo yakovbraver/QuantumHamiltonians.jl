@@ -96,9 +96,9 @@ end
 
 """
 Based on results of a real 2D fft `u`, return `rows, cols, vals` tuple for constructing a sparse matrix.
-Optionally, a tuple `δ` of shifts in 𝑥 and 𝑦 directions can be supplied.
+Optionally: `d` is a tuple of shifts in 𝑥 and 𝑦 directions, divided by the corresponding periods.
 """
-function fft_to_matrix!(u, δ::Tuple{<:Real,<:Real}=(0, 0))
+function fft_to_matrix!(u, d::Tuple{<:Real,<:Real}=(0, 0))
     n_elem = filter_count!(u) # filter small values and calculate the number of elements in the final Hamiltonian
 
     rows = Vector{Int32}(undef, n_elem)
@@ -108,15 +108,14 @@ function fft_to_matrix!(u, δ::Tuple{<:Real,<:Real}=(0, 0))
     u₀₀ = u[1, 1] # save the secular component
     u[1, 1] = 0 # remove because it breaks the structure of the loop below if included
 
-    L = π # periodicity of the potential, TO BE REVISED
     M = size(u, 2) ÷ 2 # M + 1 gives the size of each block; `size(u, 1)` gives the number of block-rows (= number of block-cols)
     counter = 1
 
     # it is assumed that u[1, 1] == 0 -- otherwise, one would also need to prevent double pushing of the diagonal elements
     for c_u in axes(u, 2), r_u in axes(u, 1) # iterate over columns and rows of `u`
         u[r_u, c_u] == 0 && continue
-        e = c_u <= M+1 ? cispi(2/L*(c_u-1)*δ[1]) : cispi(2/L*(c_u-(2M+1))*δ[1])
-        val = u[r_u, c_u] * e * cispi(2/L*(r_u-1)*δ[2])
+        e = c_u <= M+1 ? cispi(2*(c_u-1)*d[1]) : cispi(2*(c_u-(2M+1))*d[1]) # the factor is exp(2πi/L n) but division by `L` is absorbed in `d`
+        val = u[r_u, c_u] * e * cispi(2*(r_u-1)*d[2])
         for r_b in r_u:size(u, 1) # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `M+1`th. For actual applications, `size(u, 1) == M+1`
             c_b = r_b - r_u + 1 # block-column where to place the value
             if c_u <= M # for `c_u` ≤ `M`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block
