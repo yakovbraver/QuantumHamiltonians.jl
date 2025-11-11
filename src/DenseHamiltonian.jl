@@ -1,13 +1,24 @@
-mutable struct DenseHamiltonian{R<:Real,T<:Number} # in practice `T` will be `R` or `Complex{R}`
+"""
+An object representing a spatial [𝑟 = (𝑥, 𝑦)], possibly quasimomentum-dependent Hamiltonian
+    𝐻(𝑟) = [-i𝛿∇ + 𝑞 - 𝐴(𝑟)]² + 𝑈(𝑟)
+as a dense matrix.
+"""
+mutable struct DenseHamiltonian{R<:Real,T<:Number} # in practice `T` shoudld be `R` or `Complex{R}` -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Tuple{R, R}
     ylims::Tuple{R, R}
-    Lx::R # period along 𝑥
-    Ly::R # period along 𝑦
+    Lx::R # length along 𝑥
+    Ly::R # length along 𝑦
+    δ::R # coefficient of the momentum term: -iδ∇
     isperiodic::Bool
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
+    𝑈::Union{Function,Nothing}
+    𝐴_x::Union{Function,Nothing}
+    𝐴_y::Union{Function,Nothing}
     H::Matrix{T}
     ε::Vector{R} # eigenvalues
     V::Matrix{T} # eigenvectors matrix
+    ε_q::Array{R,3} # ε_q[n, iqx, iqy] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
+    V_q::Array{T,4} # V_q[:, n, iqx, iqy] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
 end
 
 """
@@ -85,7 +96,7 @@ function DenseHamiltonian(xlims::Tuple{<:Real,<:Real}, ylims::Tuple{<:Real,<:Rea
         end
     end
     
-    return DenseHamiltonian(xlims, ylims, Lx, Ly, isperiodic, M, H, typeof(Lx)[], eltype(H)[;;])
+    return DenseHamiltonian(xlims, ylims, Lx, Ly, δ, isperiodic, M, 𝑈, 𝐴_x, 𝐴_y, H, typeof(Lx)[], eltype(H)[;;], typeof(Lx)[;;;], eltype(H)[;;;;])
 end
 
 # """
@@ -203,22 +214,31 @@ end
 
 """
 Construct wavefunction of state number `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
-Return (`xs`, `ys`, `ψ`).
+Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
 """
-function make_wavefunction(dh::DenseHamiltonian, stateno::Integer, nx::Integer, ny::Integer)
-    (;Lx, Ly, xlims, ylims, M, V) = dh
+function make_wavefunction(dh::DenseHamiltonian, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0)
+    (;Lx, Ly, xlims, ylims, M, V, V_q) = dh
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ys = range(0, Ly, ny)
     ψ = Matrix{eltype(V)}(undef, nx, ny)
     if dh.isperiodic
         B = 2M + 1
-        @floop for (iy, y) in enumerate(ys)
-            for (ix, x) in enumerate(xs)
-                ψ[ix, iy] = sum(V[(j-1)B+i, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
-                                                                                 for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+        if iqx != 0 # if quasimomentum index has been passed
+            @floop for (iy, y) in enumerate(ys)
+                for (ix, x) in enumerate(xs)
+                    ψ[ix, iy] = sum(V_q[(j-1)B+i, stateno, iqx, iqy]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
+                                                                                                 for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+                end
+            end
+        else # no quasimomentum index
+            @floop for (iy, y) in enumerate(ys)
+                for (ix, x) in enumerate(xs)
+                    ψ[ix, iy] = sum(V_q[(j-1)B+i, stateno, iqx, iqy]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
+                                                                                                 for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+                end
             end
         end
-    else
+    else # nonperiodic
         @floop for (iy, y) in enumerate(ys)
             for (ix, x) in enumerate(xs)
                 ψ[ix, iy] = sum(V[(jx-1)M+jy, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jx in 1:M for jy in 1:M) * 2 / √(Lx*Ly)
@@ -247,4 +267,61 @@ end
 function dense_linear_map(A)
     F = factorize(A)
     LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
+end
+
+"""
+Calculate eigenenergies for all pairs of quasimomenta in `qxs` and `qys`.
+Calculate `nev` lowest bands using `ArnoldiMethod`.
+If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` performed.
+"""
+function diagonalize!(dh::DenseHamiltonian{R,T}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nev::Integer=0) where {R<:Real, T<:Number}
+    (;M, xlims, ylims, Lx, Ly, δ, 𝑈, 𝐴_x, 𝐴_y) = dh
+   
+    dh.ε_q = Array{R,3}(undef, nev, length(qxs), length(qys))
+    dh.V_q = Array{T,4}(undef, (2M+1)^2, nev, length(qxs), length(qys))
+    
+    if 𝐴_x === nothing
+        H_diag = diagview(dh.H)
+        U_diag = H_diag[(end+1) ÷ 2] # generally, `H = -Δ + U`, but this element is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian` constructor)
+    else
+        N = 4M # number of points for FFT. This will yield harmonics from -2M to 2M
+        dx, dy = Lx/N, Ly/N
+        xs = range(xlims[1], xlims[2]-dx, N)
+        ys = range(ylims[1], ylims[2]-dy, N)
+
+        f = dx/Lx * dy/Ly
+        u = [𝑈(x, y) for x in xs, y in ys]
+
+        F = FFTW.plan_rfft(u)
+        U = F * u * f |> dft_to_matrix
+    
+        a_x = [𝐴_x(x, y) for x in xs, y in ys]
+        a_y = [𝐴_y(x, y) for x in xs, y in ys]
+
+        D_x = F * a_x * -f |> dft_to_matrix # this is -𝐴ₓ
+        D_y = F * a_y * -f |> dft_to_matrix # this is -𝐴y
+        
+        D_x += Diagonal(typeof(Lx)[2π * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this adds -iδ∂ₓ and results in -iδ∂ₓ-𝐴ₓ
+        D_y += Diagonal(typeof(Lx)[2π * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this adds -iδ∂y and results in -iδ∂y-𝐴y
+    end
+    
+    # iterate quasimomenta
+    for (iqy, qy) in enumerate(qys), (iqx, qx) in enumerate(qxs)
+        # update diagonal
+        if 𝐴_x === nothing
+            H_diag = [(2π*δ*jx/Lx + qx)^2 + (2π*δ*jy/Ly + qy)^2 + U_diag for jx in -M:M for jy in -M:M]
+        else
+            dh.H = (D_x + LA.I*qx)^2 + (D_y + LA.I*qy)^2 + U
+        end
+
+        # diagonalise
+        if nev == 0
+            dh.ε_q[:, iqx, iqy], dh.V_q[:, :, iqx, iqy] = eigvals(Hermitian(dh.H))
+        else
+            S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
+            @show info
+            dh.V_q[:, :, iqx, iqy] = S.Q
+            dh.ε_q[:, iqx, iqy] = inv.(real.(S.eigenvalues)) # invert back
+        end
+    end
 end
