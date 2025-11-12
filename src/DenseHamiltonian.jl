@@ -272,12 +272,14 @@ end
 Calculate eigenenergies for all pairs of quasimomenta in `qxs` and `qys`.
 Calculate `nev` lowest bands using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
+Note that `dh.H` is modified in the process.
 """
 function diagonalize!(dh::DenseHamiltonian{R,T}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nev::Integer=0) where {R<:Real, T<:Number}
     (;M, xlims, ylims, Lx, Ly, δ, 𝑈, 𝐴_x, 𝐴_y) = dh
-   
-    dh.ε_q = Array{R,3}(undef, nev, length(qxs), length(qys))
-    dh.V_q = Array{T,4}(undef, (2M+1)^2, nev, length(qxs), length(qys))
+
+    nsaves = nev == 0 ? (2M+1)^2 : nev # number of eigenvalues and eigenvectors to allocate
+    dh.ε_q = Array{R,3}(undef, nsaves, length(qxs), length(qys))
+    dh.V_q = Array{T,4}(undef, (2M+1)^2, nsaves, length(qxs), length(qys))
     
     if 𝐴_x === nothing
         H_diag = diagview(dh.H)
@@ -315,7 +317,7 @@ function diagonalize!(dh::DenseHamiltonian{R,T}, qxs::AbstractVector{<:Real}, qy
 
         # diagonalise
         if nev == 0
-            dh.ε_q[:, iqx, iqy], dh.V_q[:, :, iqx, iqy] = eigvals(Hermitian(dh.H))
+            dh.ε_q[:, iqx, iqy], dh.V_q[:, :, iqx, iqy] = eigen(Hermitian(dh.H))
         else
             S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
             @show info
