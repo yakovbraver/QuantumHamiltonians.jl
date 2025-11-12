@@ -25,7 +25,6 @@ end
 Construct a `DenseHamiltonian` object.
 `M` is the maximum harmonic number. In the periodic case, the size of the Hamiltonian will be (`2M`)² × (`2M`)².
 In nonperiodic case, the size will be `(2M+1)`² × `(2M+1)`².
-desired size of each block of the Hamiltonian, power of 2 minus one recommended.
 To make sure that the resulting Hamiltonian matrix is of the desired type `T`, the type of elements of `xlims`, `ylims`,
 and the return type of the passed functions has to be the same. E.g., if all are `Float32`, then `T` will be `Float32` if only `𝑈` is passed,
 and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments will result in widening.
@@ -233,8 +232,8 @@ function make_wavefunction(dh::DenseHamiltonian, stateno::Integer, nx::Integer, 
         else # no quasimomentum index
             @floop for (iy, y) in enumerate(ys)
                 for (ix, x) in enumerate(xs)
-                    ψ[ix, iy] = sum(V_q[(j-1)B+i, stateno, iqx, iqy]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
-                                                                                                 for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+                    ψ[ix, iy] = sum(V[(j-1)B+i, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
+                                                                                     for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
                 end
             end
         end
@@ -272,7 +271,7 @@ end
 """
 Calculate eigenenergies for all pairs of quasimomenta in `qxs` and `qys`.
 Calculate `nev` lowest bands using `ArnoldiMethod`.
-If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` performed.
+If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 """
 function diagonalize!(dh::DenseHamiltonian{R,T}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nev::Integer=0) where {R<:Real, T<:Number}
     (;M, xlims, ylims, Lx, Ly, δ, 𝑈, 𝐴_x, 𝐴_y) = dh
