@@ -126,18 +126,11 @@ Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 """
 function diagonalize!(dh::DenseHamiltonian1D; nev::Integer=0)
+    H = dh.iseven ? Symmetric(dh.H, :L) : Hermitian(dh.H, :L)
     if nev == 0
-        if dh.iseven
-            dh.ε, dh.V = eigen(Hermitian(dh.H, :L))
-        else
-            dh.ε, dh.V = eigen(Symmetric(dh.H, :L))
-        end
+        dh.ε, dh.V = eigen(H)
     else
-        if dh.iseven
-            S, info = partialschur(dense_linear_map(Hermitian(dh.H, :L)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
-        else
-            S, info = partialschur(dense_linear_map(Symmetric(dh.H, :L)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
-        end
+        S, info = partialschur(dense_linear_map(H); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
         @show info
         dh.V = S.Q
         dh.ε = inv.(real.(S.eigenvalues)) # invert back
@@ -152,25 +145,30 @@ If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is per
 function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; nev::Integer=0) where {R<:Real, T<:Number}
     (;M, Lx, δ) = dh
    
-    dh.ε_q = Array{R,2}(undef, nev, length(qxs))
-    dh.V_q = Array{T,3}(undef, 2M+1, nev, length(qxs))
+    nsaves = nev == 0 ? 2M+1 : nev # number of eigenvalues and eigenvectors to allocate
+    dh.ε_q = Array{R,2}(undef, nsaves, length(qxs))
+    dh.V_q = Array{T,3}(undef, 2M+1, nsaves, length(qxs))
     
     H_diag = diagview(dh.H)
+    H_diag_copy = diag(dh.H) # a copy for restoring after the calculation
     U_diag = H_diag[(end+1) ÷ 2] # generally, `H = -Δ + U`, but this element is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian1D` constructor)
     
+    H = dh.iseven ? Symmetric(dh.H, :L) : Hermitian(dh.H, :L)
+
     # iterate quasimomenta
     for (iqx, qx) in enumerate(qxs)
         # update diagonal
-        H_diag = [(2π*δ*jx/Lx + qx)^2 + U_diag for jx in -M:M]
+        H_diag .= [(2π*δ*jx/Lx + qx)^2 + U_diag for jx in -M:M]
 
         # diagonalise
         if nev == 0
-            dh.ε_q[:, iqx], dh.V_q[:, :, iqx] = eigvals(Hermitian(dh.H, :L))
+            dh.ε_q[:, iqx], dh.V_q[:, :, iqx] = eigen(H)
         else
-            S, info = partialschur(dense_linear_map(Hermitian(dh.H, :L)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
+            S, info = partialschur(dense_linear_map(H); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
             @show info
             dh.V_q[:, :, iqx] = S.Q
             dh.ε_q[:, iqx] = inv.(real.(S.eigenvalues)) # invert back
         end
     end
+    H_diag .= H_diag_copy # restore initial values
 end
