@@ -1,5 +1,16 @@
+"A type for storing the Wannier functions."
+mutable struct Wanniers{R<:Real}
+    targetlevels::Vector{Int} # numbers of quasienergy levels to use for constructing wanniers (this is used in the Floquet case)
+    E::Vector{R} # mean energies
+    pos::Vector{R} # positions (wannier centres)
+    V::Matrix{Complex{R}} # position eigenvectors
+end
+
+"Default-construct an empty `Wanniers` object."
+Wanniers{R}() where R <: Real = Wanniers(Int[], R[], R[], Complex{R}[;;])
+
 """
-An object representing a spatial, possibly quasimomentum-dependent 1D Hamiltonian
+A type representing a spatial, possibly quasimomentum-dependent 1D Hamiltonian
     𝐻(𝑥) = (-i𝛿∂ₓ + 𝑞)² + 𝑈(𝑥)
 as a dense matrix.
 """
@@ -16,6 +27,7 @@ mutable struct DenseHamiltonian1D{R<:Real,T<:Number} # in practice `T` shoudld b
     V::Matrix{T} # eigenvectors matrix
     ε_q::Array{R,2} # ε_q[n, iqx] = `n`th band eigenvalue at quasimomentum at index `iqx`
     V_q::Array{T,3} # V_q[:, n, iqx] = `n`th band eigenvector at quasimomentum at index `iqx`
+    wanniers::Wanniers{R}
 end
 
 """
@@ -57,7 +69,7 @@ function DenseHamiltonian1D(xlims::Tuple{R,R}; isperiodic::Bool, iseven::Bool, M
         H += -Diagonal(R[-(π*δ)^2 * (jx/Lx)^2 for jx in 1:M]) # adding to the Hamiltonian the term -δ²Δ
     end
     
-    return DenseHamiltonian1D(xlims, Lx, δ, isperiodic, iseven, M, 𝑈, H, R[], eltype(H)[;;], R[;;], eltype(H)[;;;])
+    return DenseHamiltonian1D(xlims, Lx, δ, isperiodic, iseven, M, 𝑈, H, R[], eltype(H)[;;], R[;;], eltype(H)[;;;], Wanniers{R}())
 end
 
 """
@@ -96,26 +108,29 @@ function dct_to_matrix_1D(u)
 end
 
 """
-Construct wavefunction of state number `stateno` on a grid having `nx` points in `x` direction.
+Construct eigenfunctions of state numbers `statenos` on a grid having `nx` points in `x` direction.
 Return (`xs`, `ψ`). If `iqx` is passed, then construct `ψ` at the corresponding quasimomentum.
 """
-function make_wavefunction(dh::DenseHamiltonian1D{R,T}, stateno::Integer, nx::Integer, iqx::Integer=0) where {R<:Real, T<:Number}
+function make_eigenfunctions(dh::DenseHamiltonian1D{R,T}; statenos::AbstractVector{<:Integer}, nx::Integer, iqx::Integer=0) where {R<:Real, T<:Number}
     (;Lx, xlims, M, V, V_q) = dh
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
-    ψ = Vector{complex(R)}(undef, nx) # construct complex wf even if Hamiltonian is real because degeneracies are possible
-    if dh.isperiodic
-        if iqx != 0 # if quasimomentum index has been passed
-            @floop for (ix, x) in enumerate(xs)
-                ψ[ix] = sum(V_q[j, stateno, iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+    nstates = length(statenos)
+    ψ = Matrix{complex(R)}(undef, nx, nstates) # construct complex wf even if Hamiltonian is real because degeneracies are possible
+    for (is, stateno) in enumerate(statenos)
+        if dh.isperiodic
+            if iqx != 0 # if quasimomentum index has been passed
+                @floop for (ix, x) in enumerate(xs)
+                    ψ[ix, is] = sum(V_q[j, stateno, iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                end
+            else # no quasimomentum index
+                @floop for (ix, x) in enumerate(xs)
+                    ψ[ix, is] = sum(V[j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                end
             end
-        else # no quasimomentum index
+        else # nonperiodic
             @floop for (ix, x) in enumerate(xs)
-                ψ[ix] = sum(V[j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                ψ[ix, is] = sum(V[jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * 2 / √Lx
             end
-        end
-    else # nonperiodic
-        @floop for (ix, x) in enumerate(xs)
-            ψ[ix] = sum(V[jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * 2 / √Lx
         end
     end
     return xs .+ xlims[1], ψ # return "normal" coordinates, in `x ∈ xlims`
@@ -171,4 +186,45 @@ function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; 
         end
     end
     H_diag .= H_diag_copy # restore initial values
+end
+
+"""
+Calculate Wannier states using the energy eigenstates `targetlevels`.
+"""
+function compute_wanniers!(dh::DenseHamiltonian1D; targetlevels::AbstractVector{<:Integer})
+    dh.wanniers.targetlevels = targetlevels
+    if dh.isperiodic
+        X = @view(dh.V[2:end, targetlevels])' * @view(dh.V[1:end-1, targetlevels])
+        # _, dh.wanniers.V, pos_complex = schur(X)
+        pos_complex, dh.wanniers.V = eigen(X)
+        dh.wanniers.pos = angle.(pos_complex)/π * dh.Lx/2
+        dh.wanniers.E = transpose(dh.ε[targetlevels]) * abs2.(dh.wanniers.V) |> vec
+    else 
+        # TODO
+    end
+end
+
+"""
+Construct Wannier functions `w` on a grid having `nx` points in `x` direction. All Wannier functions contained in `dh` are constructed.
+In the process, energy eigenfunctions `ψ` are also constructed.
+Return (`xs`, `ψ`, `w`). If `iqx` is passed, then construct `ψ` at the corresponding quasimomentum.
+"""
+function make_wannierfunctions(dh::DenseHamiltonian1D; nx::Integer)
+    xs, ψ = make_eigenfunctions(dh; statenos=dh.wanniers.targetlevels, nx)
+    w = ψ * dh.wanniers.V
+    return xs, ψ, w
+end
+
+function make_wanniers_real(w)
+    w_real = real(w)
+    w_imag = imag(w)
+    w_result = similar(w_real)
+    for i in axes(w, 2)
+        if sum(abs, w_real[:, i]) > sum(abs, w_imag[:, i])
+            w_result[:, i] .= w_real[:, i]
+        else
+            w_result[:, i] .= w_imag[:, i]
+        end
+    end
+    return w_result
 end
