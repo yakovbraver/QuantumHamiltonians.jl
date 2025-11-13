@@ -215,13 +215,17 @@ function make_wannierfunctions(dh::DenseHamiltonian1D; nx::Integer)
     return xs, ψ, w
 end
 
+"""
+Given complex coordinate-space wanniers `w`, which are actually purely real or purely imaginary,
+construct a real array by extracting either the real or imaginary part, whichever is larger.
+"""
 function make_wanniers_real(w)
     w_real = real(w)
     w_imag = imag(w)
     w_result = similar(w_real)
     for i in axes(w, 2)
-        if sum(abs, w_real[:, i]) > sum(abs, w_imag[:, i])
-            w_result[:, i] .= w_real[:, i]
+        if sum(abs, @view(w_real[:, i])) > sum(abs, @view(w_imag[:, i]))
+            w_result[:, i] .= w_real[:, i] # can be optimised using `copyto!`
         else
             w_result[:, i] .= w_imag[:, i]
         end
