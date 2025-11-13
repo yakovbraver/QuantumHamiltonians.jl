@@ -37,8 +37,8 @@ end
 
 Float = Float32 # operating type
 
-U₀::Float = 10
-ϵ::Float = 0.01
+U₀::Float = 50
+ϵ::Float = 0.15
 
 xlimits = (-2π, 2π) .|> Float
 M = 100

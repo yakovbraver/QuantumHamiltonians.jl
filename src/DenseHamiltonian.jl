@@ -29,7 +29,7 @@ To make sure that the resulting Hamiltonian matrix is of the desired type `T`, t
 and the return type of the passed functions has to be the same. E.g., if all are `Float32`, then `T` will be `Float32` if only `𝑈` is passed,
 and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments will result in widening.
 """
-function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R), 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
+function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, iseven::Bool=false, M::Integer, δ::R=one(R), 𝑈::Union{Function,Nothing}=nothing, 𝐴_x::Union{Function,Nothing}=nothing,
                           𝐴_y::Union{Function,Nothing}=nothing) where R <: Real
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1]
     
@@ -45,7 +45,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
         u = [𝑈(x, y) for x in xs, y in ys]
 
         F = FFTW.plan_rfft(u)
-        U = F * u * f |> dft_to_matrix
+        U = dft_to_matrix(F * u * f, make_real=iseven)
     
         if 𝐴_x === nothing
             Δ = Diagonal([-(2PI*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -M:M for jy in -M:M]) # this is δ²Δ
@@ -60,7 +60,6 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
             ∂_x = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
             ∂_y = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
             
-            # H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
             H = (∂_x - A_x)^2 + (∂_y - A_y)^2 + U
         end
     else # non-periodic
@@ -91,8 +90,6 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
             ∂_x = make_∂_x(M, Lx)
             ∂_y = make_∂_y(M, Ly)
             
-            # H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U
-            # H = sum_parts(A_x, A_y, ∂_y, ∂_x, U, Δ)
             H = (-im*δ*∂_x - A_x)^2 + (-im*δ*∂_y - A_y)^2 + U
         end
     end
@@ -123,36 +120,20 @@ end
 # end
 
 """
-Based on results of 2D DCT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
-"""
-function dct_to_matrix(u)
-    N = size(u, 1) # number of points used for FFT
-    M = (N-1) ÷ 2 # maximum harmonic number
-    H = Matrix{eltype(u)}(undef, M^2, M^2)
-    @floop for jx in 1:M
-        for jy in 1:M, j′x in 1:M, j′y in 1:M
-            j₋x = abs(j′x-jx)
-            j₋y = abs(j′y-jy)
-            H[(j′x-1)M+j′y, (jx-1)M+jy] = (u[j₋x+1, j₋y+1] - u[j₋x+1, j′y+jy+1] - u[j′x+jx+1, j₋y+1] + u[j′x+jx+1, j′y+jy+1]) / 4
-        end
-    end
-    return H
-end
-
-"""
 Based on results of a real 2D fft `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+`make_real=true` will take real parts of elements of `u`.
 """
-function dft_to_matrix(u)
+function dft_to_matrix(u; make_real=false)
     B = size(u, 2) ÷ 2 + 1 # the size of each block; `size(u, 1)` gives the number of block-rows (= number of block-cols)
-    H = zeros(eltype(u), B^2, B^2)
-    H[diagind(H)] .= u[1, 1] # save the secular component
+    H = make_real == true ? zeros(real(eltype(u)), B^2, B^2) : zeros(eltype(u), B^2, B^2)
+    H[diagind(H)] .= real(u[1, 1]) # save the secular component
     u[1, 1] = 0 # remove because it breaks the structure of the loop below if included
 
     # it is assumed that u[1, 1] == 0 -- otherwise, one would also need to prevent double pushing of the diagonal elements
     @floop for c_u in axes(u, 2)
         for r_u in axes(u, 1) # iterate over columns and rows of `u`
             u[r_u, c_u] == 0 && continue
-            val = u[r_u, c_u]
+            val = make_real == true ? real(u[r_u, c_u]) : u[r_u, c_u]
             for r_b in r_u:size(u, 1) # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `M+1`th. For actual applications, `size(u, 1) == M+1`
                 c_b = r_b - r_u + 1 # block-column where to place the value
                 if c_u < B # for `c_u` < `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block
@@ -189,6 +170,23 @@ function push_vals!(H; r_b, c_b, r, c, blocksize, val)
     H[j, i] = val'
 end
 
+"""
+Based on results of 2D DCT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+"""
+function dct_to_matrix(u)
+    N = size(u, 1) # number of points used for FFT
+    M = (N-1) ÷ 2 # maximum harmonic number
+    H = Matrix{eltype(u)}(undef, M^2, M^2)
+    @floop for jx in 1:M
+        for jy in 1:M, j′x in 1:M, j′y in 1:M
+            j₋x = abs(j′x-jx)
+            j₋y = abs(j′y-jy)
+            H[(j′x-1)M+j′y, (jx-1)M+jy] = (u[j₋x+1, j₋y+1] - u[j₋x+1, j′y+jy+1] - u[j′x+jx+1, j₋y+1] + u[j′x+jx+1, j′y+jy+1]) / 4
+        end
+    end
+    return H
+end
+
 function make_∂_x(M, Lx)
     ∂_x = zeros(typeof(Lx), M^2, M^2)
     @floop for jx in 1:M
@@ -217,11 +215,11 @@ end
 Construct wavefunction of state number `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
 Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
 """
-function make_wavefunction(dh::DenseHamiltonian, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0)
+function make_wavefunction(dh::DenseHamiltonian{R,T}, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0) where {R<:Real, T<:Number}
     (;Lx, Ly, xlims, ylims, M, V, V_q) = dh
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ys = range(0, Ly, ny)
-    ψ = Matrix{eltype(V)}(undef, nx, ny)
+    ψ = Matrix{(dh.isperiodic ? complex(R) : R)}(undef, nx, ny)
     if dh.isperiodic
         B = 2M + 1
         if iqx != 0 # if quasimomentum index has been passed
@@ -255,7 +253,7 @@ Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 """
 function diagonalize!(dh::DenseHamiltonian; nev::Integer)
     if nev == 0
-        dh.ε, dh.V = eigen(Hermitian(dh.H))
+        dh.ε, dh.V = eigen(Hermitian(dh.H)) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
     else
         S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
         @show info
