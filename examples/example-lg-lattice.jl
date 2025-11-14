@@ -49,23 +49,7 @@ heatmap(ys, xs, 𝐴_x, c=:coolwarm)
 heatmap(ys, xs, 𝐴_y, c=:coolwarm)
 surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
-# Calculate
-dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈, 𝐴_x, 𝐴_y)
-dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈)
-
-@time diagonalize!(dh, nev=15);
-
-stateno = 3
-xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100)
-surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
-
-dh.ε
-
-using DelimitedFiles
-writedlm("phi0_lg_lat.txt", transpose(ψ))
-
+# Plot 𝐴 vector field
 import CairoMakie
 
 n = 3 # plot every nth arrow
@@ -76,3 +60,17 @@ fig = CairoMakie.Figure(size=(800, 800), fontsize=30);
 ax = CairoMakie.Axis(fig[1, 1], aspect=1, title=L"\vec{A}", xlabel=L"xs/w_0", ylabel=L"ys/w_0", limits=(xs[1], xs[end], ys[1], ys[end]))
 CairoMakie.arrows!(xs[1:n:end], ys[1:n:end], A_x[window], A_y[window], arrowsize=5, lengthscale=0.5)
 fig
+
+# Calculate
+dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈, 𝐴_x, 𝐴_y)
+dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈)
+
+@time diagonalize!(dh, nev=5);
+
+stateno = 1
+xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100)
+surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+
+dh.ε

@@ -42,11 +42,3 @@ stateno = 1
 @time xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100);
 surface(xs, ys, abs2.(ψ)', xlabel="x/w_0", ylabel="y/w_0", c=cmap_rainbow, title="|ψ|^2")
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
-
-using Measures
-theme(:dark, size=(1200, 500))
-fig_abs = heatmap(xs, ys, abs2.(ψ)', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi|^2");
-fig_phi = heatmap(xs, ys, angle.(ψ)' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title="phase", cbar_title="phase ("*L"\pi"*" rad)");
-fig_phi = heatmap(xs, ys, angle.(ψ)' ./ π, c=cmap_cyclic, xlabel=L"x/w_0", ylabel=L"y/w_0", title="phase", cbar_title="phase ("*L"\pi"*" rad)");
-plot(fig_abs, fig_phi, plot_title=L"\beta=0, \epsilon=%$ϵ"*". State no. $stateno, "*L"E=%$(round(dh.ε[stateno], sigdigits=3))", bottommargin=5mm, leftmargin=7mm, plot_titlefontcolor=:white)
-savefig("lg_wf_xy4_epsilon$(ϵ)_state$stateno.png")

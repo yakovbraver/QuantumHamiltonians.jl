@@ -75,8 +75,9 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
         (F * u) .*= f
         U = dct_to_matrix(u)
 
+        Δ = Diagonal([-(PI*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M]) # this is δ²Δ
+        
         if 𝐴_x === nothing
-            Δ = Diagonal([-(PI*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M]) # this is δ²Δ
             H = -Δ + U
         else
             a_x = [𝐴_x(x, y) for x in xs, y in ys]
@@ -90,7 +91,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
             ∂_x = make_∂_x(M, Lx)
             ∂_y = make_∂_y(M, Ly)
             
-            H = (-im*δ*∂_x - A_x)^2 + (-im*δ*∂_y - A_y)^2 + U
+            H = -Δ + im*(A_x*∂_x + A_y*∂_y + ∂_x*A_x + ∂_y*A_y) + A_x^2 + A_y^2 + U # The perfect square for `(∂_x - A_x)^2 + (∂_y - A_y)^2 + U` is much less accurate
         end
     end
     
@@ -187,25 +188,23 @@ function dct_to_matrix(u)
     return H
 end
 
+"Return a 𝜕ₓ matrix in the sine basis."
 function make_∂_x(M, Lx)
     ∂_x = zeros(typeof(Lx), M^2, M^2)
     @floop for jx in 1:M
-        for jy in 1:M, j′x in 1+isodd(jx):2:M
-            val = 1/(j′x+jx)
-            j′x != jx && (val += 1/(j′x-jx))
-            ∂_x[(j′x-1)M+jy, (jx-1)M+jy] = 2jx/Lx * val
+        for j′x in 1+isodd(jx):2:M, jy in 1:M
+            ∂_x[(j′x-1)M+jy, (jx-1)M+jy] = 4j′x*jx/(Lx * (j′x^2 - jx^2))
         end
     end
     return ∂_x
 end
 
+"Return a 𝜕y matrix in the sine basis."
 function make_∂_y(M, Ly)
     ∂_y = zeros(typeof(Ly), M^2, M^2)
     @floop for jx in 1:M
         for jy in 1:M, j′y in 1+isodd(jy):2:M
-            val = 1/(j′y+jy)
-            j′y != jy && (val += 1/(j′y-jy))
-            ∂_y[(jx-1)M+j′y, (jx-1)M+jy] = 2jy/Ly * val
+            ∂_y[(jx-1)M+j′y, (jx-1)M+jy] = 4j′y*jy/(Ly * (j′y^2 - jy^2))
         end
     end
     return ∂_y
