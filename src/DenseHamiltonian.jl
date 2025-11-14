@@ -215,11 +215,11 @@ end
 Construct wavefunction of state number `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
 Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
 """
-function make_wavefunction(dh::DenseHamiltonian{R,T}, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0) where {R<:Real, T<:Number}
+function make_eigenfunction(dh::DenseHamiltonian{R,T}, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0) where {R<:Real, T<:Number}
     (;Lx, Ly, xlims, ylims, M, V, V_q) = dh
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ys = range(0, Ly, ny)
-    ψ = Matrix{(dh.isperiodic ? complex(R) : R)}(undef, nx, ny)
+    ψ = Matrix{(!dh.isperiodic && dh.𝐴_x === nothing ? R : complex(R))}(undef, nx, ny)
     if dh.isperiodic
         B = 2M + 1
         if iqx != 0 # if quasimomentum index has been passed

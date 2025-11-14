@@ -9,7 +9,7 @@ using SparseArrays
 using LDLFactorizations
 using FLoops: @floop
 
-export DenseHamiltonian, DenseHamiltonian1D, SparseHamiltonian, diagonalize!, make_wavefunction, make_eigenfunctions, compute_wanniers!, make_wannierfunctions, make_wanniers_real
+export DenseHamiltonian, DenseHamiltonian1D, SparseHamiltonian, diagonalize!, make_eigenfunction, make_eigenfunctions, compute_wanniers!, make_wannierfunctions, make_wanniers_real
 
 include("DenseHamiltonian.jl")
 include("DenseHamiltonian1D.jl")

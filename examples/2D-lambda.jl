@@ -1,3 +1,4 @@
+# Analysis of https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
 using XSpaceHamiltonians
 
 using Plots, DelimitedFiles
@@ -40,7 +41,7 @@ dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈, 𝐴_x, 𝐴_
 dh.ε
 
 stateno = 1
-xs, ys, ψ = make_wavefunction(dh, stateno, M, M)
+xs, ys, ψ = make_eigenfunction(dh, stateno, M, M)
 surface(xs, ys, abs2.(ψ)')
 
 ########## χ = π/2, x from -pi/2 to pi/2
@@ -63,7 +64,7 @@ surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 dh.ε
 
 stateno = 1
-xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100)
+xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
@@ -89,10 +90,7 @@ surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 dh.ε
 
 stateno = 1
-@time xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100);
+@time xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100);
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
-writedlm("exact_lambda_no1_256.txt", ψ, ',')
-
-@time diagonalize!(dh, nev=5);

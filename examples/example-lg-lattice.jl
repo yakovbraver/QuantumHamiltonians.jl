@@ -3,7 +3,7 @@ using XSpaceHamiltonians
 using Plots, LaTeXStrings
 plotlyjs()
 cmap_rainbow = cgrad(:rainbow_bgyrm_35_85_c69_n256);
-cmap_cyclic = cgrad(:cyclic_mrybm_35_75_c68_n256);
+cmap_phase = cgrad(:RdBu_9);
 theme(:dark, size=(600, 500))
 
 function 𝑈(x::Real, y::Real)
@@ -56,10 +56,10 @@ dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈)
 @time diagonalize!(dh, nev=15);
 
 stateno = 3
-xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100)
+xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
+heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 dh.ε
 

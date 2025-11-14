@@ -24,7 +24,7 @@ ylimits = (-0.75, 0.75) .|> Float
 
 # plot 𝑈
 
-M = 60
+M = 30
 N = 2M + 1
 xs = range(xlimits[1], xlimits[2], N)
 ys = range(ylimits[1], ylimits[2], N)
@@ -33,14 +33,14 @@ surface(xs, ys, 𝑈, c=:viridis)
 
 # Diagonalise periodic
 
-@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝑈);
+@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, iseven=true, M, 𝑈);
 @time dh = SparseHamiltonian(xlimits, ylimits; M, 𝑈);
 @time diagonalize!(dh, nev=5);
 
 scatter(dh.ε, ylims=(0, 6), yticks=0:2.5:7)
 
 stateno = 1
-xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100)
+xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)

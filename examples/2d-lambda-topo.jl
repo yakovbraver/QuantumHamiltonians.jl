@@ -123,7 +123,7 @@ fig
 scatter(dh.ε, ylims=(0, 6), yticks=0:2.5:7)
 
 stateno = 1
-xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100)
+xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
@@ -162,7 +162,7 @@ scatter(sort(vec(dh.ε_q)), ylims=(0, 6), yticks=0:2.5:7, xlims=(0, 200))
 
 stateno = 1
 iqx = 1; iqy = 1
-xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100, iqx, iqy)
+xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100, iqx, iqy)
 heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)

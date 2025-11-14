@@ -3,7 +3,7 @@ using XSpaceHamiltonians
 using Plots
 plotlyjs()
 cmap_rainbow = cgrad(:rainbow_bgyrm_35_85_c69_n256);
-cmap_cyclic = cgrad(:cyclic_mrybm_35_75_c68_n256);
+cmap_phase = cgrad(:RdBu_9);
 theme(:dark, size=(600, 500))
 
 function 𝑈(x::Real, y::Real)
@@ -26,7 +26,7 @@ xlimits = (-4, 4) .|> Float
 ylimits = (-4, 4) .|> Float
 
 # plot potential
-M = 70
+M = 50
 N = 2M + 1 # see how the potential looks with number of points that will be used for FFT
 xs = range(xlimits[1], xlimits[2], N)
 ys = range(ylimits[1], ylimits[2], N)
@@ -39,9 +39,9 @@ surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 dh.ε[1:5]
 
 stateno = 1
-@time xs, ys, ψ = make_wavefunction(dh, stateno, 100, 100);
-surface(xs, ys, abs2.(ψ)', xlabel="x/w_0", ylabel="y/w_0", c=cmap_rainbow, title=L"|\psi|^2")
-heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_cyclic)
+@time xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100);
+surface(xs, ys, abs2.(ψ)', xlabel="x/w_0", ylabel="y/w_0", c=cmap_rainbow, title="|ψ|^2")
+heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 using Measures
 theme(:dark, size=(1200, 500))

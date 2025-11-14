@@ -37,7 +37,8 @@ In nonperiodic case, the size will be `(2M+1)` × `(2M+1)`.
 To make sure that the resulting Hamiltonian matrix is of the desired type `T`, the type of elements of `xlims`, `ylims`,
 and the return type of the passed functions has to be the same. E.g., if all are `Float32`, then `T` will be `Float32` if only `𝑈` is passed,
 and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments will result in widening.
-`iseven` shows whether the potential is an even function. If it is so, the constructed Hamiltonian will be real.
+`iseven` shows whether 𝑈 is an even function. If it is so, its Fourier image is real and even (𝑈 is assumed real),
+so the constructed Hamiltonian will be real, and symmetric diagonalisation will be used (instead of Hermitian).
 """
 function DenseHamiltonian1D(xlims::Tuple{R,R}; isperiodic::Bool, iseven::Bool, M::Integer, δ::R=one(R), 𝑈::Union{Function,Nothing}=nothing) where R <: Real
     Lx = xlims[2] - xlims[1]
