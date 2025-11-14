@@ -19,7 +19,6 @@ mutable struct DenseHamiltonian1D{R<:Real,T<:Number} # in practice `T` shoudld b
     Lx::R # length along 𝑥
     δ::R # coefficient of the momentum term
     isperiodic::Bool
-    iseven::Bool # whether the potential is an even function
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
     𝑈::Union{Function,Nothing}
     H::Matrix{T}
@@ -38,7 +37,7 @@ To make sure that the resulting Hamiltonian matrix is of the desired type `T`, t
 and the return type of the passed functions has to be the same. E.g., if all are `Float32`, then `T` will be `Float32` if only `𝑈` is passed,
 and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments will result in widening.
 `iseven` shows whether 𝑈 is an even function. If it is so, its Fourier image is real and even (𝑈 is assumed real),
-so the constructed Hamiltonian will be real, and symmetric diagonalisation will be used (instead of Hermitian).
+so the constructed Hamiltonian will be real, and symmetric diagonalisation will be used.
 """
 function DenseHamiltonian1D(xlims::Tuple{R,R}; isperiodic::Bool, iseven::Bool, M::Integer, δ::R=one(R), 𝑈::Union{Function,Nothing}=nothing) where R <: Real
     Lx = xlims[2] - xlims[1]
@@ -70,7 +69,7 @@ function DenseHamiltonian1D(xlims::Tuple{R,R}; isperiodic::Bool, iseven::Bool, M
         H += -Diagonal(R[-(π*δ)^2 * (jx/Lx)^2 for jx in 1:M]) # adding to the Hamiltonian the term -δ²Δ
     end
     
-    return DenseHamiltonian1D(xlims, Lx, δ, isperiodic, iseven, M, 𝑈, H, R[], eltype(H)[;;], R[;;], eltype(H)[;;;], Wanniers{R}())
+    return DenseHamiltonian1D(xlims, Lx, δ, isperiodic, M, 𝑈, H, R[], eltype(H)[;;], R[;;], eltype(H)[;;;], Wanniers{R}())
 end
 
 """
@@ -142,7 +141,7 @@ Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 """
 function diagonalize!(dh::DenseHamiltonian1D; nev::Integer=0)
-    H = dh.iseven ? Symmetric(dh.H, :L) : Hermitian(dh.H, :L)
+    H = Hermitian(dh.H, :L) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
     if nev == 0
         dh.ε, dh.V = eigen(H)
     else
@@ -169,7 +168,7 @@ function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; 
     H_diag_copy = diag(dh.H) # a copy for restoring after the calculation
     U_diag = H_diag[(end+1) ÷ 2] # generally, `H = -Δ + U`, but this element is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian1D` constructor)
     
-    H = dh.iseven ? Symmetric(dh.H, :L) : Hermitian(dh.H, :L)
+    H = Hermitian(dh.H, :L) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
 
     # iterate quasimomenta
     for (iqx, qx) in enumerate(qxs)
