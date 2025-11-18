@@ -189,7 +189,7 @@ function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; 
 end
 
 """
-Calculate Wannier states using the energy eigenstates `targetlevels`.
+Calculate Wannier states using the energy eigenstates `targetlevels`. The vector `targetlevels` will be saved in `dh`.
 """
 function compute_wanniers!(dh::DenseHamiltonian1D; targetlevels::AbstractVector{<:Integer})
     dh.wanniers.targetlevels = targetlevels
@@ -197,7 +197,10 @@ function compute_wanniers!(dh::DenseHamiltonian1D; targetlevels::AbstractVector{
         X = @view(dh.V[2:end, targetlevels])' * @view(dh.V[1:end-1, targetlevels])
         # _, dh.wanniers.V, pos_complex = schur(X)
         pos_complex, dh.wanniers.V = eigen(X)
-        dh.wanniers.pos = angle.(pos_complex)/π * dh.Lx/2
+        pos_real = angle.(pos_complex)/π * dh.Lx/2
+        sp = sortperm(pos_real)                 # sort the eigenvalues
+        dh.wanniers.pos = pos_real[sp]
+        @views Base.permutecols!!(dh.wanniers.V[:, :], sp)    # sort the eigenvectors in the same way
         dh.wanniers.E = transpose(dh.ε[targetlevels]) * abs2.(dh.wanniers.V) |> vec
     else 
         # TODO
@@ -231,4 +234,11 @@ function make_wanniers_real(w)
         end
     end
     return w_result
+end
+
+"Compute tunnelling element ⟨𝑤ᵢ|𝐻|𝑤ⱼ⟩."
+function compute_tunneling(dh::DenseHamiltonian1D; i::Integer=1, j::Integer=2)
+    wᵢ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, i] # One wannier basis vector |𝑤ᵢ⟩ = ∑ₚ |𝜓ₚ⟩ 𝑉ᵢₚ
+    wⱼ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, j]
+    return dot(wᵢ, dh.H, wⱼ)
 end
