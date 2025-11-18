@@ -196,13 +196,11 @@ function compute_wanniers!(dh::DenseHamiltonian1D{R,T}; targetlevels::AbstractVe
     minlevel = targetlevels[1]
     if dh.isperiodic
         X = @view(dh.V[2:end, targetlevels])' * @view(dh.V[1:end-1, targetlevels])
-        # _, dh.wanniers.V, pos_complex = schur(X)
         pos_complex, dh.wanniers.V = eigen(X)
-        pos_real = angle.(pos_complex)/π * dh.Lx/2
-        sp = sortperm(pos_real)                 # sort the eigenvalues
+        pos_real = @. mod2pi(angle(pos_complex))/2π * dh.Lx + dh.xlims[1] # `mod2pi` converts the angle from [-π, π) to [0, 2π)
+        sp = sortperm(pos_real)               # sort the eigenvalues
         dh.wanniers.pos = pos_real[sp]
-        dh.wanniers.pos = pos_real
-        Base.permutecols!!(dh.wanniers.V, sp)    # sort the eigenvectors in the same way
+        Base.permutecols!!(dh.wanniers.V, sp) # sort the eigenvectors in the same way
     else 
         n_w = length(targetlevels)
         X = Matrix{R}(undef, n_w, n_w) # position operator, will fill only upper triangle
