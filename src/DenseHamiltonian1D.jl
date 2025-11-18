@@ -191,8 +191,9 @@ end
 """
 Calculate Wannier states using the energy eigenstates `targetlevels`. The vector `targetlevels` will be saved in `dh`.
 """
-function compute_wanniers!(dh::DenseHamiltonian1D; targetlevels::AbstractVector{<:Integer})
-    dh.wanniers.targetlevels = targetlevels
+function compute_wanniers!(dh::DenseHamiltonian1D{R,T}; targetlevels::AbstractVector{<:Integer})  where {R<:Real, T<:Number}
+    dh.wanniers.targetlevels = targetlevels # store the target levels
+    minlevel = targetlevels[1]
     if dh.isperiodic
         X = @view(dh.V[2:end, targetlevels])' * @view(dh.V[1:end-1, targetlevels])
         # _, dh.wanniers.V, pos_complex = schur(X)
@@ -200,11 +201,21 @@ function compute_wanniers!(dh::DenseHamiltonian1D; targetlevels::AbstractVector{
         pos_real = angle.(pos_complex)/π * dh.Lx/2
         sp = sortperm(pos_real)                 # sort the eigenvalues
         dh.wanniers.pos = pos_real[sp]
-        @views Base.permutecols!!(dh.wanniers.V[:, :], sp)    # sort the eigenvectors in the same way
-        dh.wanniers.E = transpose(dh.ε[targetlevels]) * abs2.(dh.wanniers.V) |> vec
+        dh.wanniers.pos = pos_real
+        Base.permutecols!!(dh.wanniers.V, sp)    # sort the eigenvectors in the same way
     else 
-        # TODO
+        n_w = length(targetlevels)
+        X = Matrix{R}(undef, n_w, n_w) # position operator, will fill only upper triangle
+        nj = size(dh.V, 1)
+        for n in 1:n_w
+            for n′ in 1:n
+                X[n′, n] = (n == n′ ? dh.Lx/2 + dh.xlims[1] : 0) - 8dh.Lx/π^2*sum(dh.V[j, minlevel+n-1] * sum(dh.V[j′, minlevel+n′-1]*j*j′/(j^2-j′^2)^2
+                                                                                  for j′ = (iseven(j) ? 1 : 2):2:nj) for j = 1:nj)
+            end
+        end
+        dh.wanniers.pos, dh.wanniers.V = eigen(Hermitian(X))
     end
+    dh.wanniers.E = transpose(dh.ε[targetlevels]) * abs2.(dh.wanniers.V) |> vec
 end
 
 """
