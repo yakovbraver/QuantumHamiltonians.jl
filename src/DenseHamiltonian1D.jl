@@ -73,19 +73,21 @@ function DenseHamiltonian1D(xlims::Tuple{R,R}; isperiodic::Bool, iseven::Bool, M
 end
 
 """
-Based on results of a real 1D fft `u`, return the matrix indexed by (𝑗′ₓ, 𝑗ₓ), with only the lower triangle filled.
+Based on results of a real 1D fft `u`, return the matrix indexed by (𝑗′ₓ, 𝑗ₓ).
 If potential is even (`iseven=true`), then a real matrix is constructed, using the real part of `u`.
 """
 function dft_to_matrix_1D(u, iseven::Bool)
     if iseven # if potential is even, then the Fourier image must be real, so we create a real matrix and save only the real part
         H = zeros(real(eltype(u)), length(u), length(u))
         for (i, val) in enumerate(u)
-            H[diagind(H, 1-i)] .= real(val)
+            H[diagind(H, 1-i)] .= real(val) # fill lower triangle (including the diagonal)
+            H[diagind(H, i-1)] .= real(val) # fill upper triangle (again including the diagonal)
         end
     else
         H = zeros(eltype(u), length(u), length(u))
         for (i, val) in enumerate(u)
-            H[diagind(H, 1-i)] .= val
+            H[diagind(H, 1-i)] .= val  # fill lower triangle (including the diagonal)
+            H[diagind(H, i-1)] .= val' # fill lower triangle (including the diagonal)
         end
     end
     return H
@@ -141,7 +143,7 @@ Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 """
 function diagonalize!(dh::DenseHamiltonian1D; nev::Integer=0)
-    H = Hermitian(dh.H, :L) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
+    H = Hermitian(dh.H) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
     if nev == 0
         dh.ε, dh.V = eigen(H)
     else
@@ -168,7 +170,7 @@ function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; 
     H_diag_copy = diag(dh.H) # a copy for restoring after the calculation
     U_diag = H_diag[(end+1) ÷ 2] # generally, `H = -Δ + U`, but this element is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian1D` constructor)
     
-    H = Hermitian(dh.H, :L) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
+    H = Hermitian(dh.H) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
 
     # iterate quasimomenta
     for (iqx, qx) in enumerate(qxs)
@@ -190,8 +192,9 @@ end
 
 """
 Calculate Wannier states using the energy eigenstates `targetlevels`. The vector `targetlevels` will be saved in `dh`.
+`dh` is assumed to have been diagonalised, without quasimomentum.
 """
-function compute_wanniers!(dh::DenseHamiltonian1D{R,T}; targetlevels::AbstractVector{<:Integer})  where {R<:Real, T<:Number}
+function compute_wanniers!(dh::DenseHamiltonian1D{R,T}; targetlevels::AbstractVector{<:Integer}) where {R<:Real, T<:Number}
     dh.wanniers.targetlevels = targetlevels # store the target levels
     minlevel = targetlevels[1]
     if dh.isperiodic
@@ -249,10 +252,10 @@ end
 function compute_tunneling(dh::DenseHamiltonian1D; i::Integer=1, j::Integer=2)
     wᵢ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, i] # One wannier basis vector |𝑤ᵢ⟩ = ∑ₚ |𝜓ₚ⟩ 𝑉ᵢₚ
     wⱼ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, j]
-    return dot(wᵢ, Hermitian(dh.H, :L), wⱼ)
+    return dot(wᵢ, dh.H, wⱼ)
 end
 
 "Compute TB Hamiltonian matrix, with elements ⟨𝑤ᵢ|𝐻|𝑤ⱼ⟩."
 function compute_tb_hamiltonian(dh::DenseHamiltonian1D)
-    dh.wanniers.V' * dh.V[:, dh.wanniers.targetlevels]' *  Hermitian(dh.H, :L) * dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V
+    dh.wanniers.V' * dh.V[:, dh.wanniers.targetlevels]' *  dh.H * dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V
 end
