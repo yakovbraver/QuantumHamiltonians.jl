@@ -249,5 +249,10 @@ end
 function compute_tunneling(dh::DenseHamiltonian1D; i::Integer=1, j::Integer=2)
     wᵢ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, i] # One wannier basis vector |𝑤ᵢ⟩ = ∑ₚ |𝜓ₚ⟩ 𝑉ᵢₚ
     wⱼ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, j]
-    return dot(wᵢ, dh.H, wⱼ)
+    return dot(wᵢ, Hermitian(dh.H, :L), wⱼ)
+end
+
+"Compute TB Hamiltonian matrix, with elements ⟨𝑤ᵢ|𝐻|𝑤ⱼ⟩."
+function compute_tb_hamiltonian(dh::DenseHamiltonian1D)
+    dh.wanniers.V' * dh.V[:, dh.wanniers.targetlevels]' *  Hermitian(dh.H, :L) * dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V
 end
