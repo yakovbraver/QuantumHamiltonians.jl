@@ -259,3 +259,22 @@ end
 function compute_tb_hamiltonian(dh::DenseHamiltonian1D)
     dh.wanniers.V' * dh.V[:, dh.wanniers.targetlevels]' *  dh.H * dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V
 end
+
+"Return momentum-space matrix of a function `𝑓`, with problem geometry contained in `dh`. `iseven` is only relevant for periodic case, yielding real result for even `𝑓`."
+function p_space_matrix(dh::DenseHamiltonian1D; 𝑓::Function, iseven::Bool=false)
+    (;M, Lx, xlims, isperiodic) = dh
+
+    if isperiodic
+        N = 4M # number of points for FFT. This will yield harmonics from -2M to 2M
+        dx = Lx/N
+        xs = range(xlims[1], xlims[2]-dx, N)
+        u = 𝑓.(xs) .* dx/Lx
+        return dft_to_matrix_1D(FFTW.rfft(u), iseven)
+    else # non-periodic
+        N = 2M + 1
+        xs = range(xlims[1], xlims[2], N)
+        dx = xs[2] - xs[1]
+        u = 𝑓.(xs) .* dx/Lx
+        return dct_to_matrix_1D(FFTW.r2r!(u, FFTW.REDFT00))
+    end
+end
