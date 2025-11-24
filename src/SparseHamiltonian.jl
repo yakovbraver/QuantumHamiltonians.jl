@@ -190,10 +190,10 @@ function sparse_linear_map(A)
 end
 
 """
-Construct wavefunction of state number `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
+Construct the coordinate-space wave function `ψ` of eigenstate `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
 Return (`xs`, `ys`, `ψ`).
 """
-function make_wavefunction(sh::SparseHamiltonian, stateno::Integer, nx::Integer, ny::Integer)
+function make_eigenfunction(sh::SparseHamiltonian, stateno::Integer, nx::Integer, ny::Integer)
     (;Lx, Ly, xlims, ylims, V) = sh
     B = Int(√size(V, 1))
     j_max = (B - 1) ÷ 2

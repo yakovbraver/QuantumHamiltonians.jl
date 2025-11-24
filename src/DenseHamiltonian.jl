@@ -211,7 +211,7 @@ function make_∂_y(M, Ly)
 end
 
 """
-Construct wavefunction of state number `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
+Construct the coordinate-space wave function `ψ` of eigenstate `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
 Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
 """
 function make_eigenfunction(dh::DenseHamiltonian{R,T}, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0) where {R<:Real, T<:Number}
