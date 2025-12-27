@@ -34,11 +34,11 @@ surface(xs, ys, 𝑈)
 surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 # Calculate
-@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈, 𝐴_x, 𝐴_y);
-@time diagonalize!(dh, nev=5);
+@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;], 𝐴_x, 𝐴_y)
+@time diagonalize!(dh, nev=5)
 dh.ε[1:5]
 
 stateno = 1
 @time xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100);
-surface(xs, ys, abs2.(ψ)', xlabel="x/w_0", ylabel="y/w_0", c=cmap_rainbow, title="|ψ|^2")
-heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+surface(xs, ys, abs2.(ψ[1])', xlabel="x/w_0", ylabel="y/w_0", c=cmap_rainbow, title="|ψ|^2")
+heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)

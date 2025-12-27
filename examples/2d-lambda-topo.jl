@@ -97,7 +97,7 @@ N = 2M
 xs = range(xlimits[1], xlimits[2], N)
 ys = range(ylimits[1], ylimits[2], N)
 
-ν::Float = 0.9
+ν::Float = 0.95
 surface(xs, ys, 𝜙, zlims=(-2, 2), clims=(-2, 2))
 heatmap(xs, ys, 𝜙, c=cmap_rainbow, zlims=(-2, 2), clims=(-2, 2))
 
@@ -124,8 +124,18 @@ plot(xs, A_abs_cut)
 
 ### Diagonalise periodic with 𝜙 and 𝐴
 
-ν::Float = 0.99
-@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, δ, 𝑈=𝜙, 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y);
+M = 50
+ν::Float = 0.95
+@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, δ, 𝐻=[𝜙;;], 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y, iseven=true);
+
+typeof(dh.H)
+
+heatmap(imag(dh.H), yaxis=:flip, c=:coolwarm)
+hh = copy(real(dh.H))
+using LinearAlgebra
+hh[diagind(hh)] .= 0
+heatmap(hh, yaxis=:flip, c=:coolwarm)
+
 @time dh = SparseHamiltonian(xlimits, ylimits; δ, 𝑈=𝜙, 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y, M=2M);
 @time diagonalize!(dh, nev=5);
 dh.ε

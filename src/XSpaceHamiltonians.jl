@@ -1,7 +1,7 @@
 module XSpaceHamiltonians
 
 import FFTW
-using ArnoldiMethod: partialschur
+using ArnoldiMethod: partialschur, partialeigen
 using LinearAlgebra: Symmetric, Hermitian, Diagonal, diag, diagind, diagview, ldiv!, factorize, eigen, schur, dot
 import LinearAlgebra as LA # mainly for the identity operator LA.I
 using LinearMaps: LinearMap
