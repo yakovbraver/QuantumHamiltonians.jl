@@ -44,10 +44,10 @@ ys = range(ylimits[1], ylimits[2], N)
 surface(xs, ys, 𝑈)
 
 # Here we have no 𝐴, so Hamiltonian dh.H will be real. Eigenfuntions also since basis is real in nonperiodic case
-dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;])
+dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;], 𝐻_iseven=[true;;])
 
-# Or we can solve periodic case. Potential is even, so we set `iseven=true`, yielding a real Hamiltonian
-dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, iseven=true, M, 𝐻=[𝑈;;])
+# Or we can solve periodic case. Potential is even, so we set `𝐻_iseven`, yielding a real Hamiltonian
+dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven=[true;;])
 
 @time diagonalize!(dh, nev=1);
 dh.ε
@@ -97,7 +97,7 @@ surface(xs, ys, 𝑈)
 surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 # use either sparse or dense, whichever you like. Sparse is faster but less accurate
-@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐴_x, 𝐴_y);
+@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven=[false;;], 𝐴_x, 𝐴_y);
 @time dh = SparseHamiltonian(xlimits, ylimits; 𝑈, 𝐴_x, 𝐴_y, M=2M); # this is one-component only
 @time diagonalize!(dh, nev=5);
 dh.ε

@@ -39,6 +39,7 @@ end
 #     @test sum(abs.(s - transpose(s))) < 1e-10 # test that matrix is symmetric
 # end
 
+# TODO add additional type checks
 # Analysis of https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
 @testset "Test 2D 1-component diagonalisation" begin
     function 𝑈(x::Real, y::Real)
@@ -84,7 +85,7 @@ end
     @test dh.ε[1] ≈ 2.064 atol=1e-3
 
     ### Periodic
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, iseven=true, M, 𝐻=[𝑈;;])
+    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven = [true;;])
     @test dh.H isa Matrix{Float32}
 
     # exact diagonalisation
@@ -102,7 +103,8 @@ end
     xlimits = (-π/2, π/2) .|> Float32
     ylimits = (0, π) .|> Float32
 
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;], 𝐴_x, 𝐴_y);
+    ### Nonperiodic
+    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;], 𝐴_x, 𝐴_y)
     
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -119,7 +121,7 @@ end
     xlimits = (0, 2π) .|> Float32
     ylimits = (0, 2π) .|> Float32
 
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐴_x, 𝐴_y);
+    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven = [true;;], 𝐴_x, 𝐴_y);
 
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -157,9 +159,10 @@ end
     𝐻 = [nothing nothing 𝛺₁      
          nothing nothing 𝛺₂
          nothing nothing nothing] # only lower triangle is needed
+    𝐻_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
 
     ### Hermitian nonperiodic diagonalisation
-    dh = DenseHamiltonian(xlimits, ylimits; 𝐻, isperiodic=false, M);
+    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻)
     @test dh.H isa Matrix{Float32}
         
     # exact diagonalisation
@@ -171,7 +174,7 @@ end
     @test dh.ε[1] ≈ 2.086 atol=1e-3 # approximate diagonalisation finds lowest-magnitude eigenvalue
 
     ### Hermitian periodic diagonalisation
-    dh = DenseHamiltonian(xlimits, ylimits; 𝐻, isperiodic=true, M);
+    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven)
     @test dh.H isa Matrix{Complex{Float32}} # complex because the Fourier images of 𝛺 might be complex
         
     # exact diagonalisation
@@ -183,12 +186,12 @@ end
     @test dh.ε[1] ≈ 1.530 atol=1e-3
     
     ### non-Hermitian nonperiodic diagonalisation
-    dh = DenseHamiltonian(xlimits, ylimits; 𝐻, isperiodic=false, M, Γ=[0, 0, Γ₃]);
+    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻, Γ=[0, 0, Γ₃]);
     @test dh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
     diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ -13533 - 500im atol=10
+    @test dh.ε[1] ≈ -13540 - 250im atol=10
     l = findfirst(x -> real(x) > 0, dh.ε)
     @test l == 26
     @test dh.ε[l] ≈ 2.088 atol=1e-3
@@ -198,17 +201,17 @@ end
     @test dh.ε[1] ≈ 2.086 atol=1e-3
 
     ### non-Hermitian periodic diagonalisation
-    dh = DenseHamiltonian(xlimits, ylimits; 𝐻, isperiodic=true, M, Γ=[0, 0, Γ₃]);
+    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃]);
     @test dh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
     diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ -13992 - 500im atol=10
+    @test dh.ε[1] ≈ -14000 - 250im atol=10
     l = findfirst(x -> real(x) > 0, dh.ε)
     @test l == 122
-    @test dh.ε[l] ≈ 1.530 - 0.004im atol=1e-3
+    @test dh.ε[l] ≈ 1.531 - 0.002im atol=1e-3
 
     # approximate diagonalisation
     diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 1.530 - 0.004im atol=1e-3
+    @test dh.ε[1] ≈ 1.531 - 0.002im atol=1e-3
 end

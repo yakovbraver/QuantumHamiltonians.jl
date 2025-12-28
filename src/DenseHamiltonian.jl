@@ -1,9 +1,10 @@
 """
-A type representing a spatial [𝑟 = (𝑥, 𝑦)], possibly quasimomentum-dependent Hamiltonian
-    𝐻(𝑟) = [-i𝛿∇ + 𝑞 - 𝐴(𝑟)]² + 𝑈(𝑟)
+A type representing a spatial [𝑟 = (𝑥, 𝑦)], 𝑛-component, possibly quasimomentum-dependent Hamiltonian (𝐻ᵢⱼ)
+    𝐻ᵢᵢ(𝑟) = [-i𝛿∇ + 𝑞 - 𝐴(𝑟)]² + 𝑈ᵢᵢ(𝑟)
+    𝐻ᵢⱼ(𝑟) = 𝑉ᵢⱼ(𝑟)
 as a dense matrix.
 """
-mutable struct DenseHamiltonian{R<:Real,T<:Number,S<:Number} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct DenseHamiltonian{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Tuple{R, R}
     ylims::Tuple{R, R}
     Lx::R # length along 𝑥
@@ -22,19 +23,17 @@ mutable struct DenseHamiltonian{R<:Real,T<:Number,S<:Number} # in practice `T` s
     ε_q::Array{S,3} # ε_q[n, iqx, iqy] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
     V_q::Array{T,4} # V_q[:, n, iqx, iqy] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
 end
-# TODO: We need and `iseven` matrix for each element. Currently iseven works only for diagonal elements of 𝐻
 
 """
-Construct a `DenseHamiltonian` object.
-`M` is the maximum harmonic number. In the periodic case, the size of the Hamiltonian will be (`2M`)² × (`2M`)².
-In nonperiodic case, the size will be `(2M+1)`² × `(2M+1)`².
-`iseven` shows whether the diagonal functions of `𝐻` (= the scalar potentials) are even.
-To make sure that the resulting Hamiltonian matrix is of the desired type `T`, the type of elements of `xlims`, `ylims`,
-and the return type of the passed functions has to be the same. E.g., if all are `Float32`, then `T` will be `Float32` if only `𝑈` is passed,
-and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments will result in widening.
+Construct a `DenseHamiltonian` object using the coordinate-space functions stored in `𝐻`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
+`M` is the maximum harmonic number. In the periodic case, the Hamiltonian will be `nc*(2M+1)²`-by-`nc*(2M+1)²` where `nc` is the number of components.
+In nonperiodic case, the size will be `nc*M²`-by-`nc*M²`.
+`𝐻_iseven[i, j]` matters only if `isperiodic=true` and shows whether `𝐻[i, j]` is an even function (i.e. whether ℎ(𝑥, 𝑦) = ℎ(-𝑥, -𝑦)). If it is, then Fourier transform is real, which is used for better accuracy.
+If *all* functions are even (and real), then the resulting Fourier-space Hamiltonian is real (provided also there is no 𝐴 and Γ), giving a speed-up and better accuracy (compared to complex diagonalisation).
+If `𝐻[i, j] === nothing` or it is complex, then the value of `𝐻_iseven[i, j]` does not matter.
 """
-function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, iseven::Bool=false, M::Integer, δ::R=one(R),
-                          𝐻::AbstractMatrix{<:Union{Function,Nothing}}, Γ::Vector{R}=zeros(R, size(𝐻, 1)),
+function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
+                          𝐻::AbstractMatrix{<:Union{Function,Nothing}}, 𝐻_iseven::AbstractMatrix{Bool}=falses(size(𝐻)), Γ::Vector{R}=zeros(R, size(𝐻, 1)),
                           𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing) where R <: Real
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1]
     
@@ -46,7 +45,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
     isreal = all( typeof(ℎ(xlims[1], ylims[1])) <: Real for ℎ in 𝐻 if !isnothing(ℎ)) & # check if all functions in 𝐻 are real
              isnothing(𝐴_x) & isnothing(𝐴_y) & all(==(0), Γ)
     if isperiodic # for periodic potential, also check if potential is even 
-        isreal &= iseven
+        isreal &= all(𝐻_iseven)
     end
 
     H_sz = isperiodic ? (2M+1)^2 : M^2 # size of each Hamiltonian block
@@ -76,6 +75,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                 wj = (jH-1)*H_sz+1:jH*H_sz
 
                 ℎ = 𝐻[iH, jH]
+                ℎ_iseven = 𝐻_iseven[iH, jH]
 
                 # calculate and store FFT of ℎ
                 if !isnothing(ℎ)
@@ -83,7 +83,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                         for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
                             u_real[ix, iy] = ℎ(x, y)
                         end
-                        H[wi, wj] .= dft_to_matrix(F * u_real, make_real=iseven) .* f # TODO: `F * u_real` allocates a temporary
+                        H[wi, wj] .= dft_to_matrix(F * u_real, make_real=ℎ_iseven) .* f # TODO: `F * u_real` allocates a temporary
                     end
                     #else -- not implemented
                 end
@@ -91,7 +91,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                 # for diagonal block, add Laplacian, Γ, and 𝐴
                 if iH == jH
                     if Γ[iH] != 0
-                        H[diagind(H)[wi]] .-= im*Γ[iH]
+                        H[diagind(H)[wi]] .-= im*Γ[iH]/2
                     end
                     # if there is no 𝐴, then add Laplacian. Otherwise it will be added together with 𝐴 components
                     if isnothing(𝐴_x) && isnothing(𝐴_y)
@@ -164,7 +164,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                     H[wi, wj] += Diagonal([(PI*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M]) # add -δ²Δ
                     # for diagonal block, add Laplacian, Γ, and 𝐴
                     if Γ[iH] != 0
-                        H[diagind(H)[wi]] .-= im*Γ[iH]
+                        H[diagind(H)[wi]] .-= im*Γ[iH]/2
                     end
 
                     if 𝐴_x !== nothing
@@ -181,7 +181,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                         ∂_i = make_∂_y(M, Ly)
                         H[wi, wj] += im*(A_i*∂_i + ∂_i*A_i) + A_i^2 # The perfect square for `(∂_y - A_y)^2` is much less accurate
                     end
-                elseif !all(iszero, Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view)
+                elseif !all(iszero, Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view when diagonalising)
                     H[wj, wi] .= @view(H[wi, wj])'
                 end
             end
@@ -222,7 +222,7 @@ Based on results of a real 2D fft `u`, return the matrix indexed by (𝑗′ₓ�
 """
 function dft_to_matrix(u; make_real=false)
     B = size(u, 2) ÷ 2 + 1 # the size of each block
-    n_B = size(u, 1) # the number of block-rows (= number of block-cols)
+    n_B = size(u, 1) # the number of block-rows (= number of block-cols). For actual applications (i.e. when `u` is the output of `rfft`), `n_B == B`
     H = make_real == true ? zeros(real(eltype(u)), B*n_B, B*n_B) : zeros(eltype(u), B*n_B, B*n_B)
     H[diagind(H)] .= real(u[1, 1]) # save the secular component
     u[1, 1] = 0 # remove because it breaks the structure of the loop below if included
@@ -232,7 +232,7 @@ function dft_to_matrix(u; make_real=false)
         for r_u in axes(u, 1) # iterate over columns and rows of `u`
             u[r_u, c_u] == 0 && continue
             val = make_real == true ? real(u[r_u, c_u]) : u[r_u, c_u]
-            for r_b in r_u:size(u, 1) # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `M+1`th. For actual applications, `size(u, 1) == M+1`
+            for r_b in r_u:n_B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `n_B`th
                 c_b = r_b - r_u + 1 # block-column where to place the value
                 if c_u < B # for `c_u` < `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block
                     for (r, c) in zip(c_u:B, 1:B+1-c_u)
@@ -243,7 +243,7 @@ function dft_to_matrix(u; make_real=false)
                     if r_b != c_b
                         push_vals!(H; r_b, c_b, r=1, c=B, blocksize=B, val) # if we're in the diagonal block, then the upper right corner is conjugate to lower left and has already been pushed
                     end
-                else # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2M+2-c_u`th upper diagonal of the block
+                else # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal of the block
                     if r_b != c_b # if `r_b == c_b`, then upper diagonal of the block has already been filled by pushing the conjugate element
                         c_u_inv = 2B - c_u
                         for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
@@ -311,14 +311,15 @@ end
 Construct the coordinate-space wave function `ψ` of eigenstate `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
 Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
 """
-function make_eigenfunction(dh::DenseHamiltonian{R,T}, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0) where {R<:Real, T<:Number}
-    (;Lx, Ly, xlims, ylims, M, V, V_q, nc) = dh
+function make_eigenfunction(xh::XSpaceHamiltonian, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0)
+    (;Lx, Ly, xlims, ylims, M, V, V_q, nc) = xh
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ys = range(0, Ly, ny)
-    ψ_type = !dh.isperiodic && eltype(dh.H) <: Real ? R : complex(R)
+    R = typeof(Lx) # real working type
+    ψ_type = !xh.isperiodic && eltype(xh.H) <: Real ? R : complex(R)
     ψ = [Matrix{ψ_type}(undef, nx, ny) for _ in 1:nc] # `ψ` are real if elements of H are real and if the problem is nonperiodic (meaning basis is real)
     for c in 1:nc
-        if dh.isperiodic
+        if xh.isperiodic
             B = 2M + 1
             if iqx != 0 # if quasimomentum index has been passed
                 @floop for (iy, y) in enumerate(ys)
