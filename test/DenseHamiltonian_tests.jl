@@ -1,24 +1,28 @@
-@testset "Test `dft_to_matrix`" begin
-    u = [collect(0:7)'; collect(10:17)'; collect(20:27)']
-    
-    H = XSpaceHamiltonians.dft_to_matrix(u, make_real=true)
+@testset "Test various `fft_to_matrix`" begin
     H_true =
-    [  0   1   2   3   4  10  11  12  13  14  20  21  22  23  24
-       1   0   1   2   3  17  10  11  12  13  27  20  21  22  23
-       2   1   0   1   2  16  17  10  11  12  26  27  20  21  22
-       3   2   1   0   1  15  16  17  10  11  25  26  27  20  21
-       4   3   2   1   0  14  15  16  17  10  24  25  26  27  20
-      10  17  16  15  14   0   1   2   3   4  10  11  12  13  14
-      11  10  17  16  15   1   0   1   2   3  17  10  11  12  13
-      12  11  10  17  16   2   1   0   1   2  16  17  10  11  12
-      13  12  11  10  17   3   2   1   0   1  15  16  17  10  11
-      14  13  12  11  10   4   3   2   1   0  14  15  16  17  10
-      20  27  26  25  24  10  17  16  15  14   0   1   2   3   4
-      21  20  27  26  25  11  10  17  16  15   1   0   1   2   3
-      22  21  20  27  26  12  11  10  17  16   2   1   0   1   2
-      23  22  21  20  27  13  12  11  10  17   3   2   1   0   1
-      24  23  22  21  20  14  13  12  11  10   4   3   2   1   0]
+    [11  15  14  51  55  54  41  45  44
+     12  11  15  52  51  55  42  41  45
+     13  12  11  53  52  51  43  42  41
+     21  25  24  11  15  14  51  55  54
+     22  21  25  12  11  15  52  51  55
+     23  22  21  13  12  11  53  52  51
+     31  35  34  21  25  24  11  15  14
+     32  31  35  22  21  25  12  11  15
+     33  32  31  23  22  21  13  12  11]
+
+    u = [10i+j for i = 1:5, j=1:5]
+    H = XSpaceHamiltonians.fft_to_matrix(u)
     @test H == H_true
+    
+    H = XSpaceHamiltonians.fft_to_matrix_naive!(u)
+    @test H == H_true
+     
+    u = [10i+j for i = 1:3, j=1:5]
+    H = XSpaceHamiltonians.rfft_to_matrix!(u)
+    @test H == Symmetric(H_true, :L)
+
+    # H_sparse = XSpaceHamiltonians.dft_to_matrix_sparse!(u, make_real=true)
+    # @test H_sparse == H_true
 end
 
 # @testset "Test that FFT of `𝑈` is real and even" begin
@@ -90,11 +94,11 @@ end
 
     # exact diagonalisation
     diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ 2.022 atol=1e-3
+    @test dh.ε[1] ≈ 2.018 atol=1e-3
 
     # approximate diagonalisation
     diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 2.022 atol=1e-3
+    @test dh.ε[1] ≈ 2.018 atol=1e-3
 
     ########## χ = π/2, x from -π/2 to π/2
 
@@ -125,11 +129,11 @@ end
 
     # exact diagonalisation
     diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ 0.591 atol=1e-3
+    @test dh.ε[1] ≈ 0.571 atol=1e-3
 
     # approximate diagonalisation
     diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 0.591 atol=1e-3
+    @test dh.ε[1] ≈ 0.571 atol=1e-3
 
 end
 
@@ -175,7 +179,7 @@ end
 
     ### Hermitian periodic diagonalisation
     dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven)
-    @test dh.H isa Matrix{Complex{Float32}} # complex because the Fourier images of 𝛺 might be complex
+    @test dh.H isa Matrix{Float32}
         
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -183,7 +187,7 @@ end
 
     # approximate diagonalisation
     diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 1.530 atol=1e-3
+    @test dh.ε[1] ≈ 1.515 atol=1e-3
     
     ### non-Hermitian nonperiodic diagonalisation
     dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻, Γ=[0, 0, Γ₃]);
@@ -209,9 +213,9 @@ end
     @test dh.ε[1] ≈ -14000 - 250im atol=10
     l = findfirst(x -> real(x) > 0, dh.ε)
     @test l == 122
-    @test dh.ε[l] ≈ 1.531 - 0.002im atol=1e-3
+    @test dh.ε[l] ≈ 1.515 - 0.002im atol=1e-3
 
     # approximate diagonalisation
     diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 1.531 - 0.002im atol=1e-3
+    @test dh.ε[1] ≈ 1.515 - 0.002im atol=1e-3
 end

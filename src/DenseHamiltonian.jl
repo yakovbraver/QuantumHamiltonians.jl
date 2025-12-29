@@ -42,10 +42,10 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
     nc = size(𝐻, 1) # number of components
 
     # `isreal` will show if the resulting `H` will be real
-    isreal = all( typeof(ℎ(xlims[1], ylims[1])) <: Real for ℎ in 𝐻 if !isnothing(ℎ)) & # check if all functions in 𝐻 are real
+    isreal = all( ℎ(xlims[1], ylims[1]) isa Real for ℎ in 𝐻 if !isnothing(ℎ)) & # check if all functions in 𝐻 are real
              isnothing(𝐴_x) & isnothing(𝐴_y) & all(==(0), Γ)
-    if isperiodic # for periodic potential, also check if potential is even 
-        isreal &= all(𝐻_iseven)
+    if isperiodic # for periodic potential, also check if functions are even 
+        isreal &= all(𝐻_iseven[𝐻 .!== nothing])
     end
 
     H_sz = isperiodic ? (2M+1)^2 : M^2 # size of each Hamiltonian block
@@ -58,7 +58,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
     end
 
     if isperiodic
-        N = 4M # number of points for FFT. This will yield harmonics from -2M to 2M
+        N = 4M + 1 # number of points for FFT. This will yield harmonics from -2M to 2M
         dx, dy = Lx/N, Ly/N
         xs = range(xlims[1], xlims[2]-dx, N)
         ys = range(ylims[1], ylims[2]-dy, N)
@@ -66,7 +66,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
         f = dx/Lx * dy/Ly
 
         u_real = Matrix{R}(undef, N, N)
-        F = FFTW.plan_rfft(u_real)
+        F = FFTW.plan_fft(u_real) # rfft is only marginally faster and much less convenient to handle in `fft_to_matrix`, so using fft
 
         # iterate over `𝐻` and populate `H`
         for jH in axes(𝐻, 2)
@@ -75,17 +75,14 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                 wj = (jH-1)*H_sz+1:jH*H_sz
 
                 ℎ = 𝐻[iH, jH]
-                ℎ_iseven = 𝐻_iseven[iH, jH]
-
+                
                 # calculate and store FFT of ℎ
                 if !isnothing(ℎ)
-                    if typeof(ℎ(xs[1], ys[1])) <: Real
-                        for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
-                            u_real[ix, iy] = ℎ(x, y)
-                        end
-                        H[wi, wj] .= dft_to_matrix(F * u_real, make_real=ℎ_iseven) .* f # TODO: `F * u_real` allocates a temporary
+                    ℎ_isrealeven = (ℎ(xlims[1], ylims[1]) isa Real) & 𝐻_iseven[iH, jH]
+                    for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
+                        u_real[ix, iy] = ℎ(x, y)
                     end
-                    #else -- not implemented
+                    H[wi, wj] .= fft_to_matrix_naive!(F * u_real, make_real=ℎ_isrealeven) .* f # TODO: `F * u_real` allocates a temporary
                 end
 
                 # for diagonal block, add Laplacian, Γ, and 𝐴
@@ -99,7 +96,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                     else
                         if 𝐴_x !== nothing
                             a_i = [𝐴_x(x, y) for x in xs, y in ys] # using generic naming "_i" to reuse the same variables in the next `if`
-                            A_i = F * a_i * f |> dft_to_matrix
+                            A_i = F * a_i * f |> fft_to_matrix_naive!
                             ∂_i = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
                             H[wi, wj] += (∂_i - A_i)^2
                             # if there is no 𝐴𝑦, then add ∂ₓ². Otherwise it will be added together with 𝐴𝑦 in the next `if` clause
@@ -107,7 +104,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                         end
                         if 𝐴_y !== nothing
                             a_i = [𝐴_y(x, y) for x in xs, y in ys]
-                            A_i = F * a_i * f |> dft_to_matrix
+                            A_i = F * a_i * f |> fft_to_matrix_naive!
                             ∂_i = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
                             H[wi, wj] += (∂_i - A_i)^2
                             # if there is no 𝐴ₓ, then add ∂𝑦². Otherwise it was added together with 𝐴ₓ in the preceding `if` clause
@@ -217,38 +214,77 @@ end
 # end
 
 """
-Based on results of a real 2D fft `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
-`make_real=true` will take real parts of elements of `u`.
+Based on results of a real 2D RFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+`make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
+For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
 """
-function dft_to_matrix(u; make_real=false)
-    B = size(u, 2) ÷ 2 + 1 # the size of each block
-    n_B = size(u, 1) # the number of block-rows (= number of block-cols). For actual applications (i.e. when `u` is the output of `rfft`), `n_B == B`
-    H = make_real == true ? zeros(real(eltype(u)), B*n_B, B*n_B) : zeros(eltype(u), B*n_B, B*n_B)
-    H[diagind(H)] .= real(u[1, 1]) # save the secular component
+function rfft_to_matrix!(u; make_real=false)
+    N = size(u, 2) # number of points used for FFT
+    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
+    B = 2M + 1 # the size of each block
+    H = make_real ? zeros(real(eltype(u)), B^2, B^2) : zeros(eltype(u), B^2, B^2)
+    H[diagind(H)] .= real(u[1, 1]) # store the secular component manually
     u[1, 1] = 0 # remove because it breaks the structure of the loop below if included
+    make_real && (u .= real.(u))
 
     # it is assumed that u[1, 1] == 0 -- otherwise, one would also need to prevent double pushing of the diagonal elements
     @floop for c_u in axes(u, 2)
         for r_u in axes(u, 1) # iterate over columns and rows of `u`
             u[r_u, c_u] == 0 && continue
-            val = make_real == true ? real(u[r_u, c_u]) : u[r_u, c_u]
-            for r_b in r_u:n_B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `n_B`th
+            val = u[r_u, c_u]
+            for r_b in r_u:B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
                 c_b = r_b - r_u + 1 # block-column where to place the value
-                if c_u < B # for `c_u` < `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block
+                # fill the lower triangle of the block, including the main diagonal
+                if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block (`c_u=1` means main diagonal)
+                    for (r, c) in zip(c_u:B, 1:B+1-c_u)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val, conjugate=true)
+                    end
+                # fill the upper triangle of the block, but this is not needed for a diagonal block (`r_b == c_b`), because then the upper triangle has already been filled by pushing the conjugate element
+                elseif r_b != c_b # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal of the block,
+                    c_u_inv = 2B-c_u+1
+                    for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val, conjugate=true)
+                    end
+                end
+            end
+        end
+    end
+    return H
+end
+
+"""
+Based on results of a 2D FFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
+"""
+function fft_to_matrix(u)
+    N = size(u, 2) # number of points used for FFT
+    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
+    B = 2M + 1 # the size of each block
+    H = zeros(eltype(u), B^2, B^2)
+    
+    @floop for c_u in axes(u, 2)
+        for r_u in axes(u, 1) # iterate over columns and rows of `u`
+            u[r_u, c_u] == 0 && continue
+            val = u[r_u, c_u]
+            if r_u ≤ B # when using rows 1 through B of `u` to fill the lower block-triangle of H, including the main block-diagonal
+                d = 1 - r_u # (negative) block-diagonal number, where 0 is the main block-diagonal, -1 is first lower block-diagonal, etc.
+                r_b_range = r_u:B  # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
+            else # when using rows B+1 through end of `u` to fill the upper block-triangle of H
+                d = B - (r_u-B) # (positive) block-diagonal number, where 0 is the main block-diagonal, +1 is first upper block-diagonal, etc.
+                r_b_range = 1:r_u-B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
+            end
+            for r_b in r_b_range # block-rows where to place the value
+                c_b = r_b + d # block-column where to place the value
+                # fill the lower triangle of the block, including the main diagonal
+                if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block (`c_u=1` means main diagonal)
                     for (r, c) in zip(c_u:B, 1:B+1-c_u)
                         push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
                     end
-                elseif c_u == B # for `c_u` = `B`, the value from `c_u`th column of `u` will be put to lower left and upper right corners of the block
-                    push_vals!(H; r_b, c_b, r=B, c=1, blocksize=B, val)
-                    if r_b != c_b
-                        push_vals!(H; r_b, c_b, r=1, c=B, blocksize=B, val) # if we're in the diagonal block, then the upper right corner is conjugate to lower left and has already been pushed
-                    end
+                # fill the upper triangle of the block
                 else # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal of the block
-                    if r_b != c_b # if `r_b == c_b`, then upper diagonal of the block has already been filled by pushing the conjugate element
-                        c_u_inv = 2B - c_u
-                        for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
-                            push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
-                        end
+                    c_u_inv = 2B-c_u+1 
+                    for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
                     end
                 end
             end
@@ -259,13 +295,38 @@ end
 
 """
 Push value `val` to element (`r`, `c`) of the block (`r_b`, `c_b`) of `H`, with block size being `blocksize`.
-The complex-conjugate element is also pushed.
+If `conjugate=true`, then the complex-conjugate element is also pushed.
 """
-function push_vals!(H; r_b, c_b, r, c, blocksize, val)
+function push_vals!(H; r_b, c_b, r, c, blocksize, val, conjugate=false)
     i = (r_b-1)*blocksize + r
     j = (c_b-1)*blocksize + c
     H[i, j] = val
-    H[j, i] = val'
+    conjugate && (H[j, i] = val')
+end
+
+"""
+Construct from the result of 2D FFT `u` the matrix `V` indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+In a preliminary step, `u` is `fftshift`'ed.
+`make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
+We call it "naive" because `V` is allocated and then we sipmly go over each element, assigning an appropriate element of `u`.
+In the dense case it is preferred over (since it's faster than) [`rfft_to_matrix!`](@ref)
+because even if `u[i, j]=0`, the corresponding element of `V` still must be accessed to be filled with a zero.
+"""
+function fft_to_matrix_naive!(u::Matrix{<:Number}; make_real=false)
+    N = size(u, 1) # number of points used for FFT
+    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
+    B = 2M + 1
+    V = Matrix{make_real ? real(eltype(u)) : eltype(u)}(undef, B^2, B^2)
+    make_real && (u .= real.(u))
+    u = FFTW.fftshift(u) # indexing into `u` is more convenient if we shift
+    @floop for jx in 1:B
+        for jy in 1:B, j′x in 1:B, j′y in 1:B
+            j₋x = j′x - jx
+            j₋y = j′y - jy
+            V[(j′x-1)B+j′y, (jx-1)B+jy] = u[j₋x+B, j₋y+B]
+        end
+    end
+    return V
 end
 
 """
@@ -375,7 +436,7 @@ end
 
 "Helper function for shift-and-invert: construct a linear map that applies the inverse of `A`."
 function dense_linear_map(A)
-    F = factorize(A)
+    F = factorize(A) # Bunch-Kaufman for Hermitian A, LU otherwise
     LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
 end
 

@@ -1,5 +1,6 @@
 using XSpaceHamiltonians
 using Test
+using LinearAlgebra: Symmetric
 
 @testset "Basic tests" begin
 
