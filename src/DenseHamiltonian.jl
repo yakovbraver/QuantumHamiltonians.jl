@@ -65,8 +65,8 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
 
         f = dx/Lx * dy/Ly
 
-        u_real = Matrix{R}(undef, N, N)
-        F = FFTW.plan_fft(u_real) # rfft is only marginally faster and much less convenient to handle in `fft_to_matrix`, so using fft
+        v = Matrix{Complex{R}}(undef, N, N) # for storing discretised ℎ
+        F = FFTW.plan_fft(v) # the savings of rfft are negligible, and the output is much less convenient to handle in `fft_to_matrix`, so using fft
 
         # iterate over `𝐻` and populate `H`
         for jH in axes(𝐻, 2)
@@ -79,10 +79,8 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                 # calculate and store FFT of ℎ
                 if !isnothing(ℎ)
                     ℎ_isrealeven = (ℎ(xlims[1], ylims[1]) isa Real) & 𝐻_iseven[iH, jH]
-                    for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
-                        u_real[ix, iy] = ℎ(x, y)
-                    end
-                    H[wi, wj] .= fft_to_matrix_naive!(F * u_real, make_real=ℎ_isrealeven) .* f # TODO: `F * u_real` allocates a temporary
+                    v .= ℎ.(xs, ys')
+                    H[wi, wj] .= fft_to_matrix_naive!(F * v, make_real=ℎ_isrealeven) .* f # TODO: `F * v` allocates a temporary
                 end
 
                 # for diagonal block, add Laplacian, Γ, and 𝐴
@@ -218,7 +216,7 @@ Based on results of a real 2D RFT `u`, return the matrix indexed by (𝑗′ₓ�
 `make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
 For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
 """
-function rfft_to_matrix!(u; make_real=false)
+function rfft_to_matrix!(u::AbstractMatrix{<:Number}; make_real=false)
     N = size(u, 2) # number of points used for FFT
     M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
     B = 2M + 1 # the size of each block
@@ -254,13 +252,17 @@ end
 
 """
 Based on results of a 2D FFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+`make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
 For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
 """
-function fft_to_matrix(u)
+function fft_to_matrix(u::AbstractMatrix; make_real=false)
     N = size(u, 2) # number of points used for FFT
     M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
     B = 2M + 1 # the size of each block
-    H = zeros(eltype(u), B^2, B^2)
+
+    H = make_real ? zeros(real(eltype(u)), B^2, B^2) : zeros(eltype(u), B^2, B^2)
+    H[diagind(H)] .= real(u[1, 1]) # store the secular component manually
+    make_real && (u .= real.(u))
     
     @floop for c_u in axes(u, 2)
         for r_u in axes(u, 1) # iterate over columns and rows of `u`

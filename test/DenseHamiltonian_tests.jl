@@ -16,7 +16,17 @@
     
     H = XSpaceHamiltonians.fft_to_matrix_naive!(u)
     @test H == H_true
-     
+    
+    u = [10i+j for i = 1:5, j=1:5]
+    n_elem = XSpaceHamiltonians.filter_count_fft!(u)
+    @test n_elem == 81
+    H = XSpaceHamiltonians.fft_to_matrix_sparse!(u)
+    @test H == H_true
+
+    u = [(10i+j)*iseven(i+j) for i = 1:5, j=1:5]
+    n_elem = XSpaceHamiltonians.filter_count_fft!(u)
+    @test n_elem == 45
+
     u = [10i+j for i = 1:3, j=1:5]
     H = XSpaceHamiltonians.rfft_to_matrix!(u)
     @test H == Symmetric(H_true, :L)
