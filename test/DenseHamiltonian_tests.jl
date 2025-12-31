@@ -30,12 +30,11 @@
     u = [10i+j for i = 1:3, j=1:5]
     H = XSpaceHamiltonians.rfft_to_matrix!(u)
     @test H == Symmetric(H_true, :L)
-
 end
 
 # TODO add additional type checks
-# Analysis of https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
-@testset "Test 2D 1-component diagonalisation" begin
+# Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
+@testset "Test dense and sparse 2D 1-component diagonalisation" begin
     function 𝑈(x::Real, y::Real)
         (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y)^2 * 2ϵ^2 * (1+ϵc^2)
     end
@@ -115,7 +114,7 @@ end
     xlimits = (0, 2π) .|> Float32
     ylimits = (0, 2π) .|> Float32
 
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven = [true;;], 𝐴_x, 𝐴_y);
+    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven=[true;;], 𝐴_x, 𝐴_y);
 
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -125,9 +124,13 @@ end
     diagonalize!(dh, nev=1)
     @test dh.ε[1] ≈ 0.571 atol=1e-3
 
+    sh = SparseHamiltonian(Float64.(xlimits), Float64.(ylimits); isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven=[true;;], 𝐴_x, 𝐴_y) # cast to Float64 because sparse diagonalisation does not support Float32
+    diagonalize!(sh, nev=1)
+    @test sh.ε[1] ≈ 0.571 atol=1e-3
 end
 
-@testset "Test 2D 3-component diagonalisation" begin
+# Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
+@testset "Test dense 2D 3-component diagonalisation" begin
     function 𝛺₁(x::Real, y::Real)
         Ω₁₀ / 2
     end
@@ -209,6 +212,7 @@ end
     @test dh.ε[1] ≈ 0.5 rtol=1e-3
 end
 
+# Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
 @testset "Test sparse 2D 3-component diagonalisation" begin
     function 𝛺₁(x::Real, y::Real)
         Ω₁₀ / 2
@@ -216,7 +220,6 @@ end
 
     function 𝛺₂(x::Real, y::Real)
         ( -Ω₋ * cos(x-y) + Ω₊ * cos(x+y) ) / 2
-        # - Ω₋ * cis(χ/2) * cos(x-y) + Ω₊ * cis(-χ/2) * cos(x+y) 
     end
 
     ϵ::Float64 = 0.1
@@ -224,7 +227,6 @@ end
     Ω₁₀::Float64 = 2000
     Ω₊ = Ω₁₀ / (ϵ*√(1+ϵc^2))
     Ω₋ = Ω₊ * ϵc
-    # χ::Float64 = 0
     Γ₃::Float64 = 1e3
 
     xlimits = (-π, π) .|> Float64
@@ -242,7 +244,15 @@ end
     @test sh.H[10, 23] ≈ Ω₊ / 4
     @test sh.H[11, 22] ≈ -Ω₊ / 4
         
-    # approximate diagonalisation
+    diagonalize!(sh, nev=1)
+    @test sh.ε[1] ≈ 0.039 atol=1e-3
+
+    ### Non-Hermitian periodic diagonalisation
+    sh = SparseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
+    @test sh.H[1, 19] ≈ Ω₁₀ / 2
+    @test sh.H[10, 23] ≈ Ω₊ / 4
+    @test sh.H[11, 22] ≈ -Ω₊ / 4
+        
     diagonalize!(sh, nev=1)
     @test sh.ε[1] ≈ 0.039 atol=1e-3
 end
