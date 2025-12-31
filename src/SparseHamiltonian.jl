@@ -13,7 +13,7 @@ mutable struct SparseHamiltonian{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltoni
     δ::R # coefficient of the momentum term: -iδ∇
     nc::Int # number of components
     isperiodic::Bool
-    ishermitian::Bool # `H` is nonhermitian if decays Γ are present (currently not used because diagonalisation routine is always the same)
+    ishermitian::Bool # `H` is nonhermitian if decays Γ are present
     𝐻::Matrix{<:Union{Function,Nothing}} # nc-component Hamiltonian matrix containing coordinate-space functions
     𝐴_x::Union{Function,Nothing}
     𝐴_y::Union{Function,Nothing}
@@ -316,8 +316,12 @@ function diagonalize!(sh::SparseHamiltonian{R,T,S}; nev::Integer) where {R<:Real
     linmap = LinSolveLinMap{T, typeof(linsolve)}(linsolve, size(sh.H))
     ps, info = partialschur(linmap; nev, which=:LM);
     @show info
-    sh.ε, sh.V = partialeigen(ps)
-    sh.ε .= inv.(sh.ε)
+    ε, sh.V = partialeigen(ps)
+    if sh.ishermitian # if sh.H is Hermitian but complex, the solver returns complex eigenvalues
+        sh.ε = real(inv.(ε)) # so we make them real manually
+    else
+        sh.ε = inv.(ε)
+    end
 end
 
 "A linear map holding a `LinearSolve` object, used for applying the inverse map."
