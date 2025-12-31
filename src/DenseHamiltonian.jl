@@ -124,11 +124,11 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
         ys = range(ylims[1], ylims[2], N)
         dx, dy = xs[2]-xs[1], ys[2]-ys[1]
 
-        f = dx/Lx * dy/Ly
+        f = dx/Lx * dy/Ly # slightly more correct than just 1/N^2 since we discretise up to `xlimits[2]`, not `xlimits[2]-dx`
 
-        u_real = Matrix{R}(undef, length(xs), length(ys))
-        u_imag = Matrix{R}(undef, isreal ? 0 : length(xs), isreal ? 0 : length(ys)) # if `isreal`, then make the matrix 0x0
-        F = FFTW.plan_r2r!(u_real, FFTW.REDFT00)
+        fft_buff = Matrix{R}(undef, length(xs), length(ys))
+        fft_buff_im = isreal ? R[;;] : Matrix{R}(undef, length(xs), length(ys)) # if `isreal`, then this buffer is not needed; make it 0x0
+        F = FFTW.plan_r2r!(fft_buff, FFTW.REDFT00)
 
         # iterate over `𝐻` and populate `H`
         for jH in axes(𝐻, 2)
@@ -141,20 +141,21 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                 # calculate and store FFT of ℎ
                 if !isnothing(ℎ)
                     if typeof(ℎ(xs[1], ys[1])) <: Real
-                        for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
-                            u_real[ix, iy] = ℎ(x, y)
-                        end
-                        (F * u_real) .*= f
-                        H[wi, wj] .= dct_to_matrix(u_real)
+                        fft_buff .= ℎ.(xs, ys')
+                        (F * fft_buff)
+                        fft_buff .*= f
+                        H[wi, wj] .= dct_to_matrix(fft_buff)
                     else
                         # here `ℎ` is a complex function, but `FFTW.REDFT00` can only handle real ones. So we transform Re and Im separately.
-                        for (iy, y) in enumerate(ys), (ix, x) in enumerate(xs)
-                            u_real[ix, iy], u_imag[ix, iy] = reim(ℎ(x, y))
-                        end
-                        (F * u_real) .*= f
-                        (F * u_imag) .*= f
-                        H[wi, wj] .= dct_to_matrix(u_real)
-                        H[wi, wj] .+= im .* dct_to_matrix(u_imag)
+                        fft_buff, fft_buff_im = reim.(ℎ.(xs, ys'))
+
+                        F * fft_buff
+                        fft_buff .*= f
+                        H[wi, wj] .= dct_to_matrix(fft_buff)
+
+                        F * fft_buff_im
+                        fft_buff_im .*= f
+                        H[wi, wj] .+= im .* dct_to_matrix(fft_buff_im)
                     end
                 end
 
@@ -167,18 +168,20 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                     end
 
                     if 𝐴_x !== nothing
-                        a_i = [𝐴_x(x, y) for x in xs, y in ys]
-                        (F * a_i) .*= f
-                        A_i = dct_to_matrix(a_i)
+                        fft_buff .= 𝐴_x.(xs, ys')
+                        F * fft_buff
+                        fft_buff .*= f
+                        A_i = dct_to_matrix(fft_buff)
                         ∂_i = make_∂_x(M, Lx)
-                        H[wi, wj] += im*(A_i*∂_i + ∂_i*A_i) + A_i^2 # The perfect square for `(∂_x - A_x)^2` is much less accurate
+                        H[wi, wj] .+= im*(A_i*∂_i + ∂_i*A_i) + A_i^2 # The perfect square for `(∂_x - A_x)^2` is much less accurate
                     end
                     if 𝐴_y !== nothing
-                        a_i = [𝐴_y(x, y) for x in xs, y in ys]
-                        (F * a_i) .*= f
-                        A_i = dct_to_matrix(a_i)
+                        fft_buff .= 𝐴_y.(xs, ys')
+                        F * fft_buff
+                        fft_buff .*= f
+                        A_i = dct_to_matrix(fft_buff)
                         ∂_i = make_∂_y(M, Ly)
-                        H[wi, wj] += im*(A_i*∂_i + ∂_i*A_i) + A_i^2 # The perfect square for `(∂_y - A_y)^2` is much less accurate
+                        H[wi, wj] .+= im*(A_i*∂_i + ∂_i*A_i) + A_i^2 # The perfect square for `(∂_y - A_y)^2` is much less accurate
                     end
                 elseif !all(iszero, Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view when diagonalising)
                     H[wj, wi] .= @view(H[wi, wj])'
