@@ -58,8 +58,6 @@ function SparseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Boo
         xs = range(xlims[1], xlims[2]-dx, N)
         ys = range(ylims[1], ylims[2]-dy, N)
 
-        f = dx/Lx * dy/Ly
-
         v = Matrix{Complex{R}}(undef, N, N) # for storing discretised ℎ
         F = FFTW.plan_fft(v)
 
@@ -74,7 +72,7 @@ function SparseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Boo
                 else
                     ℎ_isrealeven = (ℎ(xlims[1], ylims[1]) isa Real) & 𝐻_iseven[iH, jH]
                     v .= ℎ.(xs, ys')
-                    H_temp[iH, jH] = fft_to_matrix_sparse!(F * v * f; make_real=ℎ_isrealeven, fft_threshold) # TODO: `F * u` allocates a temporary
+                    H_temp[iH, jH] = fft_to_matrix_sparse!(F * v / N^2; make_real=ℎ_isrealeven, fft_threshold) # TODO: `F * u` allocates a temporary
                 end
 
                 # for a diagonal block, add Laplacian, Γ, and 𝐴
@@ -89,7 +87,7 @@ function SparseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Boo
                         # if 𝐴 is present, we have to construct the matrix explicitly
                         if 𝐴_x !== nothing
                             a_i = [𝐴_x(x, y) for x in xs, y in ys] # using generic naming "_i" to reuse the same variables in the next `if`
-                            A_i = fft_to_matrix_sparse!(F * a_i * f; fft_threshold)
+                            A_i = fft_to_matrix_sparse!(F * a_i / N^2; fft_threshold)
                             ∂_i = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
                             H_temp[iH, jH] += (∂_i - A_i)^2
                             # if there is no 𝐴𝑦, then add ∂ₓ². Otherwise it will be added together with 𝐴𝑦 in the next `if` clause
@@ -97,7 +95,7 @@ function SparseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Boo
                         end
                         if 𝐴_y !== nothing
                             a_i = [𝐴_y(x, y) for x in xs, y in ys]
-                            A_i = fft_to_matrix_sparse!(F * a_i * f; fft_threshold)
+                            A_i = fft_to_matrix_sparse!(F * a_i / N^2; fft_threshold)
                             ∂_i = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
                             H_temp[iH, jH] += (∂_i - A_i)^2
                             # if there is no 𝐴ₓ, then add ∂𝑦². Otherwise it was added together with 𝐴ₓ in the preceding `if` clause
