@@ -124,8 +124,6 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
         ys = range(ylims[1], ylims[2], N)
         dx, dy = xs[2]-xs[1], ys[2]-ys[1]
 
-        f = dx/Lx * dy/Ly # slightly more correct than just 1/N^2 since we discretise up to `xlimits[2]`, not `xlimits[2]-dx`
-
         fft_buff = Matrix{R}(undef, length(xs), length(ys))
         fft_buff_im = isreal ? R[;;] : Matrix{R}(undef, length(xs), length(ys)) # if `isreal`, then this buffer is not needed; make it 0x0
         F = FFTW.plan_r2r!(fft_buff, FFTW.REDFT00)
@@ -143,18 +141,18 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                     if typeof(ℎ(xs[1], ys[1])) <: Real
                         fft_buff .= ℎ.(xs, ys')
                         (F * fft_buff)
-                        fft_buff .*= f
+                        fft_buff ./= (N-1)^2
                         H[wi, wj] .= dct_to_matrix(fft_buff)
                     else
                         # here `ℎ` is a complex function, but `FFTW.REDFT00` can only handle real ones. So we transform Re and Im separately.
                         fft_buff, fft_buff_im = reim.(ℎ.(xs, ys'))
 
                         F * fft_buff
-                        fft_buff .*= f
+                        fft_buff ./= (N-1)^2
                         H[wi, wj] .= dct_to_matrix(fft_buff)
 
                         F * fft_buff_im
-                        fft_buff_im .*= f
+                        fft_buff_im ./= (N-1)^2
                         H[wi, wj] .+= im .* dct_to_matrix(fft_buff_im)
                     end
                 end
@@ -170,7 +168,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                     if 𝐴_x !== nothing
                         fft_buff .= 𝐴_x.(xs, ys')
                         F * fft_buff
-                        fft_buff .*= f
+                        fft_buff ./= (N-1)^2
                         A_i = dct_to_matrix(fft_buff)
                         ∂_i = make_∂_x(M, Lx)
                         H[wi, wj] .+= im*(A_i*∂_i + ∂_i*A_i) + A_i^2 # The perfect square for `(∂_x - A_x)^2` is much less accurate
@@ -178,7 +176,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                     if 𝐴_y !== nothing
                         fft_buff .= 𝐴_y.(xs, ys')
                         F * fft_buff
-                        fft_buff .*= f
+                        fft_buff ./= (N-1)^2
                         A_i = dct_to_matrix(fft_buff)
                         ∂_i = make_∂_y(M, Ly)
                         H[wi, wj] .+= im*(A_i*∂_i + ∂_i*A_i) + A_i^2 # The perfect square for `(∂_y - A_y)^2` is much less accurate
@@ -449,61 +447,61 @@ function dense_linear_map(A)
     LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
 end
 
-"""
-Calculate eigenenergies for all pairs of quasimomenta in `qxs` and `qys`.
-Calculate `nev` lowest bands using `ArnoldiMethod`.
-If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
-Note that `dh.H` is modified in the process.
-"""
-function diagonalize!(dh::DenseHamiltonian{R,T}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nev::Integer=0) where {R<:Real, T<:Number}
-    (;M, xlims, ylims, Lx, Ly, δ, 𝑈, 𝐴_x, 𝐴_y) = dh
+# """
+# Calculate eigenenergies for all pairs of quasimomenta in `qxs` and `qys`.
+# Calculate `nev` lowest bands using `ArnoldiMethod`.
+# If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
+# Note that `dh.H` is modified in the process.
+# """
+# function diagonalize!(dh::DenseHamiltonian{R,T}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nev::Integer=0) where {R<:Real, T<:Number}
+#     (;M, xlims, ylims, Lx, Ly, δ, 𝑈, 𝐴_x, 𝐴_y) = dh
 
-    nsaves = nev == 0 ? (2M+1)^2 : nev # number of eigenvalues and eigenvectors to allocate
-    dh.ε_q = Array{R,3}(undef, nsaves, length(qxs), length(qys))
-    dh.V_q = Array{T,4}(undef, (2M+1)^2, nsaves, length(qxs), length(qys))
+#     nsaves = nev == 0 ? (2M+1)^2 : nev # number of eigenvalues and eigenvectors to allocate
+#     dh.ε_q = Array{R,3}(undef, nsaves, length(qxs), length(qys))
+#     dh.V_q = Array{T,4}(undef, (2M+1)^2, nsaves, length(qxs), length(qys))
     
-    if 𝐴_x === nothing
-        H_diag = diagview(dh.H)
-        U_diag = H_diag[(end+1) ÷ 2] # generally, `H = -Δ + U`, but this element is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian` constructor)
-    else
-        N = 4M # number of points for FFT. This will yield harmonics from -2M to 2M
-        dx, dy = Lx/N, Ly/N
-        xs = range(xlims[1], xlims[2]-dx, N)
-        ys = range(ylims[1], ylims[2]-dy, N)
+#     if 𝐴_x === nothing
+#         H_diag = diagview(dh.H)
+#         U_diag = H_diag[(end+1) ÷ 2] # generally, `H = -Δ + U`, but this element is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian` constructor)
+#     else
+#         N = 4M # number of points for FFT. This will yield harmonics from -2M to 2M
+#         dx, dy = Lx/N, Ly/N
+#         xs = range(xlims[1], xlims[2]-dx, N)
+#         ys = range(ylims[1], ylims[2]-dy, N)
 
-        f = dx/Lx * dy/Ly
-        u = [𝑈(x, y) for x in xs, y in ys]
+#         f = dx/Lx * dy/Ly
+#         u = [𝑈(x, y) for x in xs, y in ys]
 
-        F = FFTW.plan_rfft(u)
-        U = F * u * f |> dft_to_matrix
+#         F = FFTW.plan_rfft(u)
+#         U = F * u * f |> dft_to_matrix
     
-        a_x = [𝐴_x(x, y) for x in xs, y in ys]
-        a_y = [𝐴_y(x, y) for x in xs, y in ys]
+#         a_x = [𝐴_x(x, y) for x in xs, y in ys]
+#         a_y = [𝐴_y(x, y) for x in xs, y in ys]
 
-        D_x = F * a_x * -f |> dft_to_matrix # this is -𝐴ₓ
-        D_y = F * a_y * -f |> dft_to_matrix # this is -𝐴y
+#         D_x = F * a_x * -f |> dft_to_matrix # this is -𝐴ₓ
+#         D_y = F * a_y * -f |> dft_to_matrix # this is -𝐴y
         
-        D_x += Diagonal(typeof(Lx)[2π * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this adds -iδ∂ₓ and results in -iδ∂ₓ-𝐴ₓ
-        D_y += Diagonal(typeof(Lx)[2π * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this adds -iδ∂y and results in -iδ∂y-𝐴y
-    end
+#         D_x += Diagonal(typeof(Lx)[2π * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this adds -iδ∂ₓ and results in -iδ∂ₓ-𝐴ₓ
+#         D_y += Diagonal(typeof(Lx)[2π * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this adds -iδ∂y and results in -iδ∂y-𝐴y
+#     end
     
-    # iterate quasimomenta
-    for (iqy, qy) in enumerate(qys), (iqx, qx) in enumerate(qxs)
-        # update diagonal
-        if 𝐴_x === nothing
-            H_diag = [(2π*δ*jx/Lx + qx)^2 + (2π*δ*jy/Ly + qy)^2 + U_diag for jx in -M:M for jy in -M:M]
-        else
-            dh.H = (D_x + LA.I*qx)^2 + (D_y + LA.I*qy)^2 + U
-        end
+#     # iterate quasimomenta
+#     for (iqy, qy) in enumerate(qys), (iqx, qx) in enumerate(qxs)
+#         # update diagonal
+#         if 𝐴_x === nothing
+#             H_diag = [(2π*δ*jx/Lx + qx)^2 + (2π*δ*jy/Ly + qy)^2 + U_diag for jx in -M:M for jy in -M:M]
+#         else
+#             dh.H = (D_x + LA.I*qx)^2 + (D_y + LA.I*qy)^2 + U
+#         end
 
-        # diagonalise
-        if nev == 0
-            dh.ε_q[:, iqx, iqy], dh.V_q[:, :, iqx, iqy] = eigen(Hermitian(dh.H))
-        else
-            S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
-            @show info
-            dh.V_q[:, :, iqx, iqy] = S.Q
-            dh.ε_q[:, iqx, iqy] = inv.(real.(S.eigenvalues)) # invert back
-        end
-    end
-end
+#         # diagonalise
+#         if nev == 0
+#             dh.ε_q[:, iqx, iqy], dh.V_q[:, :, iqx, iqy] = eigen(Hermitian(dh.H))
+#         else
+#             S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
+#             @show info
+#             dh.V_q[:, :, iqx, iqy] = S.Q
+#             dh.ε_q[:, iqx, iqy] = inv.(real.(S.eigenvalues)) # invert back
+#         end
+#     end
+# end

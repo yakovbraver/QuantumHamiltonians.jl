@@ -57,7 +57,7 @@ stateno = 1
 xs, ys, ψ = make_eigenfunction(xh, stateno, M, M)
 surface(xs, ys, abs2.(ψ[1])')
 
-########## χ = π/2, x from -pi/2 to pi/2
+########## χ = π/2, x from -π/2 to π/2
 
 χ = π/2
 
@@ -91,7 +91,7 @@ xlimits = (0, 2π) .|> Float
 ylimits = (0, 2π) .|> Float
 
 # plot potential
-M = 5
+M = 30
 xs = range(xlimits[1], xlimits[2], 2M)
 ys = range(ylimits[1], ylimits[2], 2M)
 surface(xs, ys, 𝑈)
