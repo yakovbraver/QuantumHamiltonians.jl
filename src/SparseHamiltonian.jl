@@ -58,8 +58,8 @@ function SparseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Boo
         xs = range(xlims[1], xlims[2]-dx, N)
         ys = range(ylims[1], ylims[2]-dy, N)
 
-        v = Matrix{Complex{R}}(undef, N, N) # for storing discretised ℎ
-        F = FFTW.plan_fft(v)
+        fft_buff = Matrix{Complex{R}}(undef, N, N) # a buffer for all (in-place) FFTs
+        F = FFTW.plan_fft!(fft_buff) # the savings of rfft are negligible, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
 
         # iterate over `𝐻` and populate `H_temp`
         for jH in axes(𝐻, 2)
@@ -71,8 +71,10 @@ function SparseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Boo
                     H_temp[iH, jH] = spzeros(T, Int64, (2M+1)^2, (2M+1)^2)
                 else
                     ℎ_isrealeven = (ℎ(xlims[1], ylims[1]) isa Real) & 𝐻_iseven[iH, jH]
-                    v .= ℎ.(xs, ys')
-                    H_temp[iH, jH] = fft_to_matrix_sparse!(F * v / N^2; make_real=ℎ_isrealeven, fft_threshold) # TODO: `F * u` allocates a temporary
+                    fft_buff .= ℎ.(xs, ys')
+                    F * fft_buff # in-place FFT, weird syntax
+                    fft_buff ./= N^2
+                    H_temp[iH, jH] = fft_to_matrix_sparse!(fft_buff; make_real=ℎ_isrealeven, fft_threshold)
                 end
 
                 # for a diagonal block, add Laplacian, Γ, and 𝐴
@@ -86,16 +88,20 @@ function SparseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Boo
                     else
                         # if 𝐴 is present, we have to construct the matrix explicitly
                         if 𝐴_x !== nothing
-                            a_i = [𝐴_x(x, y) for x in xs, y in ys] # using generic naming "_i" to reuse the same variables in the next `if`
-                            A_i = fft_to_matrix_sparse!(F * a_i / N^2; fft_threshold)
+                            fft_buff .= 𝐴_x.(xs, ys')
+                            F * fft_buff
+                            fft_buff ./= N^2
+                            A_i = fft_to_matrix_sparse!(fft_buff; fft_threshold)
                             ∂_i = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
                             H_temp[iH, jH] += (∂_i - A_i)^2
                             # if there is no 𝐴𝑦, then add ∂ₓ². Otherwise it will be added together with 𝐴𝑦 in the next `if` clause
                             isnothing(𝐴_y) && (H_temp[iH, jH] += Diagonal([(2PI * δ * jy/Ly)^2 for jx in -M:M for jy in -M:M]))
                         end
                         if 𝐴_y !== nothing
-                            a_i = [𝐴_y(x, y) for x in xs, y in ys]
-                            A_i = fft_to_matrix_sparse!(F * a_i / N^2; fft_threshold)
+                            fft_buff .= 𝐴_y.(xs, ys')
+                            F * fft_buff
+                            fft_buff ./= N^2
+                            A_i = fft_to_matrix_sparse!(fft_buff; fft_threshold)
                             ∂_i = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
                             H_temp[iH, jH] += (∂_i - A_i)^2
                             # if there is no 𝐴ₓ, then add ∂𝑦². Otherwise it was added together with 𝐴ₓ in the preceding `if` clause
