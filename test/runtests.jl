@@ -4,7 +4,7 @@ using LinearAlgebra: Symmetric
 
 @testset "Basic tests" begin
 
-    @testset "DenseHamiltonian tests" begin
-        include("DenseHamiltonian_tests.jl")
+    @testset "2D tests" begin
+        include("2D.jl")
     end
 end
