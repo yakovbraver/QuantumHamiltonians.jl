@@ -4,7 +4,7 @@ A type representing a spatial [𝑟 = (𝑥, 𝑦)], 𝑛-component, possibly qu
     𝐻ᵢⱼ(𝑟) = 𝑉ᵢⱼ(𝑟)
 as a sparse matrix.
 """
-mutable struct SparseHamiltonian{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct SparseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian{:sparse} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Tuple{R, R}
     ylims::Tuple{R, R}
     Lx::R # length along 𝑥
@@ -25,16 +25,16 @@ mutable struct SparseHamiltonian{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltoni
 end
 
 """
-Construct a `SparseHamiltonian` object using the coordinate-space functions stored in `𝐻`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
+Construct a `SparseHamiltonian2D` object using the coordinate-space functions stored in `𝐻`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
 `M` is the maximum harmonic number. In the periodic case, the Hamiltonian will be `nc*(2M+1)²`-by-`nc*(2M+1)²` where `nc` is the number of components.
 In nonperiodic case, the size will be `nc*M²`-by-`nc*M²`.
 `𝐻_iseven[i, j]` matters only if `isperiodic=true` and shows whether `𝐻[i, j]` is an even function (i.e. whether ℎ(𝑥, 𝑦) = ℎ(-𝑥, -𝑦)). If it is, then Fourier transform is real, which is used for better accuracy.
 If *all* functions are even (and real), then the resulting Fourier-space Hamiltonian is real (provided also there is no 𝐴 and Γ), giving a speed-up and better accuracy (compared to complex diagonalisation).
 If `𝐻[i, j] === nothing` or it is complex, then the value of `𝐻_iseven[i, j]` does not matter.
 """
-function SparseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                           𝐻::AbstractMatrix{<:Union{Function,Nothing}}, 𝐻_iseven::AbstractMatrix{Bool}=falses(size(𝐻)), Γ::Vector{R}=zeros(R, size(𝐻, 1)),
-                           𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing, fft_threshold::R=√eps(R)) where R <: Real
+function SparseHamiltonian2D(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
+                             𝐻::AbstractMatrix{<:Union{Function,Nothing}}, 𝐻_iseven::AbstractMatrix{Bool}=falses(size(𝐻)), Γ::Vector{R}=zeros(R, size(𝐻, 1)),
+                             𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing, fft_threshold::R=√eps(R)) where R <: Real
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1]
     
     PI = R(π) # π of the working type to prevent widening
@@ -124,7 +124,7 @@ function SparseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Boo
     # determine the type of eigenvalues 
     ishermitian = all(==(0), Γ) # if all `Γ`s are zeros, then Hamiltonian is Hermitian and the eigenvalues real
     S = ishermitian ? R : Complex{R} # type of eigenvalues
-    return SparseHamiltonian(xlims, ylims, Lx, Ly, M, δ, nc, isperiodic, ishermitian, 𝐻, 𝐴_x, 𝐴_y, H, S[], T[;;], S[;;;], T[;;;;])
+    return SparseHamiltonian2D(xlims, ylims, Lx, Ly, M, δ, nc, isperiodic, ishermitian, 𝐻, 𝐴_x, 𝐴_y, H, S[], T[;;], S[;;;], T[;;;;])
 end
 
 """
@@ -316,7 +316,7 @@ function push_vals!(rows, cols, vals, counter; r_b, c_b, r, c, blocksize, val, c
 end
 
 "Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`."
-function diagonalize!(sh::SparseHamiltonian{R,T,S}; nev::Integer) where {R<:Real,T<:Number,S<:Number}
+function diagonalize!(sh::SparseHamiltonian2D{R,T,S}; nev::Integer) where {R<:Real,T<:Number,S<:Number}
     prob = LS.LinearProblem(sh.H, similar(sh.H, size(sh.H, 1)))
     linsolve = LS.init(prob, LS.UMFPACKFactorization())
     linmap = LinSolveLinMap{T, typeof(linsolve)}(linsolve, size(sh.H))

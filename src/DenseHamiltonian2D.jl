@@ -4,7 +4,7 @@ A type representing a spatial [𝑟 = (𝑥, 𝑦)], 𝑛-component, possibly qu
     𝐻ᵢⱼ(𝑟) = 𝑉ᵢⱼ(𝑟)
 as a dense matrix.
 """
-mutable struct DenseHamiltonian{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct DenseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian{:dense} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Tuple{R, R}
     ylims::Tuple{R, R}
     Lx::R # length along 𝑥
@@ -25,16 +25,16 @@ mutable struct DenseHamiltonian{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonia
 end
 
 """
-Construct a `DenseHamiltonian` object using the coordinate-space functions stored in `𝐻`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
+Construct a `DenseHamiltonian2D` object using the coordinate-space functions stored in `𝐻`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
 `M` is the maximum harmonic number. In the periodic case, the Hamiltonian will be `nc*(2M+1)²`-by-`nc*(2M+1)²` where `nc` is the number of components.
 In nonperiodic case, the size will be `nc*M²`-by-`nc*M²`.
 `𝐻_iseven[i, j]` matters only if `isperiodic=true` and shows whether `𝐻[i, j]` is an even function (i.e. whether ℎ(𝑥, 𝑦) = ℎ(-𝑥, -𝑦)). If it is, then Fourier transform is real, which is used for better accuracy.
 If *all* functions are even (and real), then the resulting Fourier-space Hamiltonian is real (provided also there is no 𝐴 and Γ), giving a speed-up and better accuracy (compared to complex diagonalisation).
 If `𝐻[i, j] === nothing` or it is complex, then the value of `𝐻_iseven[i, j]` does not matter.
 """
-function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                          𝐻::AbstractMatrix{<:Union{Function,Nothing}}, 𝐻_iseven::AbstractMatrix{Bool}=falses(size(𝐻)), Γ::Vector{R}=zeros(R, size(𝐻, 1)),
-                          𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing) where R <: Real
+function DenseHamiltonian2D(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
+                            𝐻::AbstractMatrix{<:Union{Function,Nothing}}, 𝐻_iseven::AbstractMatrix{Bool}=falses(size(𝐻)), Γ::Vector{R}=zeros(R, size(𝐻, 1)),
+                            𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing) where R <: Real
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1]
     
     PI = R(π) # π of the working type to prevent widening
@@ -80,7 +80,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
                     fft_buff .= ℎ.(xs, ys')
                     F * fft_buff # in-place FFT, weird syntax
                     fft_buff ./= N^2
-                    H[wi, wj] .= fft_to_matrix_naive!(fft_buff, make_real=ℎ_isrealeven) # TODO: `F * fft_buff` allocates a temporary
+                    H[wi, wj] .= fft_to_matrix_naive!(fft_buff, make_real=ℎ_isrealeven)
                 end
 
                 # for diagonal block, add Laplacian, Γ, and 𝐴
@@ -191,7 +191,7 @@ function DenseHamiltonian(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool
     # determine the type of eigenvalues 
     ishermitian = all(==(0), Γ) # if all `Γ`s are zeros, then Hamiltonian is Hermitian and the eigenvalues real
     S = ishermitian ? R : Complex{R} # type of eigenvalues
-    return DenseHamiltonian(xlims, ylims, Lx, Ly, M, δ, nc, isperiodic, ishermitian, 𝐻, 𝐴_x, 𝐴_y, H, S[], eltype(H)[;;], S[;;;], eltype(H)[;;;;])
+    return DenseHamiltonian2D(xlims, ylims, Lx, Ly, M, δ, nc, isperiodic, ishermitian, 𝐻, 𝐴_x, 𝐴_y, H, S[], eltype(H)[;;], S[;;;], eltype(H)[;;;;])
 end
 
 # """
@@ -419,7 +419,7 @@ end
 Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 """
-function diagonalize!(dh::DenseHamiltonian; nev::Integer)
+function diagonalize!(dh::DenseHamiltonian2D; nev::Integer)
     if nev == 0
         if dh.ishermitian
             dh.ε, dh.V = eigen(Hermitian(dh.H)) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
@@ -453,7 +453,7 @@ end
 # If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 # Note that `dh.H` is modified in the process.
 # """
-# function diagonalize!(dh::DenseHamiltonian{R,T}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nev::Integer=0) where {R<:Real, T<:Number}
+# function diagonalize!(dh::DenseHamiltonian2D{R,T}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nev::Integer=0) where {R<:Real, T<:Number}
 #     (;M, xlims, ylims, Lx, Ly, δ, 𝑈, 𝐴_x, 𝐴_y) = dh
 
 #     nsaves = nev == 0 ? (2M+1)^2 : nev # number of eigenvalues and eigenvectors to allocate
@@ -462,7 +462,7 @@ end
     
 #     if 𝐴_x === nothing
 #         H_diag = diagview(dh.H)
-#         U_diag = H_diag[(end+1) ÷ 2] # generally, `H = -Δ + U`, but this element is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian` constructor)
+#         U_diag = H_diag[(end+1) ÷ 2] # generally, `H = -Δ + U`, but this element is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian2D` constructor)
 #     else
 #         N = 4M # number of points for FFT. This will yield harmonics from -2M to 2M
 #         dx, dy = Lx/N, Ly/N

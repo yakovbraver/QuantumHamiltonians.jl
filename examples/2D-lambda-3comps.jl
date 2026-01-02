@@ -17,7 +17,7 @@ function plot_comps(xs, ys, ψ)
         figs[i]   = heatmap(xs, ys, abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
         figs[i+1] = heatmap(xs, ys, angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
     end
-    plot(figs..., plot_title="Full solution, state no. $stateno, "*L"\epsilon=%$(ϵ),\ \Omega_{10}=%$(Int(Ω₁₀)), \Gamma=%$(Γ₃),"*"\n"*L"E="*"$(round(ComplexF64(sh.ε[stateno]), sigdigits=3))",
+    plot(figs..., plot_title="Full solution, state no. $stateno, "*L"\epsilon=%$(ϵ),\ \Omega_{10}=%$(Int(Ω₁₀)), \Gamma=%$(Γ₃),"*"\n"*L"E="*"$(round(ComplexF64(xh.ε[stateno]), sigdigits=3))",
          plot_titlefontcolor=:white, plot_titlefontsize=12, layout=(3, 2))
 end
 
@@ -47,17 +47,17 @@ M = 200 # for M=15, the (real part of) ground state energy matches M=200 at 5 di
      nothing nothing 𝛺₂
      nothing nothing nothing] # only upper triangle is needed
 𝐻_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
-@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
-@time sh = SparseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:sparse}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
 
-@time diagonalize!(sh, nev=5);
-sh.ε
+@time diagonalize!(xh, nev=5);
+xh.ε
 
-l = findfirst(x -> real(x) > 0, sh.ε) # find the dark-state from full diagonalisation
-sh.ε[l]
+l = findfirst(x -> real(x) > 0, xh.ε) # find the dark-state from full diagonalisation
+xh.ε[l]
 
 stateno = 5
-@time xs, ys, ψ = make_eigenfunction(sh, stateno, 101, 101);
+@time xs, ys, ψ = make_eigenfunction(xh, stateno, 101, 101);
 
 plot_comps(xs, ys, ψ)
 
@@ -85,16 +85,16 @@ M = 100
      nothing nothing 𝛺₂_cis
      nothing nothing nothing] # only upper triangle is needed
 𝐻_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
-@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
-@time sh = SparseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:sparse}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
 
-@time diagonalize!(sh, nev=5);
-sh.ε
+@time diagonalize!(xh, nev=5);
+xh.ε
     
-l = findfirst(x -> real(x) > 0, sh.ε)
-sh.ε[l]
+l = findfirst(x -> real(x) > 0, xh.ε)
+xh.ε[l]
 
 stateno = 5
-@time xs, ys, ψ = make_eigenfunction(dh, stateno, 101, 101);
+@time xs, ys, ψ = make_eigenfunction(xh, stateno, 101, 101);
 
 plot_comps(xs, ys, ψ)

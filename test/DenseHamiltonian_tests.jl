@@ -65,7 +65,7 @@ end
     M = 5
 
     ### Nonperiodic
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;])
+    dh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;])
     @test dh.H isa Matrix{Float32}
     @test dh.V isa Matrix{Float32}
 
@@ -78,7 +78,7 @@ end
     @test dh.ε[1] ≈ 2.064 rtol=1e-3
 
     ### Periodic
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven = [true;;])
+    dh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven = [true;;])
     @test dh.H isa Matrix{Float32}
 
     # exact diagonalisation
@@ -97,7 +97,7 @@ end
     ylimits = (0, π) .|> Float32
 
     ### Nonperiodic
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;], 𝐴_x, 𝐴_y)
+    dh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;], 𝐴_x, 𝐴_y)
     
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -114,7 +114,7 @@ end
     xlimits = (0, 2π) .|> Float32
     ylimits = (0, 2π) .|> Float32
 
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven=[true;;], 𝐴_x, 𝐴_y);
+    dh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven=[true;;], 𝐴_x, 𝐴_y);
 
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -124,7 +124,7 @@ end
     diagonalize!(dh, nev=1)
     @test dh.ε[1] ≈ 0.571 atol=1e-3
 
-    sh = SparseHamiltonian(Float64.(xlimits), Float64.(ylimits); isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven=[true;;], 𝐴_x, 𝐴_y) # cast to Float64 because sparse diagonalisation does not support Float32
+    sh = XSpaceHamiltonian{:sparse}(Float64.(xlimits), Float64.(ylimits); isperiodic=true, M, 𝐻=[𝑈;;], 𝐻_iseven=[true;;], 𝐴_x, 𝐴_y) # cast to Float64 because sparse diagonalisation does not support Float32
     diagonalize!(sh, nev=1)
     @test sh.ε[1] ≈ 0.571 atol=1e-3
 end
@@ -154,11 +154,11 @@ end
     M = 1 # one harmonic is enough to capture the transform in the periodic case :)
     𝐻 = [nothing nothing 𝛺₁      
          nothing nothing 𝛺₂
-         nothing nothing nothing] # only lower triangle is needed
+         nothing nothing nothing] # only upper triangle is needed
     𝐻_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
 
     ### Hermitian periodic diagonalisation
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven)
+    dh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven)
     @test dh.H isa Matrix{Float32}
     @test dh.H[1, 19] ≈ Ω₁₀ / 2
     @test dh.H[10, 23] ≈ Ω₊ / 4
@@ -173,7 +173,7 @@ end
     @test dh.ε[1] ≈ 0.039 atol=1e-3
 
     ### Hermitian nonperiodic diagonalisation
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻)
+    dh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=false, M, 𝐻)
     @test dh.H isa Matrix{Float32}
         
     # exact diagonalisation
@@ -185,7 +185,7 @@ end
     @test dh.ε[1] ≈ 0.5 rtol=1e-3
     
     ### non-Hermitian periodic diagonalisation
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃]);
+    dh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃]);
     @test dh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
@@ -200,7 +200,7 @@ end
     @test dh.ε[1] ≈ 0.039 atol=1e-3
 
     ### non-Hermitian nonperiodic diagonalisation
-    dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻, Γ=[0, 0, Γ₃]);
+    dh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=false, M, 𝐻, Γ=[0, 0, Γ₃]);
     @test dh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
@@ -235,11 +235,11 @@ end
     M = 1 # one harmonic is enough to capture the transform in the periodic case :)
     𝐻 = [nothing nothing 𝛺₁      
          nothing nothing 𝛺₂
-         nothing nothing nothing] # only lower triangle is needed
+         nothing nothing nothing] # only upper triangle is needed
     𝐻_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
 
     ### Hermitian periodic diagonalisation
-    sh = SparseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven)
+    sh = XSpaceHamiltonian{:sparse}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven)
     @test sh.H[1, 19] ≈ Ω₁₀ / 2
     @test sh.H[10, 23] ≈ Ω₊ / 4
     @test sh.H[11, 22] ≈ -Ω₊ / 4
@@ -248,7 +248,7 @@ end
     @test sh.ε[1] ≈ 0.039 atol=1e-3
 
     ### Non-Hermitian periodic diagonalisation
-    sh = SparseHamiltonian(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
+    sh = XSpaceHamiltonian{:sparse}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
     @test sh.H[1, 19] ≈ Ω₁₀ / 2
     @test sh.H[10, 23] ≈ Ω₊ / 4
     @test sh.H[11, 22] ≈ -Ω₊ / 4
