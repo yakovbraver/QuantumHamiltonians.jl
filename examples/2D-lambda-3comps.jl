@@ -43,12 +43,12 @@ xlimits = (-π, π) .|> Float
 ylimits = (-π, π) .|> Float
 
 M = 200 # for M=15, the (real part of) ground state energy matches M=200 at 5 digits accuracy, wfs also match well, so dense calculation (even with full diagonalisation) is possible
-𝐻 = [nothing nothing 𝛺₁      
+𝑈 = [nothing nothing 𝛺₁      
      nothing nothing 𝛺₂
      nothing nothing nothing] # only upper triangle is needed
-𝐻_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
-@time xh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
-@time xh = XSpaceHamiltonian{:sparse}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
+𝑈_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
+@time xh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
 
 @time diagonalize!(xh, nev=5);
 xh.ε
@@ -81,12 +81,12 @@ ylimits = (-π, π) .|> Float
 
 # Calculate
 M = 100
-𝐻 = [nothing nothing 𝛺₁      
+𝑈 = [nothing nothing 𝛺₁      
      nothing nothing 𝛺₂_cis
      nothing nothing nothing] # only upper triangle is needed
-𝐻_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
-@time xh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
-@time xh = XSpaceHamiltonian{:sparse}(xlimits, ylimits; isperiodic=true, M, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃])
+𝑈_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
+@time xh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
 
 @time diagonalize!(xh, nev=5);
 xh.ε

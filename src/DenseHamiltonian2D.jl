@@ -1,7 +1,7 @@
 """
 A type representing a spatial [𝑟 = (𝑥, 𝑦)], 𝑛-component, possibly quasimomentum-dependent Hamiltonian (𝐻ᵢⱼ)
     𝐻ᵢᵢ(𝑟) = [-i𝛿∇ + 𝑞 - 𝐴(𝑟)]² + 𝑈ᵢᵢ(𝑟)
-    𝐻ᵢⱼ(𝑟) = 𝑉ᵢⱼ(𝑟)
+    𝐻ᵢⱼ(𝑟) = 𝑈ᵢⱼ(𝑟)
 as a dense matrix.
 """
 mutable struct DenseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian{:dense} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
@@ -14,7 +14,7 @@ mutable struct DenseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamilton
     nc::Int # number of components
     isperiodic::Bool
     ishermitian::Bool # `H` is nonhermitian if decays Γ are present
-    𝐻::Matrix{<:Union{Function,Nothing}} # nc-component Hamiltonian matrix containing coordinate-space functions
+    𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings
     𝐴_x::Union{Function,Nothing}
     𝐴_y::Union{Function,Nothing}
     H::Matrix{T} # momentum-space Hamiltonian used for diagonalisation
@@ -25,27 +25,27 @@ mutable struct DenseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamilton
 end
 
 """
-Construct a `DenseHamiltonian2D` object using the coordinate-space functions stored in `𝐻`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
+Construct a `DenseHamiltonian2D` object using the coordinate-space functions stored in `𝑈`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
 `M` is the maximum harmonic number. In the periodic case, the Hamiltonian will be `nc*(2M+1)²`-by-`nc*(2M+1)²` where `nc` is the number of components.
 In nonperiodic case, the size will be `nc*M²`-by-`nc*M²`.
-`𝐻_iseven[i, j]` matters only if `isperiodic=true` and shows whether `𝐻[i, j]` is an even function (i.e. whether ℎ(𝑥, 𝑦) = ℎ(-𝑥, -𝑦)). If it is, then Fourier transform is real, which is used for better accuracy.
+`𝑈_iseven[i, j]` matters only if `isperiodic=true` and shows whether `𝑈[i, j]` is an even function (i.e. whether 𝑢(𝑥, 𝑦) = 𝑢(-𝑥, -𝑦)). If it is, then Fourier transform is real, which is used for better accuracy.
 If *all* functions are even (and real), then the resulting Fourier-space Hamiltonian is real (provided also there is no 𝐴 and Γ), giving a speed-up and better accuracy (compared to complex diagonalisation).
-If `𝐻[i, j] === nothing` or it is complex, then the value of `𝐻_iseven[i, j]` does not matter.
+If `𝑈[i, j] === nothing` or it is complex, then the value of `𝑈_iseven[i, j]` does not matter.
 """
-function DenseHamiltonian2D(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                            𝐻::AbstractMatrix{<:Union{Function,Nothing}}, 𝐻_iseven::AbstractMatrix{Bool}=falses(size(𝐻)), Γ::Vector{R}=zeros(R, size(𝐻, 1)),
+function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
+                            𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1)),
                             𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing) where R <: Real
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1]
     
     PI = R(π) # π of the working type to prevent widening
 
-    nc = size(𝐻, 1) # number of components
+    nc = size(𝑈, 1) # number of components
 
     # `isreal` will show if the resulting `H` will be real
-    isreal = all( ℎ(xlims[1], ylims[1]) isa Real for ℎ in 𝐻 if !isnothing(ℎ)) & # check if all functions in 𝐻 are real
+    isreal = all( 𝑢(xlims[1], ylims[1]) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢)) & # check if all functions in 𝑈 are real
              isnothing(𝐴_x) & isnothing(𝐴_y) & all(==(0), Γ)
     if isperiodic # for periodic potential, also check if functions are even 
-        isreal &= all(𝐻_iseven[𝐻 .!== nothing])
+        isreal &= all(𝑈_iseven[𝑈 .!== nothing])
     end
 
     H_sz = isperiodic ? (2M+1)^2 : M^2 # size of each Hamiltonian block
@@ -66,21 +66,21 @@ function DenseHamiltonian2D(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bo
         fft_buff = Matrix{Complex{R}}(undef, N, N) # a buffer for all (in-place) FFTs
         F = FFTW.plan_fft!(fft_buff) # the savings of rfft are negligible, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
 
-        # iterate over `𝐻` and populate `H`
-        for jH in axes(𝐻, 2)
+        # iterate over `𝑈` and populate `H`
+        for jH in axes(𝑈, 2)
             for iH in 1:jH # only upper triangle is scanned. The lower triangle is filled only if Γ is present
                 wi = (iH-1)*H_sz+1:iH*H_sz
                 wj = (jH-1)*H_sz+1:jH*H_sz
 
-                ℎ = 𝐻[iH, jH]
-                
-                # calculate and store FFT of ℎ
-                if !isnothing(ℎ)
-                    ℎ_isrealeven = (ℎ(xlims[1], ylims[1]) isa Real) & 𝐻_iseven[iH, jH]
-                    fft_buff .= ℎ.(xs, ys')
+                𝑢 = 𝑈[iH, jH]
+
+                # calculate and store FFT of 𝑢
+                if !isnothing(𝑢)
+                    𝑢_isrealeven = (𝑢(xlims[1], ylims[1]) isa Real) & 𝑈_iseven[iH, jH]
+                    fft_buff .= 𝑢.(xs, ys')
                     F * fft_buff # in-place FFT, weird syntax
                     fft_buff ./= N^2
-                    H[wi, wj] .= fft_to_matrix_naive!(fft_buff, make_real=ℎ_isrealeven)
+                    H[wi, wj] .= fft_to_matrix_naive!(fft_buff, make_real=𝑢_isrealeven)
                 end
 
                 # for diagonal block, add Laplacian, Γ, and 𝐴
@@ -128,24 +128,24 @@ function DenseHamiltonian2D(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bo
         fft_buff_im = isreal ? R[;;] : Matrix{R}(undef, length(xs), length(ys)) # if `isreal`, then this buffer is not needed; make it 0x0
         F = FFTW.plan_r2r!(fft_buff, FFTW.REDFT00)
 
-        # iterate over `𝐻` and populate `H`
-        for jH in axes(𝐻, 2)
+        # iterate over `𝑈` and populate `H`
+        for jH in axes(𝑈, 2)
             for iH in 1:jH # only upper triangle is scanned. The lower triangle is filled only if Γ is present
                 wi = (iH-1)*H_sz+1:iH*H_sz
                 wj = (jH-1)*H_sz+1:jH*H_sz
 
-                ℎ = 𝐻[iH, jH]
+                𝑢 = 𝑈[iH, jH]
 
-                # calculate and store FFT of ℎ
-                if !isnothing(ℎ)
-                    if typeof(ℎ(xs[1], ys[1])) <: Real
-                        fft_buff .= ℎ.(xs, ys')
+                # calculate and store FFT of 𝑢
+                if !isnothing(𝑢)
+                    if typeof(𝑢(xs[1], ys[1])) <: Real
+                        fft_buff .= 𝑢.(xs, ys')
                         (F * fft_buff)
                         fft_buff ./= (N-1)^2
                         H[wi, wj] .= dct_to_matrix(fft_buff)
                     else
-                        # here `ℎ` is a complex function, but `FFTW.REDFT00` can only handle real ones. So we transform Re and Im separately.
-                        fft_buff, fft_buff_im = reim.(ℎ.(xs, ys'))
+                        # here `𝑢` is a complex function, but `FFTW.REDFT00` can only handle real ones. So we transform Re and Im separately.
+                        fft_buff, fft_buff_im = reim.(𝑢.(xs, ys'))
 
                         F * fft_buff
                         fft_buff ./= (N-1)^2
@@ -191,7 +191,7 @@ function DenseHamiltonian2D(xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bo
     # determine the type of eigenvalues 
     ishermitian = all(==(0), Γ) # if all `Γ`s are zeros, then Hamiltonian is Hermitian and the eigenvalues real
     S = ishermitian ? R : Complex{R} # type of eigenvalues
-    return DenseHamiltonian2D(xlims, ylims, Lx, Ly, M, δ, nc, isperiodic, ishermitian, 𝐻, 𝐴_x, 𝐴_y, H, S[], eltype(H)[;;], S[;;;], eltype(H)[;;;;])
+    return DenseHamiltonian2D(xlims, ylims, Lx, Ly, M, δ, nc, isperiodic, ishermitian, 𝑈, 𝐴_x, 𝐴_y, H, S[], eltype(H)[;;], S[;;;], eltype(H)[;;;;])
 end
 
 # """
@@ -215,101 +215,6 @@ end
 #     H += U
 #     return H
 # end
-
-"""
-Based on results of a real 2D RFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
-`make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
-For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
-"""
-function rfft_to_matrix!(u::AbstractMatrix{<:Number}; make_real=false)
-    N = size(u, 2) # number of points used for FFT
-    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
-    B = 2M + 1 # the size of each block
-    H = make_real ? zeros(real(eltype(u)), B^2, B^2) : zeros(eltype(u), B^2, B^2)
-    H[diagind(H)] .= real(u[1, 1]) # store the secular component manually
-    u[1, 1] = 0 # remove because it breaks the structure of the loop below if included
-    make_real && (u .= real.(u))
-
-    # it is assumed that u[1, 1] == 0 -- otherwise, one would also need to prevent double pushing of the diagonal elements
-    @floop for c_u in axes(u, 2)
-        for r_u in axes(u, 1) # iterate over columns and rows of `u`
-            u[r_u, c_u] == 0 && continue
-            val = u[r_u, c_u]
-            for r_b in r_u:B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
-                c_b = r_b - r_u + 1 # block-column where to place the value
-                # fill the lower triangle of the block, including the main diagonal
-                if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block (`c_u=1` means main diagonal)
-                    for (r, c) in zip(c_u:B, 1:B+1-c_u)
-                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val, conjugate=true)
-                    end
-                # fill the upper triangle of the block, but this is not needed for a diagonal block (`r_b == c_b`), because then the upper triangle has already been filled by pushing the conjugate element
-                elseif r_b != c_b # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal of the block,
-                    c_u_inv = 2B-c_u+1
-                    for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
-                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val, conjugate=true)
-                    end
-                end
-            end
-        end
-    end
-    return H
-end
-
-"""
-Based on results of a 2D FFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
-`make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
-For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
-"""
-function fft_to_matrix(u::AbstractMatrix; make_real=false)
-    N = size(u, 2) # number of points used for FFT
-    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
-    B = 2M + 1 # the size of each block
-
-    H = make_real ? zeros(real(eltype(u)), B^2, B^2) : zeros(eltype(u), B^2, B^2)
-    H[diagind(H)] .= real(u[1, 1]) # store the secular component manually
-    make_real && (u .= real.(u))
-    
-    @floop for c_u in axes(u, 2)
-        for r_u in axes(u, 1) # iterate over columns and rows of `u`
-            u[r_u, c_u] == 0 && continue
-            val = u[r_u, c_u]
-            if r_u ≤ B # when using rows 1 through B of `u` to fill the lower block-triangle of H, including the main block-diagonal
-                d = 1 - r_u # (negative) block-diagonal number, where 0 is the main block-diagonal, -1 is first lower block-diagonal, etc.
-                r_b_range = r_u:B  # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
-            else # when using rows B+1 through end of `u` to fill the upper block-triangle of H
-                d = B - (r_u-B) # (positive) block-diagonal number, where 0 is the main block-diagonal, +1 is first upper block-diagonal, etc.
-                r_b_range = 1:r_u-B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
-            end
-            for r_b in r_b_range # block-rows where to place the value
-                c_b = r_b + d # block-column where to place the value
-                # fill the lower triangle of the block, including the main diagonal
-                if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block (`c_u=1` means main diagonal)
-                    for (r, c) in zip(c_u:B, 1:B+1-c_u)
-                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
-                    end
-                # fill the upper triangle of the block
-                else # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal of the block
-                    c_u_inv = 2B-c_u+1 
-                    for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
-                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
-                    end
-                end
-            end
-        end
-    end
-    return H
-end
-
-"""
-Push value `val` to element (`r`, `c`) of the block (`r_b`, `c_b`) of `H`, with block size being `blocksize`.
-If `conjugate=true`, then the complex-conjugate element is also pushed.
-"""
-function push_vals!(H; r_b, c_b, r, c, blocksize, val, conjugate=false)
-    i = (r_b-1)*blocksize + r
-    j = (c_b-1)*blocksize + c
-    H[i, j] = val
-    conjugate && (H[j, i] = val')
-end
 
 """
 Construct from the result of 2D FFT `u` the matrix `V` indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
@@ -505,3 +410,100 @@ end
 #         end
 #     end
 # end
+
+##### Unused but correct and tested functions
+
+"""
+Based on results of a real 2D RFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+`make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
+For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
+"""
+function _rfft_to_matrix!(u::AbstractMatrix{<:Number}; make_real=false)
+    N = size(u, 2) # number of points used for FFT
+    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
+    B = 2M + 1 # the size of each block
+    H = make_real ? zeros(real(eltype(u)), B^2, B^2) : zeros(eltype(u), B^2, B^2)
+    H[diagind(H)] .= real(u[1, 1]) # store the secular component manually
+    u[1, 1] = 0 # remove because it breaks the structure of the loop below if included
+    make_real && (u .= real.(u))
+
+    # it is assumed that u[1, 1] == 0 -- otherwise, one would also need to prevent double pushing of the diagonal elements
+    @floop for c_u in axes(u, 2)
+        for r_u in axes(u, 1) # iterate over columns and rows of `u`
+            u[r_u, c_u] == 0 && continue
+            val = u[r_u, c_u]
+            for r_b in r_u:B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
+                c_b = r_b - r_u + 1 # block-column where to place the value
+                # fill the lower triangle of the block, including the main diagonal
+                if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block (`c_u=1` means main diagonal)
+                    for (r, c) in zip(c_u:B, 1:B+1-c_u)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val, conjugate=true)
+                    end
+                # fill the upper triangle of the block, but this is not needed for a diagonal block (`r_b == c_b`), because then the upper triangle has already been filled by pushing the conjugate element
+                elseif r_b != c_b # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal of the block,
+                    c_u_inv = 2B-c_u+1
+                    for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val, conjugate=true)
+                    end
+                end
+            end
+        end
+    end
+    return H
+end
+
+"""
+Based on results of a 2D FFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+`make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
+For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
+"""
+function _fft_to_matrix(u::AbstractMatrix; make_real=false)
+    N = size(u, 2) # number of points used for FFT
+    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
+    B = 2M + 1 # the size of each block
+
+    H = make_real ? zeros(real(eltype(u)), B^2, B^2) : zeros(eltype(u), B^2, B^2)
+    H[diagind(H)] .= real(u[1, 1]) # store the secular component manually
+    make_real && (u .= real.(u))
+    
+    @floop for c_u in axes(u, 2)
+        for r_u in axes(u, 1) # iterate over columns and rows of `u`
+            u[r_u, c_u] == 0 && continue
+            val = u[r_u, c_u]
+            if r_u ≤ B # when using rows 1 through B of `u` to fill the lower block-triangle of H, including the main block-diagonal
+                d = 1 - r_u # (negative) block-diagonal number, where 0 is the main block-diagonal, -1 is first lower block-diagonal, etc.
+                r_b_range = r_u:B  # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
+            else # when using rows B+1 through end of `u` to fill the upper block-triangle of H
+                d = B - (r_u-B) # (positive) block-diagonal number, where 0 is the main block-diagonal, +1 is first upper block-diagonal, etc.
+                r_b_range = 1:r_u-B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
+            end
+            for r_b in r_b_range # block-rows where to place the value
+                c_b = r_b + d # block-column where to place the value
+                # fill the lower triangle of the block, including the main diagonal
+                if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block (`c_u=1` means main diagonal)
+                    for (r, c) in zip(c_u:B, 1:B+1-c_u)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
+                    end
+                # fill the upper triangle of the block
+                else # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal of the block
+                    c_u_inv = 2B-c_u+1 
+                    for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
+                    end
+                end
+            end
+        end
+    end
+    return H
+end
+
+"""
+Push value `val` to element (`r`, `c`) of the block (`r_b`, `c_b`) of `H`, with block size being `blocksize`.
+If `conjugate=true`, then the complex-conjugate element is also pushed.
+"""
+function push_vals!(H; r_b, c_b, r, c, blocksize, val, conjugate=false)
+    i = (r_b-1)*blocksize + r
+    j = (c_b-1)*blocksize + c
+    H[i, j] = val
+    conjugate && (H[j, i] = val')
+end

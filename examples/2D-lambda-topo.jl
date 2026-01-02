@@ -128,7 +128,7 @@ plot(xs, A_abs_cut)
 
 M = 30
 ν = 0.95
-@time xh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=true, M, δ, 𝐻=[𝜙;;], 𝐻_iseven=[true;;], 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y);
+@time xh = XSpaceHamiltonian{:dense}([𝜙;;], xlimits, ylimits; isperiodic=true, M, δ, 𝑈_iseven=[true;;], 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y);
 
 @time diagonalize!(xh, nev=5);
 xh.ε
@@ -148,12 +148,12 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 𝛥(x, y) = -Δ
 
 M = 50
-𝐻 = [nothing nothing 𝛺₁
+𝑈 = [nothing nothing 𝛺₁
      nothing nothing 𝛺₂
      nothing nothing 𝛥] # only upper triangle is needed
-𝐻_iseven = BitArray([0 0 0; 0 0 1; 0 0 1])
+𝑈_iseven = BitArray([0 0 0; 0 0 1; 0 0 1])
 
-@time xh = XSpaceHamiltonian{:sparse}(xlimits, ylimits; isperiodic=true, M, δ, 𝐻, 𝐻_iseven, Γ=[0, 0, Γ₃], fft_threshold=1e-3);
+@time xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, δ, 𝑈_iseven, Γ=[0, 0, Γ₃], fft_threshold=1e-3);
 
 @time diagonalize!(xh, nev=5);
 xh.ε

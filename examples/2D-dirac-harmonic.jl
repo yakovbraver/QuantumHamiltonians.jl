@@ -31,7 +31,7 @@ ys = range(ylimits[1], ylimits[2], N)
 heatmap(xs, ys, 𝑈, c=:viridis)
 surface(xs, ys, 𝑈, c=:viridis)
 
-@time xh = XSpaceHamiltonian{:dense}(xlimits, ylimits; isperiodic=true, 𝐻=[𝑈;;], 𝐻_iseven=[true;;], M);
+@time xh = XSpaceHamiltonian{:dense}([𝑈;;], xlimits, ylimits; isperiodic=true, 𝑈_iseven=[true;;], M);
 @time diagonalize!(xh, nev=5);
 scatter(xh.ε)
 
