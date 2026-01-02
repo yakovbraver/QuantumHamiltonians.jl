@@ -155,10 +155,9 @@ end
 
 """
 Based on results of 2D `fft` output `u`, return `rows, cols, vals` tuple for constructing a sparse matrix.
-Optionally: `d` is a tuple of shifts in 𝑥 and 𝑦 directions, divided by the corresponding periods.
 `make_real=true` will take real parts of elements of `u`.
 """
-function fft_to_matrix_sparse!(u::Matrix{<:Number}; fft_threshold::Real=0, make_real=false#=, d::Tuple{<:Real,<:Real}=(0, 0)=#)
+function fft_to_matrix_sparse!(u::Matrix{<:Number}; fft_threshold::Real=0, make_real=false)
     make_real && (u .= real.(u))
     n_elem = filter_count_fft!(u; fft_threshold)
 
@@ -174,8 +173,7 @@ function fft_to_matrix_sparse!(u::Matrix{<:Number}; fft_threshold::Real=0, make_
 
     for c_u in axes(u, 2), r_u in axes(u, 1) # iterate over columns and rows of `u`
         u[r_u, c_u] == 0 && continue
-        # e = c_u <= M+1 ? cispi(2*(c_u-1)*d[1]) : cispi(2*(c_u-size(u, 2))*d[1]) # the factor is exp(2πi/L n) but division by `L` is absorbed in `d`
-        val = u[r_u, c_u] # * e * cispi(2*(r_u-1)*d[2])
+        val = u[r_u, c_u]
         if r_u ≤ B # when using rows 1 through B of `u` to fill the lower block-triangle of H, including the main block-diagonal
             d = 1 - r_u # (negative) block-diagonal number, where 0 is the main block-diagonal, -1 is first lower block-diagonal, etc.
             r_b_range = r_u:B  # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
@@ -233,7 +231,7 @@ function diagonalize!(sh::SparseHamiltonian2D{R,T,S}; nev::Integer) where {R<:Re
     @show info
     ε, sh.V = partialeigen(ps)
     if sh.ishermitian # if sh.H is Hermitian but complex, the solver returns complex eigenvalues
-        sh.ε = real(inv.(ε)) # so we make them real manually
+        sh.ε = real(inv.(ε)) # so we make them real manually (no copy is made if already real)
     else
         sh.ε = inv.(ε)
     end
@@ -258,7 +256,7 @@ end
 Set to zero values of `u` that are smaller by magnitude than `threshold`.
 Based on the resulting number of nonzero elements in `u`, count the number of values that will be stored in 𝑈.
 """
-function filter_count_rfft!(u::AbstractMatrix{<:Number}; fft_threshold::Real=0)
+function _filter_count_rfft!(u::AbstractMatrix{<:Number}; fft_threshold::Real=0)
     n_elem = 0
     M = size(u, 2) ÷ 2
     N = size(u, 1) # if `u` is really the result of `rfft`, then `N == M+1`, but we keep the calculation a bit more general
@@ -298,7 +296,7 @@ Based on results of 2D `rfft` output `u`, return `rows, cols, vals` tuple for co
 Optionally: `d` is a tuple of shifts in 𝑥 and 𝑦 directions, divided by the corresponding periods.
 `make_real=true` will take real parts of elements of `u`.
 """
-function rft_to_matrix_sparse!(u::Matrix{<:Number}; fft_threshold::Real=0, make_real=false#=, d::Tuple{<:Real,<:Real}=(0, 0)=#)
+function _rft_to_matrix_sparse!(u::Matrix{<:Number}; fft_threshold::Real=0, make_real=false, d::Tuple{<:Real,<:Real}=(0, 0))
     n_elem = filter_count_fft!(u; fft_threshold)
 
     rows = Vector{Int64}(undef, n_elem)
@@ -318,8 +316,8 @@ function rft_to_matrix_sparse!(u::Matrix{<:Number}; fft_threshold::Real=0, make_
     # it is assumed that u[1, 1] == 0 -- otherwise, one would also need to prevent double pushing of the diagonal elements
     for c_u in axes(u, 2), r_u in axes(u, 1) # iterate over columns and rows of `u`
         u[r_u, c_u] == 0 && continue
-        # e = c_u <= M+1 ? cispi(2*(c_u-1)*d[1]) : cispi(2*(c_u-size(u, 2))*d[1]) # the factor is exp(2πi/L n) but division by `L` is absorbed in `d`
-        val = u[r_u, c_u] # * e * cispi(2*(r_u-1)*d[2])
+        e = c_u <= M+1 ? cispi(2*(c_u-1)*d[1]) : cispi(2*(c_u-size(u, 2))*d[1]) # the factor is exp(2πi/L n) but division by `L` is absorbed in `d`
+        val = u[r_u, c_u] * e * cispi(2*(r_u-1)*d[2])
         for r_b in r_u:B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th.
             c_b = r_b - r_u + 1 # block-column where to place the value
             if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block (`c_u=1` means main diagonal)
