@@ -65,7 +65,7 @@ end
     M = 5
 
     ### Nonperiodic
-    dh = XSpaceHamiltonian{:dense}([𝑈;;], xlimits, ylimits; isperiodic=false, M)
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M)
     @test dh.H isa Matrix{Float32}
     @test dh.V isa Matrix{Float32}
 
@@ -78,7 +78,7 @@ end
     @test dh.ε[1] ≈ 2.064 rtol=1e-3
 
     ### Periodic
-    dh = XSpaceHamiltonian{:dense}([𝑈;;], xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=[true;;])
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true)
     @test dh.H isa Matrix{Float32}
 
     # exact diagonalisation
@@ -97,7 +97,7 @@ end
     ylimits = (0, π) .|> Float32
 
     ### Nonperiodic
-    dh = XSpaceHamiltonian{:dense}([𝑈;;], xlimits, ylimits; isperiodic=false, M, 𝐴_x, 𝐴_y)
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M, 𝐴_x, 𝐴_y)
     
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -114,7 +114,7 @@ end
     xlimits = (0, 2π) .|> Float32
     ylimits = (0, 2π) .|> Float32
 
-    dh = XSpaceHamiltonian{:dense}([𝑈;;], xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=[true;;], 𝐴_x, 𝐴_y);
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true, 𝐴_x, 𝐴_y);
 
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -124,7 +124,7 @@ end
     diagonalize!(dh, nev=1)
     @test dh.ε[1] ≈ 0.571 atol=1e-3
 
-    sh = XSpaceHamiltonian{:sparse}([𝑈;;], Float64.(xlimits), Float64.(ylimits); isperiodic=true, M, 𝑈_iseven=[true;;], 𝐴_x, 𝐴_y) # cast to Float64 because sparse diagonalisation does not support Float32
+    sh = XSpaceHamiltonian{:sparse}(𝑈, Float64.(xlimits), Float64.(ylimits); isperiodic=true, M, 𝑈_iseven=true, 𝐴_x, 𝐴_y) # cast to Float64 because sparse diagonalisation does not support Float32
     diagonalize!(sh, nev=1)
     @test sh.ε[1] ≈ 0.571 atol=1e-3
 end

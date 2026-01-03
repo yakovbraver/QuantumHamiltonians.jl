@@ -11,7 +11,7 @@ function 𝑈(x::Real, y::Real)
     U₀*((k*x)^2 + (k*y)^2)/2 + 2(k*ρ₀)^2 / (((k*x)^2 + (k*y)^2)/ρ₀ + (k*ρ₀)^2)^2
 end
 
-Float = Float64 # operating type
+Float = Float32 # operating type
 
 k::Float = 2π
 U₀::Float = 5
@@ -31,7 +31,7 @@ ys = range(ylimits[1], ylimits[2], N)
 heatmap(xs, ys, 𝑈, c=:viridis)
 surface(xs, ys, 𝑈, c=:viridis)
 
-@time xh = XSpaceHamiltonian{:dense}([𝑈;;], xlimits, ylimits; isperiodic=true, 𝑈_iseven=[true;;], M);
+@time xh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, 𝑈_iseven=true, M);
 @time diagonalize!(xh, nev=5);
 scatter(xh.ε)
 

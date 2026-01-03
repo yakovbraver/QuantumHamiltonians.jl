@@ -34,7 +34,7 @@ surface(xs, ys, 𝑈)
 surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
 # Calculate
-@time xh = XSpaceHamiltonian{:dense}([𝑈;;], xlimits, ylimits; isperiodic=false, M, 𝐴_x, 𝐴_y)
+@time xh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M, 𝐴_x, 𝐴_y)
 @time diagonalize!(xh, nev=5)
 xh.ε[1:5]
 

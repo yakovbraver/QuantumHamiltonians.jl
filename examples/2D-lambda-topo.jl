@@ -128,7 +128,7 @@ plot(xs, A_abs_cut)
 
 M = 30
 ν = 0.95
-@time xh = XSpaceHamiltonian{:dense}([𝜙;;], xlimits, ylimits; isperiodic=true, M, δ, 𝑈_iseven=[true;;], 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y);
+@time xh = XSpaceHamiltonian{:dense}(𝜙, xlimits, ylimits; isperiodic=true, M, δ, 𝑈_iseven=true, 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y);
 
 @time diagonalize!(xh, nev=5);
 xh.ε
