@@ -4,7 +4,7 @@ A type representing a spatial [𝑟 = (𝑥, 𝑦)], 𝑛-component, possibly qu
     𝐻ᵢⱼ(𝑟) = 𝑈ᵢⱼ(𝑟)
 as a dense matrix.
 """
-mutable struct DenseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian{:dense} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct DenseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian2D{:dense} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Tuple{R, R}
     ylims::Tuple{R, R}
     Lx::R # length along 𝑥
@@ -284,7 +284,7 @@ end
 Construct the coordinate-space wave function `ψ` of eigenstate `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
 Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
 """
-function make_eigenfunction(xh::XSpaceHamiltonian, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0)
+function make_eigenfunction(xh::XSpaceHamiltonian2D, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0)
     (;Lx, Ly, xlims, ylims, M, V, V_q, nc) = xh
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ys = range(0, Ly, ny)

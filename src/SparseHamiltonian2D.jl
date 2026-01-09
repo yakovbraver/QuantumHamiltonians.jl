@@ -4,7 +4,7 @@ A type representing a spatial [𝑟 = (𝑥, 𝑦)], 𝑛-component, possibly qu
     𝐻ᵢⱼ(𝑟) = 𝑈ᵢⱼ(𝑟)
 as a sparse matrix.
 """
-mutable struct SparseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian{:sparse} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct SparseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian2D{:sparse} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Tuple{R, R}
     ylims::Tuple{R, R}
     Lx::R # length along 𝑥

@@ -1,6 +1,6 @@
 "A type for storing the Wannier functions."
 mutable struct Wanniers{R<:Real}
-    targetlevels::Vector{Int} # numbers of quasienergy levels to use for constructing wanniers (this is used in the Floquet case)
+    targetlevels::Vector{Int} # numbers of energy levels to use for constructing wanniers
     E::Vector{R} # mean energies
     pos::Vector{R} # positions (wannier centres)
     V::Matrix{Complex{R}} # position eigenvectors
@@ -14,7 +14,7 @@ A type representing a spatial, possibly quasimomentum-dependent 1D Hamiltonian
     𝐻(𝑥) = (-i𝛿∂ₓ + 𝑞)² + 𝑈(𝑥)
 as a dense matrix.
 """
-mutable struct DenseHamiltonian1D{R<:Real,T<:Number} # in practice `T` shoudld be `R` if there is no 𝑞 and 𝑈 is even, or `Complex{R}` otherwise -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct DenseHamiltonian1D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian1D{:dense} # in practice `T` shoudld be `R` if there is no 𝑞 and 𝑈 is even, or `Complex{R}` otherwise -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Tuple{R, R}
     Lx::R # length along 𝑥
     δ::R # coefficient of the momentum term
