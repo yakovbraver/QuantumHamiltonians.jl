@@ -124,8 +124,8 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
         ys = range(ylims[1], ylims[2], N)
         dx, dy = xs[2]-xs[1], ys[2]-ys[1]
 
-        fft_buff = Matrix{R}(undef, length(xs), length(ys))
-        fft_buff_im = isreal ? R[;;] : Matrix{R}(undef, length(xs), length(ys)) # if `isreal`, then this buffer is not needed; make it 0x0
+        fft_buff = Matrix{R}(undef, N, N)
+        fft_buff_im = isreal ? R[;;] : Matrix{R}(undef, N, N) # if `isreal`, then this buffer is not needed; make it 0x0
         F = FFTW.plan_r2r!(fft_buff, FFTW.REDFT00)
 
         # iterate over `𝑈` and populate `H`
@@ -138,7 +138,7 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
 
                 # calculate and store FFT of 𝑢
                 if !isnothing(𝑢)
-                    if typeof(𝑢(xs[1], ys[1])) <: Real
+                    if 𝑢(xs[1], ys[1]) isa Real
                         fft_buff .= 𝑢.(xs, ys')
                         (F * fft_buff)
                         fft_buff ./= (N-1)^2
@@ -160,7 +160,6 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
                 if iH == jH # for a diagonal block, add the laplace term, optionally Γ, and the 𝐴's
                     # TODO: just subtract from diagonal
                     H[wi, wj] += Diagonal([(PI*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M]) # add -δ²Δ
-                    # for diagonal block, add Laplacian, Γ, and 𝐴
                     if Γ[iH] != 0
                         H[diagind(H)[wi]] .-= im*Γ[iH]/2
                     end
@@ -217,37 +216,37 @@ end
 # end
 
 """
-Construct from the result of 2D FFT `u` the matrix `V` indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+Construct from the result of 2D FFT `u` a matrix `U` indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 In a preliminary step, `u` is `fftshift`'ed.
 `make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
-We call it "naive" because `V` is allocated and then we sipmly go over each element, assigning an appropriate element of `u`.
-In the dense case it is preferred over (since it's faster than) [`rfft_to_matrix!`](@ref)
-because even if `u[i, j]=0`, the corresponding element of `V` still must be accessed to be filled with a zero.
+We call it "naive" because `U` is allocated and then we sipmly go over each element, assigning an appropriate element of `u`.
+In the dense case it is preferred over (since it's faster than) [`fft_to_matrix_sparse!`](@ref)
+because even if `u[i, j]=0`, the corresponding element of `U` still must be accessed to be filled with a zero.
 """
-function fft_to_matrix_naive!(u::Matrix{<:Number}; make_real=false)
+function fft_to_matrix_naive!(u::Matrix{T}; make_real::Bool=false) where T <: Number
     N = size(u, 1) # number of points used for FFT
     M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
     B = 2M + 1
-    V = Matrix{make_real ? real(eltype(u)) : eltype(u)}(undef, B^2, B^2)
+    U = Matrix{make_real ? real(T) : T}(undef, B^2, B^2)
     make_real && (u .= real.(u))
     u = FFTW.fftshift(u) # indexing into `u` is more convenient if we shift
     @floop for jx in 1:B
         for jy in 1:B, j′x in 1:B, j′y in 1:B
             j₋x = j′x - jx
             j₋y = j′y - jy
-            V[(j′x-1)B+j′y, (jx-1)B+jy] = u[j₋x+B, j₋y+B]
+            U[(j′x-1)B+j′y, (jx-1)B+jy] = u[j₋x+B, j₋y+B]
         end
     end
-    return V
+    return U
 end
 
 """
 Based on results of 2D DCT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 """
-function dct_to_matrix(u)
+function dct_to_matrix(u::Matrix{T}) where T <: Number
     N = size(u, 1) # number of points used for FFT
     M = (N-1) ÷ 2 # maximum harmonic number
-    H = Matrix{eltype(u)}(undef, M^2, M^2)
+    H = Matrix{T}(undef, M^2, M^2)
     @floop for jx in 1:M
         for jy in 1:M, j′x in 1:M, j′y in 1:M
             j₋x = abs(j′x-jx)
