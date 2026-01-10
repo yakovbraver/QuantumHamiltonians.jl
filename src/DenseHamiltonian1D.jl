@@ -180,31 +180,37 @@ end
 
 """
 Construct eigenfunctions of state numbers `statenos` on a grid having `nx` points in `x` direction.
-Return (`xs`, `ψ`). If `iqx` is passed, then construct `ψ` at the corresponding quasimomentum.
+If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for the state `statenos[1]` at the these quasimomenta.
+Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqx]`
 """
-function make_eigenfunctions(xh::DenseHamiltonian1D; statenos::AbstractVector{<:Integer}, nx::Integer, iqx::Integer=0)
+function make_eigenfunctions(xh::DenseHamiltonian1D; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[])
     (;Lx, xlims, M, V, V_q, nc) = xh
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
-    ns = length(statenos)
+    ns = isempty(iqxs) ? length(statenos) : length(iqxs)
     R = typeof(Lx) # real working type
     ψ_type = !xh.isperiodic && eltype(xh.H) <: Real ? R : complex(R)  # `ψ` are real if elements of H are real and if the problem is nonperiodic (meaning basis is real)
     ψ = Array{ψ_type}(undef, nx, nc, ns)
-    for (is, stateno) in enumerate(statenos)
-        for c in 1:nc
-            if xh.isperiodic
-                B = 2M + 1
-                if iqx != 0 # if quasimomentum index has been passed
-                    @floop for (ix, x) in enumerate(xs)
-                        ψ[ix, c, is] = sum(V_q[(c-1)*B+j, stateno, iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
-                    end
-                else # no quasimomentum index
+    if isempty(iqxs) # no quasimomentum index
+        for (is, stateno) in enumerate(statenos)
+            for c in 1:nc
+                if xh.isperiodic
+                    B = 2M + 1
                     @floop for (ix, x) in enumerate(xs)
                         ψ[ix, c, is] = sum(V[(c-1)*B+j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
                     end
+                else # nonperiodic
+                    @floop for (ix, x) in enumerate(xs)
+                        ψ[ix, c, is] = sum(V[(c-1)*M+jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
+                    end
                 end
-            else # nonperiodic
+            end
+        end
+    else # quasimomenta indices passed
+        for iqx in iqxs
+            for c in 1:nc
+                B = 2M + 1
                 @floop for (ix, x) in enumerate(xs)
-                    ψ[ix, c, is] = sum(V[(c-1)*M+jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
+                    ψ[ix, c, iqx] = sum(V_q[(c-1)*B+j, statenos[1], iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
                 end
             end
         end
@@ -253,7 +259,7 @@ function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; 
     H_diag = diagview(dh.H)
     H_diag_copy = diag(dh.H) # a copy for restoring after the calculation
     B = 2M + 1 # block size
-    # extract the diagonal values of 𝑈ᵢᵢ in each ith block
+    # extract the diagonal values of 𝑈ᵢᵢ in each ith block of `H`
     U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `H = -Δ + U`, but the central element of a block is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian1D` constructor)
     
     # iterate quasimomenta
@@ -325,7 +331,7 @@ This assumes that wanniers have been calculated; and this is only implemented fo
 """
 function make_wannierfunctions(dh::DenseHamiltonian1D; nx::Integer)
     xs, ψ = make_eigenfunctions(dh; statenos=dh.wanniers.targetlevels, nx)
-    w = dropdims(ψ; dims=2) * dh.wanniers.V # drop the dimesion showing the component
+    w = dropdims(ψ; dims=2) * dh.wanniers.V # drop the dimesion corresponding to the component number
     return xs, ψ, w
 end
 
