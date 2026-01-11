@@ -222,13 +222,13 @@ function push_vals!(rows, cols, vals, counter; r_b, c_b, r, c, blocksize, val, c
     return counter
 end
 
-"Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`."
-function diagonalize!(sh::SparseHamiltonian2D{R,T,S}; nev::Integer) where {R<:Real,T<:Number,S<:Number}
+"Calculate `nev` lowest eigenvectors and eigenvalues."
+function diagonalize!(sh::SparseHamiltonian2D{R,T,S}; nev::Integer, verbose::Bool=false) where {R<:Real,T<:Number,S<:Number}
     prob = LS.LinearProblem(sh.H, similar(sh.H, size(sh.H, 1)))
     linsolve = LS.init(prob, LS.UMFPACKFactorization())
     linmap = LinSolveLinMap{T, typeof(linsolve)}(linsolve, size(sh.H))
     ps, info = partialschur(linmap; nev, which=:LM);
-    @show info
+    verbose && @show info
     ε, sh.V = partialeigen(ps)
     if sh.ishermitian # if sh.H is Hermitian but complex, the solver returns complex eigenvalues
         sh.ε = real(inv.(ε)) # so we make them real manually (no copy is made if already real)

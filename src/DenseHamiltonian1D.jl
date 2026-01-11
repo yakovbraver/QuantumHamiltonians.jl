@@ -222,7 +222,7 @@ end
 Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 """
-function diagonalize!(dh::DenseHamiltonian1D; nev::Integer=0)
+function diagonalize!(dh::DenseHamiltonian1D; nev::Integer, verbose::Bool=false)
     if nev == 0
         if dh.ishermitian
             dh.ε, dh.V = eigen(Hermitian(dh.H)) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
@@ -232,12 +232,12 @@ function diagonalize!(dh::DenseHamiltonian1D; nev::Integer=0)
     else
         if dh.ishermitian
             S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM); # `which=:SR` with no shift-invert does not converge
-            @show info
+            verbose && @show info
             dh.V = S.Q
             dh.ε = inv.(real.(S.eigenvalues)) # invert back
         else
             S, info = partialschur(dense_linear_map(dh.H); nev, which=:LM);
-            @show info
+            verbose && @show info
             dh.ε, dh.V = partialeigen(S)
             dh.ε .= inv.(dh.ε)
         end
@@ -249,18 +249,18 @@ Calculate eigenenergies for all quasimomenta in `qxs`.
 Calculate `nev` lowest bands using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 """
-function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; nev::Integer=0) where {R<:Real, T<:Number}
+function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; nev::Integer, verbose::Bool=false) where {R<:Real, T<:Number}
     (;M, Lx, δ, nc, H) = dh
    
-    nsaves = nev == 0 ? 2M+1 : nev # number of eigenvalues and eigenvectors to allocate
+    B = 2M + 1 # block size
+    nsaves = nev == 0 ? B*nc : nev # number of eigenvalues and eigenvectors to allocate
     dh.ε_q = Array{R,2}(undef, nsaves, length(qxs))
-    dh.V_q = Array{T,3}(undef, 2M+1, nsaves, length(qxs))
+    dh.V_q = Array{T,3}(undef, B*nc, nsaves, length(qxs))
     
     H_diag = diagview(dh.H)
     H_diag_copy = diag(dh.H) # a copy for restoring after the calculation
-    B = 2M + 1 # block size
-    # extract the diagonal values of 𝑈ᵢᵢ in each ith block of `H`
-    U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `H = -Δ + U`, but the central element of a block is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian1D` constructor)
+    # from the diagonal of each diagonal block of `H` extract the 0th harmonic of 𝑈ᵢᵢ plus decay
+    U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `H = -Δ + U + Γ`, but the central element of a block is purely `U + Γ`, since Laplace is zero (see construction of Δ in `DenseHamiltonian1D` constructor)
     
     # iterate quasimomenta
     for (iqx, qx) in enumerate(qxs)
@@ -278,14 +278,14 @@ function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; 
             end
         else
             if dh.ishermitian
-                S, info = partialschur(dense_linear_map(Hermitian(H)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
-                @show info
+                S, info = partialschur(dense_linear_map(Hermitian(H)); nev, which=:LM)
+                verbose && @show info
                 dh.V_q[:, :, iqx] = S.Q
                 dh.ε_q[:, iqx] = inv.(real.(S.eigenvalues)) # invert back
             else
-                S, info = partialschur(dense_linear_map(Hermitian(H)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
-                @show info
-                dh.ε_q[:, iqx], dh.V_q[:, :, iqx] = partialeigen(S)
+                S, info = partialschur(dense_linear_map(H); nev, which=:LM)
+                verbose && @show info
+                dh.ε_q[:, iqx], dh.V_q[:, :, iqx] = partialeigen(S) # TODO saving to dh.ε_q[:, iqx] is optimal?
                 dh.ε_q[:, iqx] = inv.(dh.ε_q[:, iqx])
             end
         end

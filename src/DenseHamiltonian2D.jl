@@ -323,7 +323,7 @@ end
 Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 """
-function diagonalize!(dh::DenseHamiltonian2D; nev::Integer)
+function diagonalize!(dh::DenseHamiltonian2D; nev::Integer, verbose::Bool=false)
     if nev == 0
         if dh.ishermitian
             dh.ε, dh.V = eigen(Hermitian(dh.H)) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
@@ -332,13 +332,13 @@ function diagonalize!(dh::DenseHamiltonian2D; nev::Integer)
         end
     else
         if dh.ishermitian
-            S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM); # `which=:SR` with no shift-invert does not converge
-            @show info
+            S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM)
+            verbose && @show info
             dh.V = S.Q
             dh.ε = inv.(real.(S.eigenvalues)) # invert back
         else
-            S, info = partialschur(dense_linear_map(dh.H); nev, which=:LM);
-            @show info
+            S, info = partialschur(dense_linear_map(dh.H); nev, which=:LM)
+            verbose && @show info
             dh.ε, dh.V = partialeigen(S)
             dh.ε .= inv.(dh.ε)
         end
@@ -402,7 +402,7 @@ end
 #         if nev == 0
 #             dh.ε_q[:, iqx, iqy], dh.V_q[:, :, iqx, iqy] = eigen(Hermitian(dh.H))
 #         else
-#             S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
+#             S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM, tol=1e-7)
 #             @show info
 #             dh.V_q[:, :, iqx, iqy] = S.Q
 #             dh.ε_q[:, iqx, iqy] = inv.(real.(S.eigenvalues)) # invert back
