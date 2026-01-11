@@ -219,32 +219,6 @@ function make_eigenfunctions(xh::DenseHamiltonian1D; statenos::AbstractVector{<:
 end
 
 """
-Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
-If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
-"""
-function diagonalize!(dh::DenseHamiltonian1D; nev::Integer, verbose::Bool=false)
-    if nev == 0
-        if dh.ishermitian
-            dh.ε, dh.V = eigen(Hermitian(dh.H)) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
-        else
-            dh.ε, dh.V = eigen(dh.H)
-        end
-    else
-        if dh.ishermitian
-            S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM); # `which=:SR` with no shift-invert does not converge
-            verbose && @show info
-            dh.V = S.Q
-            dh.ε = inv.(real.(S.eigenvalues)) # invert back
-        else
-            S, info = partialschur(dense_linear_map(dh.H); nev, which=:LM);
-            verbose && @show info
-            dh.ε, dh.V = partialeigen(S)
-            dh.ε .= inv.(dh.ε)
-        end
-    end
-end
-
-"""
 Calculate eigenenergies for all quasimomenta in `qxs`.
 Calculate `nev` lowest bands using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
@@ -259,8 +233,8 @@ function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; 
     
     H_diag = diagview(dh.H)
     H_diag_copy = diag(dh.H) # a copy for restoring after the calculation
-    # from the diagonal of each diagonal block of `H` extract the 0th harmonic of 𝑈ᵢᵢ plus decay
-    U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `H = -Δ + U + Γ`, but the central element of a block is purely `U + Γ`, since Laplace is zero (see construction of Δ in `DenseHamiltonian1D` constructor)
+    # from the diagonal of each diagonal block of `H`, extract the 0th harmonic of 𝑈ᵢᵢ plus decay -iΓ/2
+    U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `H₀₀ = -Δ₀₀ + U₀₀ - iΓ/2`, but Δ₀₀ = 0 for the central element of the diagonal (see construction of Δ in `DenseHamiltonian1D` constructor)
     
     # iterate quasimomenta
     for (iqx, qx) in enumerate(qxs)
@@ -285,8 +259,10 @@ function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; 
             else
                 S, info = partialschur(dense_linear_map(H); nev, which=:LM)
                 verbose && @show info
-                dh.ε_q[:, iqx], dh.V_q[:, :, iqx] = partialeigen(S) # TODO saving to dh.ε_q[:, iqx] is optimal?
-                dh.ε_q[:, iqx] = inv.(dh.ε_q[:, iqx])
+                ε, dh.V_q[:, :, iqx] = partialeigen(S)
+                ε .= inv.(ε)
+                reverse!(ε) # we want final eigenvalues in ascending order (by abs)
+                dh.ε_q[:, iqx] = ε
             end
         end
     end

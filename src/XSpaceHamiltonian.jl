@@ -3,7 +3,7 @@ abstract type XSpaceHamiltonian{S} end
 abstract type XSpaceHamiltonian1D{S} <: XSpaceHamiltonian{S} end
 abstract type XSpaceHamiltonian2D{S} <: XSpaceHamiltonian{S} end
 
-## 1D Constructors
+### 1D Constructors
 
 "Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."
 function XSpaceHamiltonian{:dense}(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
@@ -17,7 +17,7 @@ function XSpaceHamiltonian{:dense}(𝑈::Function, xlims::Tuple{R,R}; isperiodic
     return DenseHamiltonian1D([𝑈;;], xlims; isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ])
 end
 
-## 2D Constructors
+### 2D Constructors
 
 "Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."
 function XSpaceHamiltonian{:dense}(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
@@ -45,4 +45,40 @@ function XSpaceHamiltonian{:sparse}(𝑈::Function, xlims::Tuple{R,R}, ylims::Tu
                                     𝑈_iseven::Bool=false, Γ::R=zero(R),
                                     𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing, fft_threshold::R=√eps(R)) where R <: Real
     return SparseHamiltonian2D([𝑈;;], xlims, ylims; isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ], 𝐴_x, 𝐴_y, fft_threshold) # pack `𝑈` and `𝑈_iseven` into matrices, `Γ` into a vector
+end
+
+### Functions that are generic for all dimensions
+
+# TODO this function could be used by all q-dependent diagonalisation functions, but those should be also restructured for pre-allocation
+"""
+Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
+Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
+"""
+function diagonalize!(xh::XSpaceHamiltonian{:dense}; nev::Integer, verbose::Bool=false)
+    if nev == 0
+        if xh.ishermitian
+            xh.ε, xh.V = eigen(Hermitian(xh.H)) # if `xh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
+        else
+            xh.ε, xh.V = eigen(xh.H)
+        end
+    else
+        if xh.ishermitian
+            S, info = partialschur(dense_linear_map(Hermitian(xh.H)); nev, which=:LM); # `which=:SR` with no shift-invert does not converge
+            verbose && @show info
+            xh.V = S.Q
+            xh.ε = inv.(real.(S.eigenvalues)) # invert back
+        else
+            S, info = partialschur(dense_linear_map(xh.H); nev, which=:LM);
+            verbose && @show info
+            xh.ε, xh.V = partialeigen(S)
+            xh.ε .= inv.(xh.ε)
+            reverse!(xh.ε) # we want final eigenvalues in ascending order (by abs)
+        end
+    end
+end
+
+"Helper function for shift-and-invert: construct a linear map that applies the inverse of `A`."
+function dense_linear_map(A)
+    F = factorize(A) # Bunch-Kaufman for Hermitian `A`, LU otherwise
+    LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
 end

@@ -233,6 +233,7 @@ function diagonalize!(sh::SparseHamiltonian2D{R,T,S}; nev::Integer, verbose::Boo
     if sh.ishermitian # if sh.H is Hermitian but complex, the solver returns complex eigenvalues
         sh.ε = real(inv.(ε)) # so we make them real manually (no copy is made if already real)
     else
+        reverse!(ε)  # we want final eigenvalues in ascending order (by abs)
         sh.ε = inv.(ε)
     end
 end

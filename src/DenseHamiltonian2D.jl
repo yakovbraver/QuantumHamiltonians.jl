@@ -319,38 +319,6 @@ function make_eigenfunction(xh::XSpaceHamiltonian2D, stateno::Integer, nx::Integ
     return xs .+ xlims[1], ys .+ ylims[1], ψ # return "normal" coordinates, in `x ∈ xlims` and `y ∈ ylims`
 end
 
-"""
-Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
-Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
-"""
-function diagonalize!(dh::DenseHamiltonian2D; nev::Integer, verbose::Bool=false)
-    if nev == 0
-        if dh.ishermitian
-            dh.ε, dh.V = eigen(Hermitian(dh.H)) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
-        else
-            dh.ε, dh.V = eigen(dh.H)
-        end
-    else
-        if dh.ishermitian
-            S, info = partialschur(dense_linear_map(Hermitian(dh.H)); nev, which=:LM)
-            verbose && @show info
-            dh.V = S.Q
-            dh.ε = inv.(real.(S.eigenvalues)) # invert back
-        else
-            S, info = partialschur(dense_linear_map(dh.H); nev, which=:LM)
-            verbose && @show info
-            dh.ε, dh.V = partialeigen(S)
-            dh.ε .= inv.(dh.ε)
-        end
-    end
-end
-
-"Helper function for shift-and-invert: construct a linear map that applies the inverse of `A`."
-function dense_linear_map(A)
-    F = factorize(A) # Bunch-Kaufman for Hermitian A, LU otherwise
-    LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
-end
-
 # """
 # Calculate eigenenergies for all pairs of quasimomenta in `qxs` and `qys`.
 # Calculate `nev` lowest bands using `ArnoldiMethod`.
