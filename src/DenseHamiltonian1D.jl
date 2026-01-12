@@ -152,7 +152,7 @@ function fft_to_matrix_1D!(u::Vector{T}; make_real::Bool=false) where T <: Numbe
     B = 2M + 1 # size of the resulting matrix
 
     U = Matrix{make_real ? real(T) : T}(undef, B, B)
-    u_half = @view(u[1:B]) # we assume that `u` is the transform of a real function, so transform obeys uₘ = u₋ₘ and we only need to work with one half
+    u_half = @view(u[1:B]) # we assume that `u` is the transform of a real function, so transform obeys uₘ* = u₋ₘ and we only need to work with one half
     make_real && (u_half .= real.(u_half))
 
     for (i, val) in enumerate(u_half)
@@ -181,7 +181,7 @@ end
 """
 Construct eigenfunctions of state numbers `statenos` on a grid having `nx` points in `x` direction.
 If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for the state `statenos[1]` at the these quasimomenta.
-Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqx]`
+Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqxs]`
 """
 function make_eigenfunctions(xh::DenseHamiltonian1D; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[])
     (;Lx, xlims, M, V, V_q, nc) = xh
@@ -223,12 +223,12 @@ Calculate eigenenergies for all quasimomenta in `qxs`.
 Calculate `nev` lowest bands using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 """
-function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; nev::Integer, verbose::Bool=false) where {R<:Real, T<:Number}
+function diagonalize!(dh::DenseHamiltonian1D{R,T,S}, qxs::AbstractVector{<:Real}; nev::Integer, verbose::Bool=false) where {R<:Real, T<:Number, S<:Number}
     (;M, Lx, δ, nc, H) = dh
    
     B = 2M + 1 # block size
     nsaves = nev == 0 ? B*nc : nev # number of eigenvalues and eigenvectors to allocate
-    dh.ε_q = Array{R,2}(undef, nsaves, length(qxs))
+    dh.ε_q = Array{S,2}(undef, nsaves, length(qxs))
     dh.V_q = Array{T,3}(undef, B*nc, nsaves, length(qxs))
     
     H_diag = diagview(dh.H)
@@ -252,14 +252,14 @@ function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; 
             end
         else
             if dh.ishermitian
-                S, info = partialschur(dense_linear_map(Hermitian(H)); nev, which=:LM)
+                ps, info = partialschur(dense_linear_map(Hermitian(H)); nev, which=:LM)
                 verbose && @show info
-                dh.V_q[:, :, iqx] = S.Q
-                dh.ε_q[:, iqx] = inv.(real.(S.eigenvalues)) # invert back
+                dh.V_q[:, :, iqx] = ps.Q
+                dh.ε_q[:, iqx] = inv.(real.(ps.eigenvalues)) # invert back
             else
-                S, info = partialschur(dense_linear_map(H); nev, which=:LM)
+                ps, info = partialschur(dense_linear_map(H); nev, which=:LM)
                 verbose && @show info
-                ε, dh.V_q[:, :, iqx] = partialeigen(S)
+                ε, dh.V_q[:, :, iqx] = partialeigen(ps)
                 ε .= inv.(ε)
                 reverse!(ε) # we want final eigenvalues in ascending order (by abs)
                 dh.ε_q[:, iqx] = ε
@@ -274,7 +274,7 @@ Calculate Wannier states using the energy eigenstates `targetlevels`. The vector
 `dh` is assumed to have been diagonalised, without quasimomentum.
 Implemented for the 1-component case only.
 """
-function compute_wanniers!(dh::DenseHamiltonian1D{R,T}; targetlevels::AbstractVector{<:Integer}) where {R<:Real, T<:Number}
+function compute_wanniers!(dh::DenseHamiltonian1D{R,T,S}; targetlevels::AbstractVector{<:Integer}) where {R<:Real, T<:Number, S<:Number}
     dh.wanniers.targetlevels = targetlevels # store the target levels
     minlevel = targetlevels[1]
     if dh.isperiodic
@@ -331,14 +331,14 @@ end
 
 "Compute tunnelling element ⟨𝑤ᵢ|𝐻|𝑤ⱼ⟩."
 function compute_tunneling(dh::DenseHamiltonian1D; i::Integer=1, j::Integer=2)
-    wᵢ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, i] # One wannier basis vector |𝑤ᵢ⟩ = ∑ₚ |𝜓ₚ⟩ 𝑉ᵢₚ
+    wᵢ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, i] # one wannier basis vector |𝑤ᵢ⟩ = ∑ₚ |𝜓ₚ⟩ 𝑉ᵢₚ
     wⱼ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, j]
     return dot(wᵢ, dh.H, wⱼ)
 end
 
 "Compute TB Hamiltonian matrix, with elements ⟨𝑤ᵢ|𝐻|𝑤ⱼ⟩."
 function compute_tb_hamiltonian(dh::DenseHamiltonian1D)
-    dh.wanniers.V' * dh.V[:, dh.wanniers.targetlevels]' *  dh.H * dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V
+    dh.wanniers.V' * dh.V[:, dh.wanniers.targetlevels]' * dh.H * dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V
 end
 
 # "Return momentum-space matrix of a function `𝑓`, with problem geometry contained in `dh`. `iseven` is only relevant for periodic case, yielding real result for even `𝑓`."

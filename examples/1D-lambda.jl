@@ -12,7 +12,6 @@ function 𝑈(x::Real)
 end
 
 Float = Float32 # operating type
-Float = Float64 # operating type
 
 ϵ::Float = 0.1
 
@@ -39,10 +38,8 @@ fig
 
 𝛺₁(x) = Ω₁₀/ϵ*cos(x) / 2
 𝛺₂(x) = Ω₁₀ / 2
-𝛥(x) = -Δ
 
 Ω₁₀::Float = 2f3
-Δ::Float = 0
 Γ₃::Float = 10
 ϵ::Float = 0.1
 
@@ -55,11 +52,10 @@ M = 200
      nothing nothing nothing]
 xh = XSpaceHamiltonian{:dense}(𝑉, xlimits; isperiodic=true, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], M)
 
-ncells = 2
+ncells = 100
 qlimits = (-π/P, π/P)
 qs = range(qlimits[1], qlimits[2], ncells)
 @time diagonalize!(xh, qs; nev=8)
-
 # optionally, set to zero elements whose real part is not in filterrange (not to pollute the view)
 filterrange = (0.98, 1.1)
 xh.ε_q[(real.(xh.ε_q) .< filterrange[1]) .| (real.(xh.ε_q) .> filterrange[2])] .= 0
