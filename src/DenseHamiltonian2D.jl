@@ -46,19 +46,15 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
 
     # `isreal` will show if the resulting `H` will be real
     isreal = all( 𝑢(xlims[1], ylims[1]) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢)) & # check if all functions in 𝑈 are real
-             isnothing(𝐴_x) & isnothing(𝐴_y) & all(==(0), Γ)
+             isnothing(𝐴_x) & isnothing(𝐴_y) & iszero(Γ)
     if isperiodic # for periodic potential, also check if functions are even 
         isreal &= all(𝑈_iseven[𝑈 .!== nothing])
     end
 
     B = isperiodic ? (2M+1)^2 : M^2 # size of each Hamiltonian block
 
-    # allocate `H`
-    if isreal
-        H = zeros(R, nc*B, nc*B)
-    else
-        H = zeros(Complex{R}, nc*B, nc*B)
-    end
+    T = isreal ? R : Complex{R} # type of elements of the Hamiltonian
+    H = zeros(T, nc*B, nc*B)
 
     if isperiodic
         N = 4M + 1 # number of points for FFT. This will yield harmonics from -2M to 2M
@@ -191,9 +187,9 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
     end
     
     # determine the type of eigenvalues 
-    ishermitian = all(==(0), Γ) # if all `Γ`s are zeros, then Hamiltonian is Hermitian and the eigenvalues real
+    ishermitian = iszero(Γ) # if all `Γ`s are zeros, then Hamiltonian is Hermitian and the eigenvalues real
     S = ishermitian ? R : Complex{R} # type of eigenvalues
-    return DenseHamiltonian2D(xlims, ylims, Lx, Ly, M, δ, nc, isperiodic, ishermitian, 𝑈, BitMatrix(𝑈_iseven), 𝐴_x, 𝐴_y, Γ, H, S[], eltype(H)[;;], S[;;;], eltype(H)[;;;;])
+    return DenseHamiltonian2D(xlims, ylims, Lx, Ly, M, δ, nc, isperiodic, ishermitian, 𝑈, BitMatrix(𝑈_iseven), 𝐴_x, 𝐴_y, Γ, H, S[], T[;;], S[;;;], T[;;;;])
 end
 
 # """
@@ -291,7 +287,7 @@ function make_eigenfunction(xh::XSpaceHamiltonian2D, stateno::Integer, nx::Integ
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ys = range(0, Ly, ny)
     R = typeof(Lx) # real working type
-    ψ_type = !xh.isperiodic && eltype(xh.H) <: Real ? R : complex(R)
+    ψ_type = !xh.isperiodic && eltype(xh.H) isa Real ? R : complex(R)
     ψ = [Matrix{ψ_type}(undef, nx, ny) for _ in 1:nc] # `ψ` are real if elements of H are real and if the problem is nonperiodic (meaning basis is real)
     for c in 1:nc
         if xh.isperiodic
@@ -324,7 +320,7 @@ end
 
 """
 Calculate eigenenergies for all pairs of quasimomenta in `qxs` and `qys`.
-Calculate `nev` lowest bands using `ArnoldiMethod`.
+Calculate `nev` lowest levels using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 Note that `dh.H` is modified in the process.
 """

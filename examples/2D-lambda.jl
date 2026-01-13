@@ -59,10 +59,13 @@ surface(xs, ys, abs2.(ψ[1])')
 
 ### Quasimomenta
 
-xlimits = (0, 2π) .|> Float # (0, π) for unfolded spectrum (like Fig. 4), (0, 2π) for folded
-ylimits = (0, 2π) .|> Float
+# folded spectrum for fixed 𝑞_𝑦 = 0
 
+xlimits = (0, 2π) .|> Float
+ylimits = (0, 2π) .|> Float
+M = 30
 xh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true)
+xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true, fft_threshold=1e-1)
 ncells = 11
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P)
@@ -73,6 +76,21 @@ for n in axes(xh.ε_q, 1)
     scatter!(qxs, xh.ε_q[n, :, 1], c=n)
 end
 fig
+
+# unfolded spectrum for 0 ≤ 𝑞ₓ, 𝑞_𝑦 ≤ π (a quater of Fig. 2(b))
+
+xlimits = (0, π) .|> Float # (0, π) for unfolded spectrum (like Fig. 4), (0, 2π) for folded
+ylimits = (0, π) .|> Float
+
+M = 35
+xh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true) # M = 30, ncells = 5: 9.6 s.
+xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true, fft_threshold=1e-1) # M = 30, ncells = 5: 10.9 s
+ncells = 5
+P = xlimits[2] - xlimits[1]
+qlimits = (0, π/P)
+qxs = range(qlimits..., ncells)
+@time diagonalize!(xh, qxs, qxs; nev=1); # doing a cut for fixed 𝑞𝑦 = 0
+heatmap(qxs, qxs, xh.ε_q[1, :, :], c=:viridis, xlabel="q_x", ylabel="q_y")
 
 ########## χ = π/2, x from -π/2 to π/2
 
@@ -161,6 +179,7 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 ### Quasimomenta
 
 xh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=false, 𝐴_x, 𝐴_y)
+xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=false, 𝐴_x, 𝐴_y, fft_threshold=1e-3)
 ncells = 11
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P)

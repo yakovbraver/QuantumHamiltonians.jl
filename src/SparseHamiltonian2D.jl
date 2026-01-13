@@ -15,8 +15,10 @@ mutable struct SparseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamilto
     isperiodic::Bool
     ishermitian::Bool # `H` is nonhermitian if decays Γ are present
     𝑈::Matrix{<:Union{Function,Nothing}} # nc-component Hamiltonian matrix containing coordinate-space functions
+    𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(𝑥, 𝑦) = 𝑈ᵢⱼ(-𝑥, -𝑦)
     𝐴_x::Union{Function,Nothing}
     𝐴_y::Union{Function,Nothing}
+    Γ::Vector{R} # decay rates
     H::SparseMatrixCSC{T, Int64} # momentum-space Hamiltonian used for diagonalisation (UMFPACKFactorization only supports Int64-type indices)
     ε::Vector{S} # eigenvalues, can be complex for nonhermitian `H`, hence additional type `S`
     V::Matrix{T} # eigenvectors matrix
@@ -42,15 +44,14 @@ function SparseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xl
     nc = size(𝑈, 1) # number of components
 
     # `isreal` will show if the resulting `H` will be real
-    isreal = all( 𝑢(xlims[1], ylims[1]) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢)) & # check if all functions in 𝑈 are real
-             isnothing(𝐴_x) & isnothing(𝐴_y) & all(==(0), Γ)
+    isreal = all( 𝑢(xlims[1], ylims[1]) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢) ) & # check if all functions in 𝑈 are real
+             isnothing(𝐴_x) & isnothing(𝐴_y) & iszero(Γ)
     if isperiodic # for periodic potential, also check if functions are even 
         isreal &= all(𝑈_iseven[𝑈 .!== nothing])
     end
 
-    # allocate a matrix of dimensions like `𝑈`. `H_temp[i, j]` will hold the Fourier-transformed sparse matrix corresponding to 𝑈ᵢⱼ
     T = isreal ? R : Complex{R}
-    H_temp = [SparseMatrixCSC{T, Int64}(undef, 0, 0) for _ in 1:nc, _ in 1:nc]
+    H_temp = [SparseMatrixCSC{T, Int64}(undef, 0, 0) for _ in 1:nc, _ in 1:nc] # temporary Hamiltonian as an `nc`-by-`nc` matrix of sparse blocks
 
     if isperiodic
         N = 4M + 1 # number of points for FFT. This will yield harmonics from -2M to 2M
@@ -87,30 +88,30 @@ function SparseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xl
                         H_temp[iH, jH] += Diagonal([(2PI*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -M:M for jy in -M:M]) # this is -δ²Δ
                     else
                         # if 𝐴 is present, we have to construct the matrix explicitly
-                        if 𝐴_x !== nothing
+                        if !isnothing(𝐴_x)
                             fft_buff .= 𝐴_x.(xs, ys')
                             F * fft_buff
                             fft_buff ./= N^2
                             A_i = fft_to_matrix_sparse!(fft_buff; fft_threshold)
                             ∂_i = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
                             H_temp[iH, jH] += (∂_i - A_i)^2
-                            # if there is no 𝐴𝑦, then add ∂ₓ². Otherwise it will be added together with 𝐴𝑦 in the next `if` clause
+                            # if there is no 𝐴𝑦, then add ∂𝑦². Otherwise it will be added together with 𝐴𝑦 in the next `if` clause
                             isnothing(𝐴_y) && (H_temp[iH, jH] += Diagonal([(2PI * δ * jy/Ly)^2 for jx in -M:M for jy in -M:M]))
                         end
-                        if 𝐴_y !== nothing
+                        if !isnothing(𝐴_y)
                             fft_buff .= 𝐴_y.(xs, ys')
                             F * fft_buff
                             fft_buff ./= N^2
                             A_i = fft_to_matrix_sparse!(fft_buff; fft_threshold)
                             ∂_i = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
                             H_temp[iH, jH] += (∂_i - A_i)^2
-                            # if there is no 𝐴ₓ, then add ∂𝑦². Otherwise it was added together with 𝐴ₓ in the preceding `if` clause
+                            # if there is no 𝐴ₓ, then add ∂ₓ². Otherwise it was added together with 𝐴ₓ in the preceding `if` clause
                             isnothing(𝐴_x) && (H_temp[iH, jH] += Diagonal([(2PI * δ * jx/Lx)^2 for jx in -M:M for jy in -M:M]))
                         end
                     end
                 else # non-diagonal block
                     H_temp[jH, iH] = H_temp[iH, jH]' # fill the conjugate block of 𝑈
-                    # Could potentially be avoided if all(iszero, Γ) because then we could use a Hermitian view.
+                    # Could potentially be avoided if iszero(Γ) because then we could use a Hermitian view.
                     # But factorisation is LU anyway, so a non-hermitian workspace is needed. 
                 end
             end
@@ -122,14 +123,14 @@ function SparseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xl
     H = hvcat(nc, transpose(H_temp)...) # construct the final Hamiltonian
 
     # determine the type of eigenvalues 
-    ishermitian = all(==(0), Γ) # if all `Γ`s are zeros, then Hamiltonian is Hermitian and the eigenvalues real
+    ishermitian = iszero(Γ) # if all `Γ`s are zeros, then Hamiltonian is Hermitian and the eigenvalues real
     S = ishermitian ? R : Complex{R} # type of eigenvalues
-    return SparseHamiltonian2D(xlims, ylims, Lx, Ly, M, δ, nc, isperiodic, ishermitian, 𝑈, 𝐴_x, 𝐴_y, H, S[], T[;;], S[;;;], T[;;;;])
+    return SparseHamiltonian2D(xlims, ylims, Lx, Ly, M, δ, nc, isperiodic, ishermitian, 𝑈, BitMatrix(𝑈_iseven), 𝐴_x, 𝐴_y, Γ, H, S[], T[;;], S[;;;], T[;;;;])
 end
 
 """
 Set to zero values of `u` that are smaller by magnitude than `threshold`.
-Based on the resulting number of nonzero elements in `u`, count the number of values that will be stored in 𝑈.
+Based on the resulting number of nonzero elements in `u`, count the number of values that will be stored in the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 """
 function filter_count_fft!(u::AbstractMatrix{<:Number}; fft_threshold::Real=0)
     n_elem = 0
@@ -154,7 +155,7 @@ function filter_count_fft!(u::AbstractMatrix{<:Number}; fft_threshold::Real=0)
 end
 
 """
-Based on results of 2D `fft` output `u`, return `rows, cols, vals` tuple for constructing a sparse matrix.
+Using output `u` of a 2D `fft`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 `make_real=true` will take real parts of elements of `u`.
 """
 function fft_to_matrix_sparse!(u::Matrix{<:Number}; fft_threshold::Real=0, make_real=false)
@@ -222,33 +223,47 @@ function push_vals!(rows, cols, vals, counter; r_b, c_b, r, c, blocksize, val, c
     return counter
 end
 
-"Calculate `nev` lowest eigenvectors and eigenvalues."
-function diagonalize!(sh::SparseHamiltonian2D{R,T,S}; nev::Integer, verbose::Bool=false) where {R<:Real,T<:Number,S<:Number}
-    prob = LS.LinearProblem(sh.H, similar(sh.H, size(sh.H, 1)))
-    linsolve = LS.init(prob, LS.UMFPACKFactorization())
-    linmap = LinSolveLinMap{T, typeof(linsolve)}(linsolve, size(sh.H))
-    ps, info = partialschur(linmap; nev, which=:LM);
-    verbose && @show info
-    ε, sh.V = partialeigen(ps)
-    if sh.ishermitian # if sh.H is Hermitian but complex, the solver returns complex eigenvalues
-        sh.ε = real(inv.(ε)) # so we make them real manually (no copy is made if already real)
-    else
-        reverse!(ε)  # we want final eigenvalues in ascending order (by abs)
-        sh.ε = inv.(ε)
+"""
+Calculate eigenenergies for all pairs of quasimomenta in `qxs` and `qys`.
+Calculate `nev` lowest levels using `ArnoldiMethod`.
+Note that `dh.H` is modified in the process.
+"""
+function diagonalize!(dh::SparseHamiltonian2D{R,T,S}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nev::Integer, verbose::Bool=false) where {R<:Real, T<:Number, S<:Number}
+    (;M, xlims, ylims, Lx, Ly, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴_x, 𝐴_y, Γ) = dh
+
+    if !dh.isperiodic
+        @warn "Hamiltonian must be periodic. Construct a new one and try again."
+        return
     end
-end
 
-"A linear map holding a `LinearSolve` object, used for applying the inverse map."
-struct LinSolveLinMap{T,L} <: LinearMaps.LinearMap{T}
-    linsolve::L
-    size::Dims{2}
-end
+    PI = R(π) # π of the working type to prevent widening
 
-Base.size(lm::LinSolveLinMap) = lm.size
+    B = (2M + 1)^2 # block size
+    nsaves = nev == 0 ? B : nev # number of eigenvalues and eigenvectors to allocate
+    dh.ε_q = Array{S,3}(undef, nsaves, length(qxs), length(qys))
+    dh.V_q = Array{T,4}(undef, B*nc, nsaves, length(qxs), length(qys))
+    
+    if isnothing(𝐴_x) && isnothing(𝐴_y)
+        H_diag = diagview(dh.H)
+        # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
+        U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal (see construction of Δ in `DenseHamiltonian1D` constructor)
+    else
+        # not implemented
+    end
+    
+    # update diagonal blocks and diagonalise
+    for (iqy, qy) in enumerate(qys), (iqx, qx) in enumerate(qxs)
+        # update diagonal blocks
+        if isnothing(𝐴_x) && isnothing(𝐴_y)
+            for c in 1:nc
+                H_diag[(c-1)B+1:c*B] .= [(2PI*δ*jx/Lx + qx)^2 + (2PI*δ*jy/Ly + qy)^2 + U_diags[c] for jx in -M:M for jy in -M:M]
+            end
+        else
+            # not implemented
+        end
 
-function LinearMaps._unsafe_mul!(y, lm::LinSolveLinMap, x::AbstractVector)
-    copy!(lm.linsolve.b, x)
-    copy!(y, LS.solve!(lm.linsolve).u) # `solve!` allocates up to 50 KiB :(
+        dh.ε_q[:, iqx, iqy], dh.V_q[:, :, iqx, iqy] = diagonalize(dh; nev, verbose)
+    end
 end
 
 ##### Unused but correct and tested functions

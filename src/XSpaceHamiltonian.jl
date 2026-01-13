@@ -47,7 +47,9 @@ function XSpaceHamiltonian{:sparse}(𝑈::Function, xlims::Tuple{R,R}, ylims::Tu
     return SparseHamiltonian2D([𝑈;;], xlims, ylims; isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ], 𝐴_x, 𝐴_y, fft_threshold) # pack `𝑈` and `𝑈_iseven` into matrices, `Γ` into a vector
 end
 
-### Functions that are generic for all dimensions
+########## Functions that are generic for all dimensions
+
+### Dense
 
 """
 Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
@@ -91,4 +93,47 @@ end
 function dense_linear_map(A)
     F = factorize(A) # Bunch-Kaufman for Hermitian `A`, LU otherwise
     LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
+end
+
+### Sparse
+
+"""
+Calculate `nev` lowest eigenvectors and eigenvalues.
+The result is written into `xh.ε` and `xh.V`.
+"""
+function diagonalize!(xh::XSpaceHamiltonian{:sparse}; nev::Integer, verbose::Bool=false)
+    xh.ε, xh.V = diagonalize(xh; nev, verbose)
+end
+
+"""
+Calculate `nev` lowest eigenvectors and eigenvalues.
+Return a tuple (eigenvalues, eigenvectors).
+"""
+function diagonalize(xh::XSpaceHamiltonian{:sparse}; nev::Integer, verbose::Bool=false)
+    prob = LS.LinearProblem(xh.H, similar(xh.H, size(xh.H, 1)))
+    linsolve = LS.init(prob, LS.UMFPACKFactorization())
+    linmap = LinSolveLinMap{eltype(xh.H), typeof(linsolve)}(linsolve, size(xh.H))
+    ps, info = partialschur(linmap; nev, which=:LM);
+    verbose && @show info
+    ε, V = partialeigen(ps)
+    if xh.ishermitian # if xh.H is Hermitian but complex, the solver returns complex eigenvalues
+        ε .= real.(inv.(ε)) # so we make them real manually
+    else
+        reverse!(ε)  # we want final eigenvalues in ascending order (by abs)
+        ε .= inv.(ε)
+    end
+    return ε, V
+end
+
+"A linear map holding a `LinearSolve` object, used for applying the inverse map."
+struct LinSolveLinMap{T,L} <: LinearMaps.LinearMap{T}
+    linsolve::L
+    size::Dims{2}
+end
+
+Base.size(lm::LinSolveLinMap) = lm.size
+
+function LinearMaps._unsafe_mul!(y, lm::LinSolveLinMap, x::AbstractVector)
+    copy!(lm.linsolve.b, x)
+    copy!(y, LS.solve!(lm.linsolve).u) # `solve!` allocates up to 50 KiB :(
 end
