@@ -224,7 +224,7 @@ Calculate `nev` lowest bands using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 """
 function diagonalize!(dh::DenseHamiltonian1D{R,T,S}, qxs::AbstractVector{<:Real}; nev::Integer, verbose::Bool=false) where {R<:Real, T<:Number, S<:Number}
-    (;M, Lx, δ, nc, H) = dh
+    (;M, Lx, δ, nc) = dh
    
     B = 2M + 1 # block size
     nsaves = nev == 0 ? B*nc : nev # number of eigenvalues and eigenvectors to allocate
@@ -236,35 +236,14 @@ function diagonalize!(dh::DenseHamiltonian1D{R,T,S}, qxs::AbstractVector{<:Real}
     # from the diagonal of each diagonal block of `H`, extract the 0th harmonic of 𝑈ᵢᵢ plus decay -iΓ/2
     U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `H₀₀ = -Δ₀₀ + U₀₀ - iΓ/2`, but Δ₀₀ = 0 for the central element of the diagonal (see construction of Δ in `DenseHamiltonian1D` constructor)
     
-    # iterate quasimomenta
+    # update diagonal blocks and diagonalise
     for (iqx, qx) in enumerate(qxs)
         # update diagonal
         for c in 1:nc
             H_diag[(c-1)B+1:c*B] .= [(2π*δ*jx/Lx + qx)^2 + U_diags[c] for jx in -M:M]
         end
 
-        # diagonalise
-        if nev == 0
-            if dh.ishermitian
-                dh.ε_q[:, iqx], dh.V_q[:, :, iqx] = eigen(Hermitian(H))
-            else
-                dh.ε_q[:, iqx], dh.V_q[:, :, iqx] = eigen(H)
-            end
-        else
-            if dh.ishermitian
-                ps, info = partialschur(dense_linear_map(Hermitian(H)); nev, which=:LM)
-                verbose && @show info
-                dh.V_q[:, :, iqx] = ps.Q
-                dh.ε_q[:, iqx] = inv.(real.(ps.eigenvalues)) # invert back
-            else
-                ps, info = partialschur(dense_linear_map(H); nev, which=:LM)
-                verbose && @show info
-                ε, dh.V_q[:, :, iqx] = partialeigen(ps)
-                ε .= inv.(ε)
-                reverse!(ε) # we want final eigenvalues in ascending order (by abs)
-                dh.ε_q[:, iqx] = ε
-            end
-        end
+        dh.ε_q[:, iqx], dh.V_q[:, :, iqx] = diagonalize(dh; nev, verbose)
     end
     H_diag .= H_diag_copy # restore initial values
 end

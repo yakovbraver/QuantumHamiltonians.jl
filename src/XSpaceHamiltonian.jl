@@ -49,30 +49,40 @@ end
 
 ### Functions that are generic for all dimensions
 
-# TODO this function could be used by all q-dependent diagonalisation functions, but those should be also restructured for pre-allocation
 """
 Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
+The result is written into `xh.ε` and `xh.V`.
 """
 function diagonalize!(xh::XSpaceHamiltonian{:dense}; nev::Integer, verbose::Bool=false)
+    xh.ε, xh.V = diagonalize(xh; nev, verbose)
+end
+
+"""
+Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
+Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
+Return a tuple (eigenvalues, eigenvectors).
+"""
+function diagonalize(xh::XSpaceHamiltonian{:dense}; nev::Integer, verbose::Bool=false)
     if nev == 0
         if xh.ishermitian
-            xh.ε, xh.V = eigen(Hermitian(xh.H)) # if `xh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
+            return eigen(Hermitian(xh.H)) # if `xh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
         else
-            xh.ε, xh.V = eigen(xh.H)
+            return eigen(xh.H)
         end
     else
         if xh.ishermitian
-            S, info = partialschur(dense_linear_map(Hermitian(xh.H)); nev, which=:LM); # `which=:SR` with no shift-invert does not converge
+            ps, info = partialschur(dense_linear_map(Hermitian(xh.H)); nev, which=:LM)
             verbose && @show info
-            xh.V = S.Q
-            xh.ε = inv.(real.(S.eigenvalues)) # invert back
+            ps.eigenvalues .= inv.(real.(ps.eigenvalues)) # invert back
+            return ps.eigenvalues, ps.Q
         else
-            S, info = partialschur(dense_linear_map(xh.H); nev, which=:LM);
+            ps, info = partialschur(dense_linear_map(xh.H); nev, which=:LM)
             verbose && @show info
-            xh.ε, xh.V = partialeigen(S)
-            xh.ε .= inv.(xh.ε)
-            reverse!(xh.ε) # we want final eigenvalues in ascending order (by abs)
+            ε, V = partialeigen(ps)
+            ε .= inv.(ε)
+            reverse!(ε) # we want final eigenvalues in ascending order (by abs)
+            return ε, V
         end
     end
 end
