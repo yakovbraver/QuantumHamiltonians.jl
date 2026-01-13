@@ -224,7 +224,7 @@ In a preliminary step, `u` is `fftshift`'ed.
 `make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
 We call it "naive" because `U` is allocated and then we sipmly go over each element, assigning an appropriate element of `u`.
 In the dense case it is preferred over (since it's faster than) [`fft_to_matrix_sparse!`](@ref)
-because even if `u[i, j]=0`, the corresponding element of `U` still must be accessed to be filled with a zero.
+because even if `u[i, j]=0`, the corresponding elements of `U` still must be accessed to be set to zero.
 """
 function fft_to_matrix_naive!(u::Matrix{T}; make_real::Bool=false) where T <: Number
     N = size(u, 1) # number of points used for FFT
@@ -322,102 +322,102 @@ function make_eigenfunction(xh::XSpaceHamiltonian2D, stateno::Integer, nx::Integ
     return xs .+ xlims[1], ys .+ ylims[1], ψ # return "normal" coordinates, in `x ∈ xlims` and `y ∈ ylims`
 end
 
-# """
-# Calculate eigenenergies for all pairs of quasimomenta in `qxs` and `qys`.
-# Calculate `nev` lowest bands using `ArnoldiMethod`.
-# If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
-# Note that `dh.H` is modified in the process.
-# """
-# function diagonalize!(dh::DenseHamiltonian2D{R,T,S}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nev::Integer, verbose::Bool=false) where {R<:Real, T<:Number, S<:Number}
-#     (;M, xlims, ylims, Lx, Ly, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴_x, 𝐴_y, Γ) = dh
+"""
+Calculate eigenenergies for all pairs of quasimomenta in `qxs` and `qys`.
+Calculate `nev` lowest bands using `ArnoldiMethod`.
+If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
+Note that `dh.H` is modified in the process.
+"""
+function diagonalize!(dh::DenseHamiltonian2D{R,T,S}, qxs::AbstractVector{<:Real}, qys::AbstractVector{<:Real}; nev::Integer, verbose::Bool=false) where {R<:Real, T<:Number, S<:Number}
+    (;M, xlims, ylims, Lx, Ly, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴_x, 𝐴_y, Γ) = dh
 
-#     if !dh.isperiodic
-#         @warn "Hamiltonian must be periodic. Construct a new one and try again."
-#         return
-#     end
+    if !dh.isperiodic
+        @warn "Hamiltonian must be periodic. Construct a new one and try again."
+        return
+    end
 
-#     PI = R(π) # π of the working type to prevent widening
+    PI = R(π) # π of the working type to prevent widening
 
-#     B = (2M + 1)^2 # block size
-#     nsaves = nev == 0 ? B : nev # number of eigenvalues and eigenvectors to allocate
-#     dh.ε_q = Array{S,3}(undef, nsaves, length(qxs), length(qys))
-#     dh.V_q = Array{T,4}(undef, B, nsaves, length(qxs), length(qys))
+    B = (2M + 1)^2 # block size
+    nsaves = nev == 0 ? B : nev # number of eigenvalues and eigenvectors to allocate
+    dh.ε_q = Array{S,3}(undef, nsaves, length(qxs), length(qys))
+    dh.V_q = Array{T,4}(undef, B*nc, nsaves, length(qxs), length(qys))
     
-#     if isnothing(𝐴_x) && isnothing(𝐴_y)
-#         H_diag = diagview(dh.H)
-#         H_diag_copy = diag(dh.H) # a copy for restoring after the calculation
-#         # from the diagonal of each diagonal block of `H`, extract the 0th harmonic of 𝑈ᵢᵢ plus decay -iΓ/2
-#         U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `H₀₀ = -Δ₀₀ + U₀₀ - iΓ/2`, but Δ₀₀ = 0 for the central element of the diagonal (see construction of Δ in `DenseHamiltonian1D` constructor)
-#     else
-#         N = 4M + 1 # number of points for FFT. This will yield harmonics from -2M to 2M
-#         dx, dy = Lx/N, Ly/N
-#         xs = range(xlims[1], xlims[2]-dx, N)
-#         ys = range(ylims[1], ylims[2]-dy, N)
+    if isnothing(𝐴_x) && isnothing(𝐴_y)
+        H_diag = diagview(dh.H)
+        H_diag_copy = diag(dh.H) # a copy for restoring after the calculation
+        # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
+        U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal (see construction of Δ in `DenseHamiltonian1D` constructor)
+    else
+        N = 4M + 1 # number of points for FFT. This will yield harmonics from -2M to 2M
+        dx, dy = Lx/N, Ly/N
+        xs = range(xlims[1], xlims[2]-dx, N)
+        ys = range(ylims[1], ylims[2]-dy, N)
 
-#         fft_buff = Matrix{Complex{R}}(undef, N, N) # a buffer for all (in-place) FFTs
-#         F = FFTW.plan_fft!(fft_buff) # the savings of rfft are negligible, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
+        fft_buff = Matrix{Complex{R}}(undef, N, N) # a buffer for all (in-place) FFTs
+        F = FFTW.plan_fft!(fft_buff) # the savings of rfft are negligible, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
 
-#         D_x = [Matrix{T}(undef, B, B) for _ in 1:nc] # for storing `nc` kinetic operators -iδ∂ₓ - 𝐴ₓ
-#         D_y = [Matrix{T}(undef, B, B) for _ in 1:nc] # for storing `nc` kinetic operators -iδ∂𝑦 - 𝐴𝑦
-#         U = [Matrix{T}(undef, B, B) for _ in 1:nc] # for storing `nc` terms 𝑈ᵢᵢ - iΓ/2
+        D_x = [Matrix{T}(undef, B, B) for _ in 1:nc] # for storing `nc` kinetic operators -iδ∂ₓ - 𝐴ₓ
+        D_y = [Matrix{T}(undef, B, B) for _ in 1:nc] # for storing `nc` kinetic operators -iδ∂𝑦 - 𝐴𝑦
+        U = [Matrix{T}(undef, B, B) for _ in 1:nc] # for storing `nc` terms (𝑈ᵢᵢ)₀ - iΓ/2
 
-#         # iterate over `𝑈` and populate `H`
-#         for c in 1:nc
-#             𝑢 = 𝑈[c, c]
+        # iterate over `𝑈` and populate `H`
+        for c in 1:nc
+            𝑢 = 𝑈[c, c]
 
-#             # calculate and store FFT of 𝑢
-#             if isnothing(𝑢)
-#                 U[c] .= 0
-#             else
-#                 𝑢_isrealeven = (𝑢(xlims[1], ylims[1]) isa Real) & 𝑈_iseven[c, c]
-#                 fft_buff .= 𝑢.(xs, ys')
-#                 F * fft_buff # in-place FFT, weird syntax
-#                 fft_buff ./= N^2
-#                 U[c] .= fft_to_matrix_naive!(fft_buff, make_real=𝑢_isrealeven)
-#             end
+            # calculate and store FFT of 𝑢
+            if isnothing(𝑢)
+                U[c] .= 0
+            else
+                𝑢_isrealeven = (𝑢(xlims[1], ylims[1]) isa Real) & 𝑈_iseven[c, c]
+                fft_buff .= 𝑢.(xs, ys')
+                F * fft_buff # in-place FFT, weird syntax
+                fft_buff ./= N^2
+                U[c] .= fft_to_matrix_naive!(fft_buff, make_real=𝑢_isrealeven)
+            end
 
-#             if Γ[c] != 0
-#                 U[c] .-= LA.I * im*Γ[c]/2
-#             end
-#             ∂_x = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
-#             ∂_y = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
-#             if !isnothing(𝐴_x)
-#                 fft_buff .= 𝐴_x.(xs, ys')
-#                 F * fft_buff
-#                 fft_buff ./= N^2
-#                 A_x = fft_to_matrix_naive!(fft_buff)
-#                 D_x[c] .= ∂_x .- A_x
-#                 # if there is no 𝐴𝑦, then set the 𝑦 kinetic `D_y[c]` term to -iδ∂𝑦. Otherwise `D_y[c]` will be treated in the next if clause
-#                 isnothing(𝐴_y) && (D_y[c] .= ∂_y)
-#             end
-#             if !isnothing(𝐴_y)
-#                 fft_buff .= 𝐴_y.(xs, ys')
-#                 F * fft_buff
-#                 fft_buff ./= N^2
-#                 A_y = fft_to_matrix_naive!(fft_buff)
-#                 D_y[c] .= ∂_y .- A_y
-#                 # if there is no 𝐴ₓ, then set the 𝑥 kinetic `D_x[c]` term to -iδ∂ₓ. Otherwise `D_x[c]` was treated in the preceding if clause
-#                 isnothing(𝐴_x) && (D_x[c] .= ∂_x)
-#             end
-#         end
-#     end
+            if Γ[c] != 0
+                U[c] .-= LA.I * im*Γ[c]/2
+            end
+            ∂_x = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
+            ∂_y = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
+            if !isnothing(𝐴_x)
+                fft_buff .= 𝐴_x.(xs, ys')
+                F * fft_buff
+                fft_buff ./= N^2
+                A_x = fft_to_matrix_naive!(fft_buff)
+                D_x[c] .= ∂_x .- A_x
+                # if there is no 𝐴𝑦, then set the 𝑦 kinetic `D_y[c]` term to -iδ∂𝑦. Otherwise `D_y[c]` will be treated in the next if clause
+                isnothing(𝐴_y) && (D_y[c] .= ∂_y)
+            end
+            if !isnothing(𝐴_y)
+                fft_buff .= 𝐴_y.(xs, ys')
+                F * fft_buff
+                fft_buff ./= N^2
+                A_y = fft_to_matrix_naive!(fft_buff)
+                D_y[c] .= ∂_y .- A_y
+                # if there is no 𝐴ₓ, then set the 𝑥 kinetic `D_x[c]` term to -iδ∂ₓ. Otherwise `D_x[c]` was treated in the preceding if clause
+                isnothing(𝐴_x) && (D_x[c] .= ∂_x)
+            end
+        end
+    end
     
-#     # update diagonal blocks and diagonalise
-#     for (iqy, qy) in enumerate(qys), (iqx, qx) in enumerate(qxs)
-#         # update diagonal blocks
-#         if isnothing(𝐴_x) && isnothing(𝐴_y)
-#             for c in 1:nc
-#                 H_diag[(c-1)B+1:c*B] .= [(2π*δ*jx/Lx + qx)^2 + (2π*δ*jy/Ly + qy)^2 + U_diags[c] for jx in -M:M for jy in -M:M]
-#             end
-#         else
-#             for c in 1:nc
-#                 H[(c-1)*B+1:c*B, (c-1)*B+1:c*B] .= (D_x[c] + LA.I*qx)^2 + (D_y[c] + LA.I*qy)^2 + U[c]
-#             end
-#         end
+    # update diagonal blocks and diagonalise
+    for (iqy, qy) in enumerate(qys), (iqx, qx) in enumerate(qxs)
+        # update diagonal blocks
+        if isnothing(𝐴_x) && isnothing(𝐴_y)
+            for c in 1:nc
+                H_diag[(c-1)B+1:c*B] .= [(2PI*δ*jx/Lx + qx)^2 + (2PI*δ*jy/Ly + qy)^2 + U_diags[c] for jx in -M:M for jy in -M:M]
+            end
+        else
+            for c in 1:nc
+                H[(c-1)*B+1:c*B, (c-1)*B+1:c*B] .= (D_x[c] + LA.I*qx)^2 + (D_y[c] + LA.I*qy)^2 + U[c]
+            end
+        end
 
-#         dh.ε_q[:, iqx, iqy], dh.V_q[:, :, iqx, iqy] = diagonalize(dh; nev, verbose)
-#     end
-# end
+        dh.ε_q[:, iqx, iqy], dh.V_q[:, :, iqx, iqy] = diagonalize(dh; nev, verbose)
+    end
+end
 
 ##### Unused but correct and tested functions
 
