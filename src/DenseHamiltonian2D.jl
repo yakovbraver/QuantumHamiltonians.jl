@@ -17,8 +17,8 @@ mutable struct DenseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamilton
     ishermitian::Bool # `H` is nonhermitian if decays Γ are present
     𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings
     𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(𝑥, 𝑦) = 𝑈ᵢⱼ(-𝑥, -𝑦)
-    𝐴_x::Union{Function,Nothing}
-    𝐴_y::Union{Function,Nothing}
+    𝐴_x::Vector{<:Union{Function,Nothing}}
+    𝐴_y::Vector{<:Union{Function,Nothing}}
     Γ::Vector{R} # decay rates
     H::Matrix{T} # momentum-space Hamiltonian used for diagonalisation
     ε::Vector{S} # eigenvalues, can be complex for nonhermitian `H`, hence additional type `S`
@@ -37,7 +37,7 @@ If `𝑈[i, j] === nothing` or it is complex, then the value of `𝑈_iseven[i, 
 """
 function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
                             𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1)),
-                            𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing) where R <: Real
+                            𝐴_x::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1)), 𝐴_y::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1))) where R <: Real
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1]
     
     PI = R(π) # π of the working type to prevent widening
@@ -45,8 +45,8 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
     nc = size(𝑈, 1) # number of components
 
     # `isreal` will show if the resulting `H` will be real
-    isreal = all( 𝑢(xlims[1], ylims[1]) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢)) & # check if all functions in 𝑈 are real
-             isnothing(𝐴_x) & isnothing(𝐴_y) & iszero(Γ)
+    isreal = all( 𝑢(xlims[1], ylims[1]) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢) ) & # check if all functions in 𝑈 are real
+             all(isnothing.(𝐴_x)) & all(isnothing.(𝐴_y)) & iszero(Γ)
     if isperiodic # for periodic potential, also check if functions are even 
         isreal &= all(𝑈_iseven[𝑈 .!== nothing])
     end
@@ -65,8 +65,51 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
         fft_buff = Matrix{Complex{R}}(undef, N, N) # a buffer for all (in-place) FFTs
         F = FFTW.plan_fft!(fft_buff) # the savings of rfft are negligible, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
 
-        # iterate over `𝑈` and populate `H`
-        for jH in axes(𝑈, 2)
+        # For efficiency, treat the cases of equal scalar and/or vector potentials separately. These clauses will also be mathced in the single-component case.
+        # However the decay Γ is still treated in the subsequent loop over components. 
+
+        𝑈_diag_allequal = allequal(diagview(𝑈)) & !isnothing(𝑈[1, 1])
+        𝐴_allequal = allequal(𝐴_x) & allequal(𝐴_y) & !isnothing(𝐴_x[1]) & !isnothing(𝐴_y[1])
+
+        if 𝑈_diag_allequal # then calculate FFT of `𝑈[1, 1]` only and fill the diagonal blocks with 𝑈₁₁ (and maybe -δ²Δ)
+            𝑢 = 𝑈[1, 1]
+            𝑢_isrealeven = (𝑢(xlims[1], ylims[1]) isa Real) & 𝑈_iseven[1, 1]
+            fft_buff .= 𝑢.(xs, ys')
+            F * fft_buff # in-place FFT, weird syntax
+            fft_buff ./= N^2
+            U = fft_to_matrix_naive!(fft_buff, make_real=𝑢_isrealeven)
+            if !𝐴_allequal # then also add Laplacian. Otherwise it will be added in the `if 𝐴_allequal` clause
+                U .+= Diagonal([(2PI*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -M:M for jy in -M:M]) # this is -δ²Δ
+            end
+            for iH in 1:nc
+                H[(iH-1)*B+1:iH*B, (iH-1)*B+1:iH*B] .= U
+            end
+        end
+        if 𝐴_allequal # then calculate FFT of `𝐴_x[1]` and 𝐴_y[1] only and fill the diagonal blocks with (-iδ∇ - 𝐴)² 
+            𝑎_𝑥, 𝑎_𝑦 = 𝐴_x[1], 𝐴_y[1]
+            fft_buff .= 𝑎_𝑥.(xs, ys')
+            F * fft_buff
+            fft_buff ./= N^2
+            A_x = fft_to_matrix_naive!(fft_buff)
+            ∂_x = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
+            A_x .= ∂_x .- A_x
+            A = similar(A_x)
+            mul!(A, A_x, A_x)
+
+            fft_buff .= 𝑎_𝑦.(xs, ys')
+            F * fft_buff
+            fft_buff ./= N^2
+            A_y = fft_to_matrix_naive!(fft_buff)
+            ∂_y = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
+            A_y .= ∂_y .- A_y
+            mul!(A_x, A_y, A_y) # using A_x as a buffer: writing (-iδ∂𝑦 - 𝐴𝑦)² into `A_x` 
+            A .+= A_x
+            for iH in 1:nc
+                H[(iH-1)*B+1:iH*B, (iH-1)*B+1:iH*B] .+= A
+            end
+        end
+
+        for jH in 1:nc
             for iH in 1:jH # only upper triangle is scanned. The lower triangle is filled only if Γ is present
                 wi = (iH-1)*B+1:iH*B
                 wj = (jH-1)*B+1:jH*B
@@ -74,7 +117,7 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
                 𝑢 = 𝑈[iH, jH]
 
                 # calculate and store FFT of 𝑢
-                if !isnothing(𝑢)
+                if !isnothing(𝑢) && !(𝑈_diag_allequal && iH == jH)
                     𝑢_isrealeven = (𝑢(xlims[1], ylims[1]) isa Real) & 𝑈_iseven[iH, jH]
                     fft_buff .= 𝑢.(xs, ys')
                     F * fft_buff # in-place FFT, weird syntax
@@ -84,24 +127,25 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
 
                 # for diagonal block, add Laplacian, Γ, and 𝐴
                 if iH == jH
+                    𝑎_𝑥, 𝑎_𝑦 = 𝐴_x[iH], 𝐴_y[iH]
                     if Γ[iH] != 0
                         H[diagind(H)[wi]] .-= im*Γ[iH]/2
                     end
                     # if there is no 𝐴, then add Laplacian. Otherwise it will be added together with 𝐴 components
-                    if isnothing(𝐴_x) && isnothing(𝐴_y)
+                    if isnothing(𝑎_𝑥) && isnothing(𝑎_𝑦) && !𝑈_diag_allequal
                         H[wi, wj] += Diagonal([(2PI*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -M:M for jy in -M:M]) # this is -δ²Δ
-                    else
-                        if !isnothing(𝐴_x)
-                            fft_buff .= 𝐴_x.(xs, ys')
+                    elseif !𝐴_allequal
+                        if !isnothing(𝑎_𝑥)
+                            fft_buff .= 𝑎_𝑥.(xs, ys')
                             F * fft_buff
                             fft_buff ./= N^2
                             A_i = fft_to_matrix_naive!(fft_buff)
                             ∂_i = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
                             H[wi, wj] .+= (∂_i - A_i)^2
                             # if there is no 𝐴𝑦, then add ∂𝑦². Otherwise it will be added together with 𝐴𝑦 in the next `if` clause
-                            isnothing(𝐴_y) && (H[wi, wj] += Diagonal([(2PI * δ * jy/Ly)^2 for jx in -M:M for jy in -M:M]))
+                            isnothing(𝑎_𝑦) && (H[wi, wj] += Diagonal([(2PI * δ * jy/Ly)^2 for jx in -M:M for jy in -M:M]))
                         end
-                        if !isnothing(𝐴_y)
+                        if !isnothing(𝑎_𝑦)
                             fft_buff .= 𝐴_y.(xs, ys')
                             F * fft_buff
                             fft_buff ./= N^2
@@ -109,10 +153,10 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
                             ∂_i = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
                             H[wi, wj] .+= (∂_i - A_i)^2
                             # if there is no 𝐴ₓ, then add ∂ₓ². Otherwise it was added together with 𝐴ₓ in the preceding `if` clause
-                            isnothing(𝐴_x) && (H[wi, wj] += Diagonal([(2PI * δ * jx/Lx)^2 for jx in -M:M for jy in -M:M]))
+                            isnothing(𝑎_𝑥) && (H[wi, wj] += Diagonal([(2PI * δ * jx/Lx)^2 for jx in -M:M for jy in -M:M]))
                         end
                     end
-                elseif !all(iszero, Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view)
+                elseif !iszero(Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view)
                     H[wj, wi] .= @view(H[wi, wj])'
                 end
             end
@@ -157,29 +201,30 @@ function DenseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
                 end
 
                 if iH == jH # for a diagonal block, add the laplace term, optionally Γ, and the 𝐴's
+                    𝑎_𝑥, 𝑎_𝑦 = 𝐴_x[iH], 𝐴_y[iH]
                     # TODO: just subtract from diagonal
                     H[wi, wj] += Diagonal([(PI*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in 1:M for jy in 1:M]) # add -δ²Δ
                     if Γ[iH] != 0
                         H[diagind(H)[wi]] .-= im*Γ[iH]/2
                     end
 
-                    if !isnothing(𝐴_x)
-                        fft_buff .= 𝐴_x.(xs, ys')
+                    if !isnothing(𝑎_𝑥)
+                        fft_buff .= 𝑎_𝑥.(xs, ys')
                         F * fft_buff
                         fft_buff ./= (N-1)^2
                         A_i = dct_to_matrix(fft_buff)
                         ∂_i = make_∂_x(M, Lx)
                         H[wi, wj] .+= im*(A_i*∂_i + ∂_i*A_i) + A_i^2 # The perfect square for `(∂_x - A_x)^2` is much less accurate
                     end
-                    if !isnothing(𝐴_y)
-                        fft_buff .= 𝐴_y.(xs, ys')
+                    if !isnothing(𝑎_𝑦)
+                        fft_buff .= 𝑎_𝑦.(xs, ys')
                         F * fft_buff
                         fft_buff ./= (N-1)^2
                         A_i = dct_to_matrix(fft_buff)
                         ∂_i = make_∂_y(M, Ly)
                         H[wi, wj] .+= im*(A_i*∂_i + ∂_i*A_i) + A_i^2 # The perfect square for `(∂_y - A_y)^2` is much less accurate
                     end
-                elseif !all(iszero, Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view when diagonalising)
+                elseif !iszero(Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view when diagonalising)
                     H[wj, wi] .= @view(H[wi, wj])'
                 end
             end
@@ -339,9 +384,8 @@ function diagonalize!(dh::DenseHamiltonian2D{R,T,S}, qxs::AbstractVector{<:Real}
     dh.ε_q = Array{S,3}(undef, nsaves, length(qxs), length(qys))
     dh.V_q = Array{T,4}(undef, B*nc, nsaves, length(qxs), length(qys))
     
-    if isnothing(𝐴_x) && isnothing(𝐴_y)
+    if all(isnothing.(𝐴_x)) && all(isnothing.(𝐴_y))
         H_diag = diagview(dh.H)
-        H_diag_copy = diag(dh.H) # a copy for restoring after the calculation
         # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
         U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal (see construction of Δ in `DenseHamiltonian1D` constructor)
     else
@@ -353,61 +397,87 @@ function diagonalize!(dh::DenseHamiltonian2D{R,T,S}, qxs::AbstractVector{<:Real}
         fft_buff = Matrix{Complex{R}}(undef, N, N) # a buffer for all (in-place) FFTs
         F = FFTW.plan_fft!(fft_buff) # the savings of rfft are negligible, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
 
-        D_x = [Matrix{T}(undef, B, B) for _ in 1:nc] # for storing `nc` kinetic operators -iδ∂ₓ - 𝐴ₓ
-        D_y = [Matrix{T}(undef, B, B) for _ in 1:nc] # for storing `nc` kinetic operators -iδ∂𝑦 - 𝐴𝑦
-        U = [Matrix{T}(undef, B, B) for _ in 1:nc] # for storing `nc` terms (𝑈ᵢᵢ)₀ - iΓ/2
+        𝑈_diag_allequal = allequal(diagview(𝑈)) & !isnothing(𝑈[1, 1])
+        𝐴_allequal = allequal(𝐴_x) & allequal(𝐴_y) & !isnothing(𝐴_x[1]) & !isnothing(𝐴_y[1])
 
-        # iterate over `𝑈` and populate `H`
+        nD = 𝐴_allequal ? 1 : nc # number of kinetic operators -iδ∂ₓ - 𝐴ₓ to allocate
+        nU = 𝑈_diag_allequal ? 1 : nc # number of terms (𝑈ᵢᵢ)₀ - iΓ/2 to allocate
+        D_x = Union{Matrix{T}, Nothing}[isnothing(𝐴_x[c]) ? nothing : Matrix{T}(undef, B, B) for c in 1:nD] # for storing kinetic operators -iδ∂ₓ - 𝐴ₓ
+        D_y = Union{Matrix{T}, Nothing}[isnothing(𝐴_y[c]) ? nothing : Matrix{T}(undef, B, B) for c in 1:nD] # for storing kinetic operators -iδ∂𝑦 - 𝐴𝑦
+        U = Union{Matrix{T}, Nothing}[isnothing(𝑈[c, c]) ? nothing : Matrix{T}(undef, B, B) for c in 1:nU] # for storing terms (𝑈ᵢᵢ)₀ (note that -iΓ/2 will not be stored here)
+
+        ∂_x = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
+        ∂_y = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
+        # populate `D_x`, `D_y`, and `U`
         for c in 1:nc
             𝑢 = 𝑈[c, c]
-
-            # calculate and store FFT of 𝑢
-            if isnothing(𝑢)
-                U[c] .= 0
-            else
+            𝑎_𝑥, 𝑎_𝑦 = 𝐴_x[1], 𝐴_y[1]
+            if !isnothing(𝑢) nU > 1 || (nU == 1 && c == 1) # if [we need more than one 𝑈ᵢᵢ (meaning all 𝑈ᵢᵢ's are different)] or [we need only one 𝑈ᵢᵢ (meaning all 𝑈ᵢᵢ's are equal) and we are on the first iteration]
                 𝑢_isrealeven = (𝑢(xlims[1], ylims[1]) isa Real) & 𝑈_iseven[c, c]
                 fft_buff .= 𝑢.(xs, ys')
                 F * fft_buff # in-place FFT, weird syntax
                 fft_buff ./= N^2
                 U[c] .= fft_to_matrix_naive!(fft_buff, make_real=𝑢_isrealeven)
             end
-
-            if Γ[c] != 0
-                U[c] .-= LA.I * im*Γ[c]/2
-            end
-            ∂_x = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
-            ∂_y = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
-            if !isnothing(𝐴_x)
-                fft_buff .= 𝐴_x.(xs, ys')
+            if !isnothing(𝑎_𝑥) && (nD > 1 || (nD == 1 && c == 1))
+                fft_buff .= 𝑎_𝑥.(xs, ys')
                 F * fft_buff
                 fft_buff ./= N^2
                 A_x = fft_to_matrix_naive!(fft_buff)
                 D_x[c] .= ∂_x .- A_x
                 # if there is no 𝐴𝑦, then set the 𝑦 kinetic `D_y[c]` term to -iδ∂𝑦. Otherwise `D_y[c]` will be treated in the next if clause
-                isnothing(𝐴_y) && (D_y[c] .= ∂_y)
+                isnothing(𝑎_𝑦) && (D_y[c] .= ∂_y)
             end
-            if !isnothing(𝐴_y)
-                fft_buff .= 𝐴_y.(xs, ys')
+            if !isnothing(𝑎_𝑦)
+                fft_buff .= 𝑎_𝑦.(xs, ys')
                 F * fft_buff
                 fft_buff ./= N^2
                 A_y = fft_to_matrix_naive!(fft_buff)
                 D_y[c] .= ∂_y .- A_y
                 # if there is no 𝐴ₓ, then set the 𝑥 kinetic `D_x[c]` term to -iδ∂ₓ. Otherwise `D_x[c]` was treated in the preceding if clause
-                isnothing(𝐴_x) && (D_x[c] .= ∂_x)
+                isnothing(𝑎_𝑥) && (D_x[c] .= ∂_x)
             end
         end
     end
     
+    buff_D = Matrix{T}(undef, B, B)
     # update diagonal blocks and diagonalise
     for (iqy, qy) in enumerate(qys), (iqx, qx) in enumerate(qxs)
         # update diagonal blocks
-        if isnothing(𝐴_x) && isnothing(𝐴_y)
+        if all(isnothing.(𝐴_x)) && all(isnothing.(𝐴_y))
+            buff = [(2PI*δ*jx/Lx + qx)^2 + (2PI*δ*jy/Ly + qy)^2 for jx in -M:M for jy in -M:M] # could make use of ∂_x above but that one is a matrix, while here it's a vector
             for c in 1:nc
-                H_diag[(c-1)B+1:c*B] .= [(2PI*δ*jx/Lx + qx)^2 + (2PI*δ*jy/Ly + qy)^2 + U_diags[c] for jx in -M:M for jy in -M:M]
+                H_diag[(c-1)B+1:c*B] .= buff .+ U_diags[c]
             end
         else
+            # first treat -iδ∂ₓ-𝐴ₓ, using the first diagonal block of `H` as a buffer
             for c in 1:nc
-                H[(c-1)*B+1:c*B, (c-1)*B+1:c*B] .= (D_x[c] + LA.I*qx)^2 + (D_y[c] + LA.I*qy)^2 + U[c]
+                H_block = @view H[(c-1)*B+1:c*B, (c-1)*B+1:c*B]
+                if !isnothing(D_x[c])
+                    if (nD > 1 || (nD == 1 && c == 1))  # if [more than one D_x exist (meaning all 𝐴ₓ's are different)] or [only one D_x exists (meaning all 𝐴ₓ's are equal) and we are on the first iteration]
+                        H_block .= (D_x[c] + LA.I*qx)^2 # then calulate
+                    else
+                        H_block .= @view H[1:B, 1:B] # otherwise just copy the first block
+                    end
+                else # if there is no 𝐴ₓ in this block
+                    H_block .= (∂_x + LA.I*qx)^2
+                end
+            end
+            # then treat -iδ∂𝑦-𝐴𝑦 and also 𝑈 with Γ, using the buffer `buff_D`
+            for c in 1:nc
+                H_block = @view H[(c-1)*B+1:c*B, (c-1)*B+1:c*B]
+                if !isnothing(D_y[c])
+                    if (nD > 1 || (nD == 1 && c == 1))  # if [more than one D_y exist (meaning all 𝐴ₓ's are different)] or [only one D_y exists (meaning all 𝐴ₓ's are equal) and we are on the first iteration]
+                        buff_D .= (D_y[c] + LA.I*qy)^2 # then calulate
+                        H_block .+= buff_D 
+                    else
+                        H_block .+= buff_D # otherwise just add the buffer
+                    end
+                else # if there is no 𝐴𝑦 in this block
+                    H_block .+= (∂_y + LA.I*qy)^2
+                end
+                Γ[c] != 0 && (H_block .-= LA.I * im*Γ[c]/2)
+                !isnothing(U[c]) && (H_block .+= U[nU == 1 ? 1 : c])
             end
         end
 

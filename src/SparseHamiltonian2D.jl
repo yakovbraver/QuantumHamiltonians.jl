@@ -16,8 +16,8 @@ mutable struct SparseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamilto
     ishermitian::Bool # `H` is nonhermitian if decays Γ are present
     𝑈::Matrix{<:Union{Function,Nothing}} # nc-component Hamiltonian matrix containing coordinate-space functions
     𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(𝑥, 𝑦) = 𝑈ᵢⱼ(-𝑥, -𝑦)
-    𝐴_x::Union{Function,Nothing}
-    𝐴_y::Union{Function,Nothing}
+    𝐴_x::Vector{<:Union{Function,Nothing}}
+    𝐴_y::Vector{<:Union{Function,Nothing}}
     Γ::Vector{R} # decay rates
     H::SparseMatrixCSC{T, Int64} # momentum-space Hamiltonian used for diagonalisation (UMFPACKFactorization only supports Int64-type indices)
     ε::Vector{S} # eigenvalues, can be complex for nonhermitian `H`, hence additional type `S`
@@ -35,8 +35,8 @@ If *all* functions are even (and real), then the resulting Fourier-space Hamilto
 If `𝑈[i, j] === nothing` or it is complex, then the value of `𝑈_iseven[i, j]` does not matter.
 """
 function SparseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                             𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1)),
-                             𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing, fft_threshold::R=√eps(R)) where R <: Real
+                             𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1)), fft_threshold::R=√eps(R),
+                             𝐴_x::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1)), 𝐴_y::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1))) where R <: Real
     Lx, Ly = xlims[2]-xlims[1], ylims[2]-ylims[1]
     
     PI = R(π) # π of the working type to prevent widening
@@ -45,7 +45,7 @@ function SparseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xl
 
     # `isreal` will show if the resulting `H` will be real
     isreal = all( 𝑢(xlims[1], ylims[1]) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢) ) & # check if all functions in 𝑈 are real
-             isnothing(𝐴_x) & isnothing(𝐴_y) & iszero(Γ)
+             all(isnothing.(𝐴_x)) & all(isnothing.(𝐴_y)) & iszero(Γ)
     if isperiodic # for periodic potential, also check if functions are even 
         isreal &= all(𝑈_iseven[𝑈 .!== nothing])
     end
@@ -80,33 +80,34 @@ function SparseHamiltonian2D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xl
 
                 # for a diagonal block, add Laplacian, Γ, and 𝐴
                 if iH == jH
+                    𝑎_𝑥, 𝑎_𝑦 = 𝐴_x[iH], 𝐴_y[iH]
                     if Γ[iH] != 0
                         H_temp[iH, jH] -= im*Γ[iH]/2 * LA.I # H_temp[iH, jH][3] are the values of 𝑈ᵢⱼ, the last elements are the diagonal elements
                     end
                     # if there is no 𝐴, then add Laplacian. Otherwise it will be added together with 𝐴 components
-                    if isnothing(𝐴_x) && isnothing(𝐴_y)
+                    if isnothing(𝑎_𝑥) && isnothing(𝑎_𝑦)
                         H_temp[iH, jH] += Diagonal([(2PI*δ)^2 * ((jx/Lx)^2 + (jy/Ly)^2) for jx in -M:M for jy in -M:M]) # this is -δ²Δ
                     else
                         # if 𝐴 is present, we have to construct the matrix explicitly
-                        if !isnothing(𝐴_x)
-                            fft_buff .= 𝐴_x.(xs, ys')
+                        if !isnothing(𝑎_𝑥)
+                            fft_buff .= 𝑎_𝑥.(xs, ys')
                             F * fft_buff
                             fft_buff ./= N^2
                             A_i = fft_to_matrix_sparse!(fft_buff; fft_threshold)
                             ∂_i = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
                             H_temp[iH, jH] += (∂_i - A_i)^2
                             # if there is no 𝐴𝑦, then add ∂𝑦². Otherwise it will be added together with 𝐴𝑦 in the next `if` clause
-                            isnothing(𝐴_y) && (H_temp[iH, jH] += Diagonal([(2PI * δ * jy/Ly)^2 for jx in -M:M for jy in -M:M]))
+                            isnothing(𝑎_𝑦) && (H_temp[iH, jH] += Diagonal([(2PI * δ * jy/Ly)^2 for jx in -M:M for jy in -M:M]))
                         end
-                        if !isnothing(𝐴_y)
-                            fft_buff .= 𝐴_y.(xs, ys')
+                        if !isnothing(𝑎_𝑦)
+                            fft_buff .= 𝑎_𝑦.(xs, ys')
                             F * fft_buff
                             fft_buff ./= N^2
                             A_i = fft_to_matrix_sparse!(fft_buff; fft_threshold)
                             ∂_i = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
                             H_temp[iH, jH] += (∂_i - A_i)^2
                             # if there is no 𝐴ₓ, then add ∂ₓ². Otherwise it was added together with 𝐴ₓ in the preceding `if` clause
-                            isnothing(𝐴_x) && (H_temp[iH, jH] += Diagonal([(2PI * δ * jx/Lx)^2 for jx in -M:M for jy in -M:M]))
+                            isnothing(𝑎_𝑥) && (H_temp[iH, jH] += Diagonal([(2PI * δ * jx/Lx)^2 for jx in -M:M for jy in -M:M]))
                         end
                     end
                 else # non-diagonal block
@@ -243,7 +244,7 @@ function diagonalize!(dh::SparseHamiltonian2D{R,T,S}, qxs::AbstractVector{<:Real
     dh.ε_q = Array{S,3}(undef, nsaves, length(qxs), length(qys))
     dh.V_q = Array{T,4}(undef, B*nc, nsaves, length(qxs), length(qys))
     
-    if isnothing(𝐴_x) && isnothing(𝐴_y)
+    if all(isnothing.(𝐴_x)) && all(isnothing.(𝐴_y))
         H_diag = diagview(dh.H)
         # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
         U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal (see construction of Δ in `DenseHamiltonian1D` constructor)
@@ -254,7 +255,7 @@ function diagonalize!(dh::SparseHamiltonian2D{R,T,S}, qxs::AbstractVector{<:Real
     # update diagonal blocks and diagonalise
     for (iqy, qy) in enumerate(qys), (iqx, qx) in enumerate(qxs)
         # update diagonal blocks
-        if isnothing(𝐴_x) && isnothing(𝐴_y)
+        if all(isnothing.(𝐴_x)) && all(isnothing.(𝐴_y))
             for c in 1:nc
                 H_diag[(c-1)B+1:c*B] .= [(2PI*δ*jx/Lx + qx)^2 + (2PI*δ*jy/Ly + qy)^2 + U_diags[c] for jx in -M:M for jy in -M:M]
             end
