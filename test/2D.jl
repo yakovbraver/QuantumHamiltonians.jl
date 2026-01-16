@@ -1,0 +1,258 @@
+@testset "Test various `fft_to_matrix`" begin
+    H_true =
+    [11  15  14  51  55  54  41  45  44
+     12  11  15  52  51  55  42  41  45
+     13  12  11  53  52  51  43  42  41
+     21  25  24  11  15  14  51  55  54
+     22  21  25  12  11  15  52  51  55
+     23  22  21  13  12  11  53  52  51
+     31  35  34  21  25  24  11  15  14
+     32  31  35  22  21  25  12  11  15
+     33  32  31  23  22  21  13  12  11]
+
+    u = [10i+j for i = 1:5, j=1:5]
+    H = XSpaceHamiltonians._fft_to_matrix(u)
+    @test H == H_true
+    
+    H = XSpaceHamiltonians.fft_to_matrix_naive!(u)
+    @test H == H_true
+    
+    u = [10i+j for i = 1:5, j=1:5]
+    n_elem = XSpaceHamiltonians.filter_count_fft!(u)
+    @test n_elem == 81
+    H = XSpaceHamiltonians.fft_to_matrix_sparse!(u)
+    @test H == H_true
+
+    u = [(10i+j)*iseven(i+j) for i = 1:5, j=1:5]
+    n_elem = XSpaceHamiltonians.filter_count_fft!(u)
+    @test n_elem == 45
+
+    u = [10i+j for i = 1:3, j=1:5]
+    H = XSpaceHamiltonians._rfft_to_matrix!(u)
+    @test H == Symmetric(H_true, :L)
+end
+
+# TODO add additional type checks
+# Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
+@testset "Test dense and sparse 2D 1-component diagonalisation" begin
+    function 𝑈(x::Real, y::Real)
+        (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y)^2 * 2ϵ^2 * (1+ϵc^2)
+    end
+
+    function 𝐴_x(x::Real, y::Real)
+        sin(2y) .* ϵc .* sin(χ) ./ 𝛼(x, y)
+    end
+
+    function 𝐴_y(x::Real, y::Real)
+        sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y)
+    end
+
+    function 𝛼(x::Real, y::Real)
+        η₋ = cos(x-y); η₊ = cos(x+y)
+        return ϵ^2 * (1 + ϵc^2) + η₊^2 + (ϵc*η₋)^2 - 2ϵc*η₊*η₋*cos(χ)
+    end
+
+    ϵ::Float32 = 0.1
+    ϵc::Float32 = 1
+
+    ########## χ = 0
+
+    χ::Float32 = 0
+
+    xlimits = (0, π) .|> Float32
+    ylimits = (0, π) .|> Float32
+
+    M = 5
+
+    ### Nonperiodic
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M)
+    @test dh.H isa Matrix{Float32}
+    @test dh.V isa Matrix{Float32}
+
+    # exact diagonalisation
+    diagonalize!(dh, nev=0)
+    @test dh.ε[1] ≈ 2.064 rtol=1e-3
+
+    # approximate diagonalisation
+    diagonalize!(dh, nev=1)
+    @test dh.ε[1] ≈ 2.064 rtol=1e-3
+
+    ### Periodic
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true)
+    @test dh.H isa Matrix{Float32}
+
+    # exact diagonalisation
+    diagonalize!(dh, nev=0)
+    @test dh.ε[1] ≈ 2.018 rtol=1e-3
+
+    # approximate diagonalisation
+    diagonalize!(dh, nev=1)
+    @test dh.ε[1] ≈ 2.018 rtol=1e-3
+
+    ########## χ = π/2, x from -π/2 to π/2
+
+    χ = π/2
+
+    xlimits = (-π/2, π/2) .|> Float32
+    ylimits = (0, π) .|> Float32
+
+    ### Nonperiodic
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M, 𝐴_x, 𝐴_y)
+    
+    # exact diagonalisation
+    diagonalize!(dh, nev=0)
+    @test dh.ε[1] ≈ 3.179 rtol=1e-3
+
+    # approximate diagonalisation
+    diagonalize!(dh, nev=1)
+    @test dh.ε[1] ≈ 3.179 rtol=1e-3
+
+    ########## χ = π/2, full period
+
+    χ = π/2
+
+    xlimits = (0, 2π) .|> Float32
+    ylimits = (0, 2π) .|> Float32
+
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true, 𝐴_x, 𝐴_y);
+
+    # exact diagonalisation
+    diagonalize!(dh, nev=0)
+    @test dh.ε[1] ≈ 0.571 atol=1e-3
+
+    # approximate diagonalisation
+    diagonalize!(dh, nev=1)
+    @test dh.ε[1] ≈ 0.571 atol=1e-3
+
+    sh = XSpaceHamiltonian{:sparse}(𝑈, Float64.(xlimits), Float64.(ylimits); isperiodic=true, M, 𝑈_iseven=true, 𝐴_x, 𝐴_y) # cast to Float64 because sparse diagonalisation does not support Float32
+    diagonalize!(sh, nev=1)
+    @test sh.ε[1] ≈ 0.571 atol=1e-3
+end
+
+# Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
+@testset "Test dense 2D 3-component diagonalisation" begin
+    function 𝛺₁(x::Real, y::Real)
+        Ω₁₀ / 2
+    end
+
+    function 𝛺₂(x::Real, y::Real)
+        ( -Ω₋ * cos(x-y) + Ω₊ * cos(x+y) ) / 2
+        # - Ω₋ * cis(χ/2) * cos(x-y) + Ω₊ * cis(-χ/2) * cos(x+y) 
+    end
+
+    ϵ::Float32 = 0.1
+    ϵc::Float32 = 1
+    Ω₁₀::Float32 = 2000
+    Ω₊ = Ω₁₀ / (ϵ*√(1+ϵc^2))
+    Ω₋ = Ω₊ * ϵc
+    # χ::Float32 = 0
+    Γ₃::Float32 = 1e3
+
+    xlimits = (-π, π) .|> Float32
+    ylimits = (-π, π) .|> Float32
+
+    M = 1 # one harmonic is enough to capture the transform in the periodic case :)
+    𝑈 = [nothing nothing 𝛺₁      
+         nothing nothing 𝛺₂
+         nothing nothing nothing] # only upper triangle is needed
+    𝑈_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
+
+    ### Hermitian periodic diagonalisation
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven)
+    @test dh.H isa Matrix{Float32}
+    @test dh.H[1, 19] ≈ Ω₁₀ / 2
+    @test dh.H[10, 23] ≈ Ω₊ / 4
+    @test dh.H[11, 22] ≈ -Ω₊ / 4
+        
+    # exact diagonalisation
+    diagonalize!(dh, nev=0)
+    @test dh.ε[1] ≈ -7140 rtol=1e-3
+
+    # approximate diagonalisation
+    diagonalize!(dh, nev=1)
+    @test dh.ε[1] ≈ 0.039 atol=1e-3
+
+    ### Hermitian nonperiodic diagonalisation
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M)
+    @test dh.H isa Matrix{Float32}
+        
+    # exact diagonalisation
+    diagonalize!(dh, nev=0)
+    @test dh.ε[1] ≈ -1000 rtol=1e-3
+
+    # approximate diagonalisation
+    diagonalize!(dh, nev=1)
+    @test dh.ε[1] ≈ 0.5 rtol=1e-3
+    
+    ### non-Hermitian periodic diagonalisation
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven, Γ=[0, 0, Γ₃]);
+    @test dh.H isa Matrix{Complex{Float32}}
+    
+    # exact diagonalisation
+    diagonalize!(dh, nev=0)
+    @test dh.ε[1] ≈ -7136 - 250im rtol=1e-3
+    l = findfirst(x -> real(x) > 0, dh.ε)
+    @test l == 10
+    @test dh.ε[l] ≈ 0.039 - 0.0002im atol=1e-3
+
+    # approximate diagonalisation
+    diagonalize!(dh, nev=1)
+    @test dh.ε[1] ≈ 0.039 atol=1e-3
+
+    ### non-Hermitian nonperiodic diagonalisation
+    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M, Γ=[0, 0, Γ₃]);
+    @test dh.H isa Matrix{Complex{Float32}}
+    
+    # exact diagonalisation
+    diagonalize!(dh, nev=0)
+    @test dh.ε[1] ≈ -968 - 250im rtol=1e-3
+
+    # approximate diagonalisation
+    diagonalize!(dh, nev=1)
+    @test dh.ε[1] ≈ 0.5 rtol=1e-3
+end
+
+# Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
+@testset "Test sparse 2D 3-component diagonalisation" begin
+    function 𝛺₁(x::Real, y::Real)
+        Ω₁₀ / 2
+    end
+
+    function 𝛺₂(x::Real, y::Real)
+        ( -Ω₋ * cos(x-y) + Ω₊ * cos(x+y) ) / 2
+    end
+
+    ϵ::Float64 = 0.1
+    ϵc::Float64 = 1
+    Ω₁₀::Float64 = 2000
+    Ω₊ = Ω₁₀ / (ϵ*√(1+ϵc^2))
+    Ω₋ = Ω₊ * ϵc
+    Γ₃::Float64 = 1e3
+
+    xlimits = (-π, π) .|> Float64
+    ylimits = (-π, π) .|> Float64
+
+    M = 1 # one harmonic is enough to capture the transform in the periodic case :)
+    𝑈 = [nothing nothing 𝛺₁      
+         nothing nothing 𝛺₂
+         nothing nothing nothing] # only upper triangle is needed
+    𝑈_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
+
+    ### Hermitian periodic diagonalisation
+    sh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven)
+    @test sh.H[1, 19] ≈ Ω₁₀ / 2
+    @test sh.H[10, 23] ≈ Ω₊ / 4
+    @test sh.H[11, 22] ≈ -Ω₊ / 4
+        
+    diagonalize!(sh, nev=1)
+    @test sh.ε[1] ≈ 0.039 atol=1e-3
+
+    ### Non-Hermitian periodic diagonalisation
+    sh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
+    @test sh.H[1, 19] ≈ Ω₁₀ / 2
+    @test sh.H[10, 23] ≈ Ω₊ / 4
+    @test sh.H[11, 22] ≈ -Ω₊ / 4
+        
+    diagonalize!(sh, nev=1)
+    @test sh.ε[1] ≈ 0.039 atol=1e-3
+end

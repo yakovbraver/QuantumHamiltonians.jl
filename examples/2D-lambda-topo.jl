@@ -1,7 +1,7 @@
 # Analysing the system in https://doi.org/10.1103/dhkv-zvwg (https://arxiv.org/abs/2506.17096)
 using XSpaceHamiltonians
 
-using Plots, DelimitedFiles
+using Plots, DelimitedFiles, LaTeXStrings
 plotlyjs()
 cmap_rainbow = cgrad(:rainbow_bgyrm_35_85_c69_n256);
 cmap_phase = cgrad(:RdBu_9);
@@ -70,9 +70,9 @@ function 𝐴y(x::Float, y::Float) where Float <: AbstractFloat
     -imag(𝜁(x, y)' * ∂y𝜁(x, y)) / (1+abs2(𝜁(x, y))) / Float(2π)
 end
 
-Float = Float32 # operating type
+Float = Float64 # operating type
 
-Ω₀::Float = 1
+Ω₀::Float = 1 # the value plays no role in the dark-state approach
 ϵ::Float = 1
 k::Float = 2π
 ν::Float = 0.98
@@ -92,12 +92,12 @@ heatmap(xs, ys, 𝛺₂, c=:viridis)
 
 # plot 𝜙
 
-M = 30
-N = 2M 
+M = 50
+N = 2M + 1
 xs = range(xlimits[1], xlimits[2], N)
 ys = range(ylimits[1], ylimits[2], N)
 
-ν::Float = 0.9
+ν::Float = 0.95
 surface(xs, ys, 𝜙, zlims=(-2, 2), clims=(-2, 2))
 heatmap(xs, ys, 𝜙, c=cmap_rainbow, zlims=(-2, 2), clims=(-2, 2))
 
@@ -116,23 +116,65 @@ CairoMakie.arrows2d!(xs[x_window], ys[x_window], Aₓ[window], Ay[window], tiple
 fig
 
 # Absolute value of 𝐴
+
+plotlyjs()
 A_abs = [sqrt(𝐴ₓ(x, y)^2 + 𝐴y(x, y)^2) for x in xs, y in ys]
 surface(xs, ys, A_abs, zlims=(0, 3))
 
 A_abs_cut = [sqrt(𝐴ₓ(x-0.25, 0.25)^2 + 𝐴y(x-0.25, 0.25)^2) for x in xs] # a cut, shifted by 0.25
 plot(xs, A_abs_cut)
 
-### Diagonalise periodic with 𝜙 and 𝐴
+### Dark state diagonalisation
 
-ν::Float = 0.99
-@time dh = DenseHamiltonian(xlimits, ylimits; isperiodic=true, M, δ, 𝑈=𝜙, 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y);
-@time dh = SparseHamiltonian(xlimits, ylimits; δ, 𝑈=𝜙, 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y, M=2M);
-@time diagonalize!(dh, nev=5);
-dh.ε
-scatter(dh.ε, ylims=(0, 6), yticks=0:2.5:7)
+M = 30
+ν = 0.95
+@time xh = XSpaceHamiltonian{:dense}(𝜙, xlimits, ylimits; isperiodic=true, M, δ, 𝑈_iseven=true, 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y);
+
+@time diagonalize!(xh, nev=5);
+xh.ε
 
 stateno = 1
-xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100)
-heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+xs, ys, ψ = make_eigenfunction(xh, stateno, 100, 100)
+heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+
+### Full 3-component diagonalisation
+
+Ω₀::Float = 2000
+Γ₃::Float = 1e3
+Δ::Float = 2000
+
+𝛥(x, y) = -Δ
+
+M = 50
+𝑈 = [nothing nothing 𝛺₁
+     nothing nothing 𝛺₂
+     nothing nothing 𝛥] # only upper triangle is needed
+𝑈_iseven = BitArray([0 0 0; 0 0 1; 0 0 1])
+
+@time xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, δ, 𝑈_iseven, Γ=[0, 0, Γ₃], fft_threshold=1e-3);
+
+@time diagonalize!(xh, nev=5);
+xh.ε
+
+stateno = 5
+@time xs, ys, ψ = make_eigenfunction(xh, stateno, 101, 101);
+
+plot_comps(xs, ys, ψ)
+# total density
+heatmap(xs, ys, (abs2.(ψ[1])+abs2.(ψ[2]))', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{1}|^2+|\psi_{2}|^2")
+
+# Plot all components
+function plot_comps(xs, ys, ψ)
+    gr()
+    theme(:dark, size=(600, 550*1.45))
+    figs = [plot() for _ in 1:6]
+    for i in 1:2:6
+        c = (i+1) ÷ 2 # component number
+        figs[i]   = heatmap(xs, ys, abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
+        figs[i+1] = heatmap(xs, ys, angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
+    end
+    plot(figs..., plot_title="Full solution, state no. $stateno, "*L"\epsilon=%$(ϵ),\ \Omega_{0}=%$(Int(Ω₀)), \Gamma=%$(Γ₃),"*"\n"*L"E="*"$(round(ComplexF64(xh.ε[stateno]), sigdigits=3))",
+         plot_titlefontcolor=:white, plot_titlefontsize=12, layout=(3, 2))
+end

@@ -62,15 +62,15 @@ CairoMakie.arrows!(xs[1:n:end], ys[1:n:end], A_x[window], A_y[window], arrowsize
 fig
 
 # Calculate
-dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈, 𝐴_x, 𝐴_y)
-dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝑈)
+dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;], 𝐴_x, 𝐴_y)
+dh = DenseHamiltonian(xlimits, ylimits; isperiodic=false, M, 𝐻=[𝑈;;])
 
 @time diagonalize!(dh, nev=5);
 
 stateno = 1
 xs, ys, ψ = make_eigenfunction(dh, stateno, 100, 100)
-surface(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, abs2.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, angle.(ψ)', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 dh.ε

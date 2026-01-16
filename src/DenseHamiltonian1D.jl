@@ -1,6 +1,6 @@
 "A type for storing the Wannier functions."
 mutable struct Wanniers{R<:Real}
-    targetlevels::Vector{Int} # numbers of quasienergy levels to use for constructing wanniers (this is used in the Floquet case)
+    targetlevels::Vector{Int} # numbers of energy levels to use for constructing wanniers
     E::Vector{R} # mean energies
     pos::Vector{R} # positions (wannier centres)
     V::Matrix{Complex{R}} # position eigenvectors
@@ -10,128 +10,208 @@ end
 Wanniers{R}() where R <: Real = Wanniers(Int[], R[], R[], Complex{R}[;;])
 
 """
-A type representing a spatial, possibly quasimomentum-dependent 1D Hamiltonian
-    𝐻(𝑥) = (-i𝛿∂ₓ + 𝑞)² + 𝑈(𝑥)
+A type representing a spatial, 𝑛-component, possibly quasimomentum-dependent Hamiltonian (𝐻ᵢⱼ)
+    𝐻ᵢᵢ(𝑥) = (-i𝛿∂ₓ + 𝑞)² + 𝑈ᵢᵢ(𝑥)
+    𝐻ᵢⱼ(𝑟) = 𝑈ᵢⱼ(𝑟)
 as a dense matrix.
+All 𝑈ᵢⱼ(𝑟) are assumed real (contrary to the 2D case).
 """
-mutable struct DenseHamiltonian1D{R<:Real,T<:Number} # in practice `T` shoudld be `R` if there is no 𝑞 and 𝑈 is even, or `Complex{R}` otherwise -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct DenseHamiltonian1D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian1D{:dense} # in practice `T` shoudld be `R` if there is no 𝑞 and 𝑈 is even, or `Complex{R}` otherwise -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Tuple{R, R}
     Lx::R # length along 𝑥
-    δ::R # coefficient of the momentum term
-    isperiodic::Bool
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
-    𝑈::Union{Function,Nothing}
-    H::Matrix{T}
-    ε::Vector{R} # eigenvalues
+    δ::R # coefficient of the momentum term
+    nc::Int # number of components
+    isperiodic::Bool
+    ishermitian::Bool # `H` is nonhermitian if decays Γ are present
+    𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings
+    H::Matrix{T} # momentum-space Hamiltonian used for diagonalisation
+    ε::Vector{S} # eigenvalues, can be complex for nonhermitian `H`, hence additional type `S`
     V::Matrix{T} # eigenvectors matrix
-    ε_q::Array{R,2} # ε_q[n, iqx] = `n`th band eigenvalue at quasimomentum at index `iqx`
+    ε_q::Array{S,2} # ε_q[n, iqx] = `n`th band eigenvalue at quasimomentum at index `iqx`
     V_q::Array{T,3} # V_q[:, n, iqx] = `n`th band eigenvector at quasimomentum at index `iqx`
-    wanniers::Wanniers{R}
+    wanniers::Wanniers{R} # wanniers are implemented for the case `nc = 1` only
 end
 
 """
-Construct a `DenseHamiltonian1D` object.
-`M` is the maximum harmonic number. In the periodic case, the size of the Hamiltonian will be (`2M`) × (`2M`).
-In nonperiodic case, the size will be `(2M+1)` × `(2M+1)`.
-To make sure that the resulting Hamiltonian matrix is of the desired type `T`, the type of elements of `xlims`, `ylims`,
-and the return type of the passed functions has to be the same. E.g., if all are `Float32`, then `T` will be `Float32` if only `𝑈` is passed,
-and `ComplexF32` if `𝐴`'s are passed. Inconsistency in the types of arguments will result in widening.
-`iseven` shows whether 𝑈 is an even function. If it is so, its Fourier image is real and even (𝑈 is assumed real),
-so the constructed Hamiltonian will be real, and symmetric diagonalisation will be used.
+Construct a `DenseHamiltonian1D` object using the coordinate-space functions stored in `𝑈` and decay rates `Γ`.
+`M` is the maximum harmonic number. In the periodic case, the Hamiltonian will be `nc*(2M+1)`-by-`nc*(2M+1)` where `nc` is the number of components.
+In nonperiodic case, the size will be `nc*M`-by-`nc*M`.
+`𝑈_iseven[i, j]` matters only if `isperiodic=true` and shows whether `𝑈[i, j]` is an even function (i.e. whether 𝑢(𝑥) = 𝑢(-𝑥)). If it is, then Fourier transform is real, which is used for better accuracy.
+If *all* functions are even (and real), then the resulting Fourier-space Hamiltonian is real (provided also there is no Γ), giving a speed-up and better accuracy (compared to complex diagonalisation).
+If `𝑈[i, j] === nothing`, then the value of `𝑈_iseven[i, j]` does not matter.
 """
-function DenseHamiltonian1D(xlims::Tuple{R,R}; isperiodic::Bool, iseven::Bool, M::Integer, δ::R=one(R), 𝑈::Union{Function,Nothing}=nothing) where R <: Real
+function DenseHamiltonian1D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
+                            𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: Real
     Lx = xlims[2] - xlims[1]
 
+    PI = R(π) # π of the working type to prevent widening
+
+    nc = size(𝑈, 1) # number of components
+
+    # `isreal` will show if the resulting `H` will be real
+    isreal = all(==(0), Γ)
+    if isperiodic # for periodic potential, also check if functions are even 
+        isreal &= all(𝑈_iseven[𝑈 .!== nothing])
+    end
+
+    B = isperiodic ? 2M+1 : M # size of each Hamiltonian block
+
+    # allocate `H`
+    if isreal
+        H = zeros(R, nc*B, nc*B)
+    else
+        H = zeros(Complex{R}, nc*B, nc*B)
+    end
+
     if isperiodic
-        N = 4M # number of points for FFT. This will yield harmonics from -2M to 2M
+        N = 4M + 1 # number of points for FFT. This will yield harmonics from -2M to 2M
         dx = Lx/N
         xs = range(xlims[1], xlims[2]-dx, N)
 
-        f = dx/Lx
-        u = 𝑈.(xs)
+        fft_buff = Vector{Complex{R}}(undef, N) # a buffer for all (in-place) FFTs
+        F = FFTW.plan_fft!(fft_buff) # the savings of rfft are negligible, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
 
-        F = FFTW.plan_rfft(u)
-        H = dft_to_matrix_1D(F * u * f, iseven) # initialising the Hamiltonian with the potential
-    
-        H += -Diagonal(R[-(2π*δ)^2 * (jx/Lx)^2 for jx in -M:M]) # adding to the Hamiltonian the term -δ²Δ
+        # iterate over `𝑈` and populate `H`
+        for jH in axes(𝑈, 2)
+            for iH in 1:jH # only upper triangle is scanned. The lower triangle is filled only if Γ is present
+                wi = (iH-1)*B+1:iH*B
+                wj = (jH-1)*B+1:jH*B
+
+                𝑢 = 𝑈[iH, jH]
+
+                # calculate and store FFT of 𝑢
+                if !isnothing(𝑢)
+                    𝑢_isrealeven = 𝑈_iseven[iH, jH]
+                    fft_buff .= 𝑢.(xs)
+                    F * fft_buff # in-place FFT, weird syntax
+                    fft_buff ./= N
+                    H[wi, wj] .= fft_to_matrix_1D!(fft_buff, make_real=𝑢_isrealeven)
+                end
+
+                # for diagonal block, add Laplacian, Γ, and 𝐴
+                if iH == jH
+                    H[wi, wj] += Diagonal([(2PI*δ)^2 * (jx/Lx)^2 for jx in -M:M]) # this is -δ²Δ
+                    if Γ[iH] != 0
+                        H[diagind(H)[wi]] .-= im*Γ[iH]/2
+                    end
+                elseif !all(iszero, Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view when diagonalising)
+                    H[wj, wi] .= @view(H[wi, wj])'
+                end
+            end
+        end
     else # non-periodic
         N = 2M + 1
         xs = range(xlims[1], xlims[2], N)
         dx = xs[2] - xs[1]
 
-        f = dx/Lx
-        u = 𝑈.(xs)
+        fft_buff = Vector{R}(undef, N)
+        F = FFTW.plan_r2r!(fft_buff, FFTW.REDFT00)
 
-        F = FFTW.plan_r2r!(u, FFTW.REDFT00)
-        (F * u) .*= f
-        H = dct_to_matrix_1D(u) # initialising the Hamiltonian with the potential
+        # iterate over `𝑈` and populate `H`
+        for jH in axes(𝑈, 2)
+            for iH in 1:jH # only upper triangle is scanned. The lower triangle is filled only if Γ is present
+                wi = (iH-1)*B+1:iH*B
+                wj = (jH-1)*B+1:jH*B
 
-        H += -Diagonal(R[-(π*δ)^2 * (jx/Lx)^2 for jx in 1:M]) # adding to the Hamiltonian the term -δ²Δ
+                𝑢 = 𝑈[iH, jH]
+
+                # calculate and store FFT of 𝑢
+                if !isnothing(𝑢)
+                    fft_buff .= 𝑢.(xs)
+                    (F * fft_buff)
+                    fft_buff ./= N-1
+                    H[wi, wj] .= dct_to_matrix_1D(fft_buff)
+                end
+
+                if iH == jH # for a diagonal block, add the laplace term and optionally Γ
+                    H[wi, wj] += Diagonal([(PI*δ)^2 * (jx/Lx)^2 for jx in 1:M]) # add -δ²Δ
+                    if Γ[iH] != 0
+                        H[diagind(H)[wi]] .-= im*Γ[iH]/2
+                    end
+                elseif !all(iszero, Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view when diagonalising)
+                    H[wj, wi] .= @view(H[wi, wj])'
+                end
+            end
+        end
     end
     
-    return DenseHamiltonian1D(xlims, Lx, δ, isperiodic, M, 𝑈, H, R[], eltype(H)[;;], R[;;], eltype(H)[;;;], Wanniers{R}())
+    # determine the type of eigenvalues 
+    ishermitian = all(==(0), Γ) # if all `Γ`s are zeros, then Hamiltonian is Hermitian and the eigenvalues real
+    S = ishermitian ? R : Complex{R} # type of eigenvalues
+    return DenseHamiltonian1D(xlims, Lx, M, δ, nc, isperiodic, ishermitian, 𝑈, H, S[], eltype(H)[;;], S[;;], eltype(H)[;;;], Wanniers{R}())
 end
 
 """
-Based on results of a real 1D fft `u`, return the matrix indexed by (𝑗′ₓ, 𝑗ₓ).
-If potential is even (`iseven=true`), then a real matrix is constructed, using the real part of `u`.
+Construct from the result of 1D FFT `u` the matrix `U` indexed by (𝑗′ₓ, 𝑗ₓ).
+`make_real=true` will mutate `u`, taking the real parts of (the first half of) elements, which is useful if the original function is even and hence the transform is known to be real.
 """
-function dft_to_matrix_1D(u, iseven::Bool)
-    if iseven # if potential is even, then the Fourier image must be real, so we create a real matrix and save only the real part
-        H = zeros(real(eltype(u)), length(u), length(u))
-        for (i, val) in enumerate(u)
-            H[diagind(H, 1-i)] .= real(val) # fill lower triangle (including the diagonal)
-            H[diagind(H, i-1)] .= real(val) # fill upper triangle (again including the diagonal)
-        end
-    else
-        H = zeros(eltype(u), length(u), length(u))
-        for (i, val) in enumerate(u)
-            H[diagind(H, 1-i)] .= val  # fill lower triangle (including the diagonal)
-            H[diagind(H, i-1)] .= val' # fill lower triangle (including the diagonal)
-        end
+function fft_to_matrix_1D!(u::Vector{T}; make_real::Bool=false) where T <: Number
+    N = length(u) # number of points used for FFT
+    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
+    B = 2M + 1 # size of the resulting matrix
+
+    U = Matrix{make_real ? real(T) : T}(undef, B, B)
+    u_half = @view(u[1:B]) # we assume that `u` is the transform of a real function, so transform obeys uₘ* = u₋ₘ and we only need to work with one half
+    make_real && (u_half .= real.(u_half))
+
+    for (i, val) in enumerate(u_half)
+        U[diagind(U, 1-i)] .= val  # fill lower triangle (including the diagonal)
+        U[diagind(U, i-1)] .= val' # fill upper triangle (including the diagonal)
     end
-    return H
+    return U
 end
 
 """
 Based on results of 1D DCT `u`, return the matrix indexed by (𝑗′ₓ, 𝑗ₓ).
 """
-function dct_to_matrix_1D(u)
+function dct_to_matrix_1D(u::Vector{T}) where T <: Number
     N = length(u) # number of points used for FFT
     M = (N-1) ÷ 2 # maximum harmonic number
-    H = Matrix{eltype(u)}(undef, M, M)
+    U = Matrix{T}(undef, M, M)
     @floop for jx in 1:M
         for j′x in 1:M
             j₋x = abs(j′x-jx)
-            H[j′x, jx] = (u[j₋x+1] - u[j′x+jx+1]) / 2
+            U[j′x, jx] = (u[j₋x+1] - u[j′x+jx+1]) / 2
         end
     end
-    return H
+    return U
 end
 
 """
 Construct eigenfunctions of state numbers `statenos` on a grid having `nx` points in `x` direction.
-Return (`xs`, `ψ`). If `iqx` is passed, then construct `ψ` at the corresponding quasimomentum.
+If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for the state `statenos[1]` at the these quasimomenta.
+Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqxs]`
 """
-function make_eigenfunctions(dh::DenseHamiltonian1D{R,T}; statenos::AbstractVector{<:Integer}, nx::Integer, iqx::Integer=0) where {R<:Real, T<:Number}
-    (;Lx, xlims, M, V, V_q) = dh
+function make_eigenfunctions(xh::DenseHamiltonian1D; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[])
+    (;Lx, xlims, M, V, V_q, nc) = xh
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
-    nstates = length(statenos)
-    ψ = Matrix{complex(R)}(undef, nx, nstates) # construct complex wf even if Hamiltonian is real because degeneracies are possible
-    for (is, stateno) in enumerate(statenos)
-        if dh.isperiodic
-            if iqx != 0 # if quasimomentum index has been passed
-                @floop for (ix, x) in enumerate(xs)
-                    ψ[ix, is] = sum(V_q[j, stateno, iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
-                end
-            else # no quasimomentum index
-                @floop for (ix, x) in enumerate(xs)
-                    ψ[ix, is] = sum(V[j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+    ns = isempty(iqxs) ? length(statenos) : length(iqxs)
+    R = typeof(Lx) # real working type
+    ψ_type = !xh.isperiodic && eltype(xh.H) <: Real ? R : complex(R)  # `ψ` are real if elements of H are real and if the problem is nonperiodic (meaning basis is real)
+    ψ = Array{ψ_type}(undef, nx, nc, ns)
+    if isempty(iqxs) # no quasimomentum index
+        for (is, stateno) in enumerate(statenos)
+            for c in 1:nc
+                if xh.isperiodic
+                    B = 2M + 1
+                    @floop for (ix, x) in enumerate(xs)
+                        ψ[ix, c, is] = sum(V[(c-1)*B+j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                    end
+                else # nonperiodic
+                    @floop for (ix, x) in enumerate(xs)
+                        ψ[ix, c, is] = sum(V[(c-1)*M+jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
+                    end
                 end
             end
-        else # nonperiodic
-            @floop for (ix, x) in enumerate(xs)
-                ψ[ix, is] = sum(V[jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * 2 / √Lx
+        end
+    else # quasimomenta indices passed
+        for iqx in iqxs
+            for c in 1:nc
+                B = 2M + 1
+                @floop for (ix, x) in enumerate(xs)
+                    ψ[ix, c, iqx] = sum(V_q[(c-1)*B+j, statenos[1], iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                end
             end
         end
     end
@@ -139,53 +219,31 @@ function make_eigenfunctions(dh::DenseHamiltonian1D{R,T}; statenos::AbstractVect
 end
 
 """
-Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
-If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
-"""
-function diagonalize!(dh::DenseHamiltonian1D; nev::Integer=0)
-    H = Hermitian(dh.H) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
-    if nev == 0
-        dh.ε, dh.V = eigen(H)
-    else
-        S, info = partialschur(dense_linear_map(H); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
-        @show info
-        dh.V = S.Q
-        dh.ε = inv.(real.(S.eigenvalues)) # invert back
-    end
-end
-
-"""
 Calculate eigenenergies for all quasimomenta in `qxs`.
 Calculate `nev` lowest bands using `ArnoldiMethod`.
 If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
 """
-function diagonalize!(dh::DenseHamiltonian1D{R,T}, qxs::AbstractVector{<:Real}; nev::Integer=0) where {R<:Real, T<:Number}
-    (;M, Lx, δ) = dh
+function diagonalize!(dh::DenseHamiltonian1D{R,T,S}, qxs::AbstractVector{<:Real}; nev::Integer, verbose::Bool=false) where {R<:Real, T<:Number, S<:Number}
+    (;M, Lx, δ, nc) = dh
    
-    nsaves = nev == 0 ? 2M+1 : nev # number of eigenvalues and eigenvectors to allocate
-    dh.ε_q = Array{R,2}(undef, nsaves, length(qxs))
-    dh.V_q = Array{T,3}(undef, 2M+1, nsaves, length(qxs))
+    B = 2M + 1 # block size
+    nsaves = nev == 0 ? B*nc : nev # number of eigenvalues and eigenvectors to allocate
+    dh.ε_q = Array{S,2}(undef, nsaves, length(qxs))
+    dh.V_q = Array{T,3}(undef, B*nc, nsaves, length(qxs))
     
     H_diag = diagview(dh.H)
     H_diag_copy = diag(dh.H) # a copy for restoring after the calculation
-    U_diag = H_diag[(end+1) ÷ 2] # generally, `H = -Δ + U`, but this element is purely `U`, since Laplace is zero (see construction of Δ in `DenseHamiltonian1D` constructor)
+    # from the diagonal of each diagonal block of `H`, extract the 0th harmonic of 𝑈ᵢᵢ plus decay -iΓ/2
+    U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `H₀₀ = -Δ₀₀ + U₀₀ - iΓ/2`, but Δ₀₀ = 0 for the central element of the diagonal (see construction of Δ in `DenseHamiltonian1D` constructor)
     
-    H = Hermitian(dh.H) # if `dh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
-
-    # iterate quasimomenta
+    # update diagonal blocks and diagonalise
     for (iqx, qx) in enumerate(qxs)
         # update diagonal
-        H_diag .= [(2π*δ*jx/Lx + qx)^2 + U_diag for jx in -M:M]
-
-        # diagonalise
-        if nev == 0
-            dh.ε_q[:, iqx], dh.V_q[:, :, iqx] = eigen(H)
-        else
-            S, info = partialschur(dense_linear_map(H); nev, which=:LM, tol=1e-7); # `which=:SR` does not converge, so we use "shift-invert" (although shift is zero)
-            @show info
-            dh.V_q[:, :, iqx] = S.Q
-            dh.ε_q[:, iqx] = inv.(real.(S.eigenvalues)) # invert back
+        for c in 1:nc
+            H_diag[(c-1)B+1:c*B] .= [(2π*δ*jx/Lx + qx)^2 + U_diags[c] for jx in -M:M]
         end
+
+        dh.ε_q[:, iqx], dh.V_q[:, :, iqx] = diagonalize(dh; nev, verbose)
     end
     H_diag .= H_diag_copy # restore initial values
 end
@@ -193,8 +251,9 @@ end
 """
 Calculate Wannier states using the energy eigenstates `targetlevels`. The vector `targetlevels` will be saved in `dh`.
 `dh` is assumed to have been diagonalised, without quasimomentum.
+Implemented for the 1-component case only.
 """
-function compute_wanniers!(dh::DenseHamiltonian1D{R,T}; targetlevels::AbstractVector{<:Integer}) where {R<:Real, T<:Number}
+function compute_wanniers!(dh::DenseHamiltonian1D{R,T,S}; targetlevels::AbstractVector{<:Integer}) where {R<:Real, T<:Number, S<:Number}
     dh.wanniers.targetlevels = targetlevels # store the target levels
     minlevel = targetlevels[1]
     if dh.isperiodic
@@ -222,11 +281,12 @@ end
 """
 Construct Wannier functions `w` on a grid having `nx` points in `x` direction. All Wannier functions contained in `dh` are constructed.
 In the process, energy eigenfunctions `ψ` are also constructed.
-Return (`xs`, `ψ`, `w`). If `iqx` is passed, then construct `ψ` at the corresponding quasimomentum.
+Return (`xs`, `ψ`, `w`).
+This assumes that wanniers have been calculated; and this is only implemented for the 1-component case.
 """
 function make_wannierfunctions(dh::DenseHamiltonian1D; nx::Integer)
     xs, ψ = make_eigenfunctions(dh; statenos=dh.wanniers.targetlevels, nx)
-    w = ψ * dh.wanniers.V
+    w = dropdims(ψ; dims=2) * dh.wanniers.V # drop the dimesion corresponding to the component number
     return xs, ψ, w
 end
 
@@ -250,31 +310,31 @@ end
 
 "Compute tunnelling element ⟨𝑤ᵢ|𝐻|𝑤ⱼ⟩."
 function compute_tunneling(dh::DenseHamiltonian1D; i::Integer=1, j::Integer=2)
-    wᵢ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, i] # One wannier basis vector |𝑤ᵢ⟩ = ∑ₚ |𝜓ₚ⟩ 𝑉ᵢₚ
+    wᵢ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, i] # one wannier basis vector |𝑤ᵢ⟩ = ∑ₚ |𝜓ₚ⟩ 𝑉ᵢₚ
     wⱼ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, j]
     return dot(wᵢ, dh.H, wⱼ)
 end
 
 "Compute TB Hamiltonian matrix, with elements ⟨𝑤ᵢ|𝐻|𝑤ⱼ⟩."
 function compute_tb_hamiltonian(dh::DenseHamiltonian1D)
-    dh.wanniers.V' * dh.V[:, dh.wanniers.targetlevels]' *  dh.H * dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V
+    dh.wanniers.V' * dh.V[:, dh.wanniers.targetlevels]' * dh.H * dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V
 end
 
-"Return momentum-space matrix of a function `𝑓`, with problem geometry contained in `dh`. `iseven` is only relevant for periodic case, yielding real result for even `𝑓`."
-function p_space_matrix(dh::DenseHamiltonian1D; 𝑓::Function, iseven::Bool=false)
-    (;M, Lx, xlims, isperiodic) = dh
+# "Return momentum-space matrix of a function `𝑓`, with problem geometry contained in `dh`. `iseven` is only relevant for periodic case, yielding real result for even `𝑓`."
+# function p_space_matrix(dh::DenseHamiltonian1D; 𝑓::Function, iseven::Bool=false)
+#     (;M, Lx, xlims, isperiodic) = dh
 
-    if isperiodic
-        N = 4M # number of points for FFT. This will yield harmonics from -2M to 2M
-        dx = Lx/N
-        xs = range(xlims[1], xlims[2]-dx, N)
-        u = 𝑓.(xs) .* dx/Lx
-        return dft_to_matrix_1D(FFTW.rfft(u), iseven)
-    else # non-periodic
-        N = 2M + 1
-        xs = range(xlims[1], xlims[2], N)
-        dx = xs[2] - xs[1]
-        u = 𝑓.(xs) .* dx/Lx
-        return dct_to_matrix_1D(FFTW.r2r!(u, FFTW.REDFT00))
-    end
-end
+#     if isperiodic
+#         N = 4M # number of points for FFT. This will yield harmonics from -2M to 2M
+#         dx = Lx/N
+#         xs = range(xlims[1], xlims[2]-dx, N)
+#         u = 𝑓.(xs) .* dx/Lx
+#         return dft_to_matrix_1D(FFTW.rfft(u), iseven)
+#     else # non-periodic
+#         N = 2M + 1
+#         xs = range(xlims[1], xlims[2], N)
+#         dx = xs[2] - xs[1]
+#         u = 𝑓.(xs) .* dx/Lx
+#         return dct_to_matrix_1D(FFTW.r2r!(u, FFTW.REDFT00))
+#     end
+# end
