@@ -21,6 +21,7 @@ mutable struct DenseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: X
     V::Matrix{T} # eigenvectors matrix
     ε_q::Array{S,D1} # ε_q[n, iqx, iqy] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
     V_q::Array{T,D2} # V_q[:, n, iqx, iqy] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
+    wanniers::Wanniers{R} # wanniers are implemented only for the case of 1-component and 1D
 end
 
 """
@@ -165,7 +166,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     ε_q = Array{S}(undef, ntuple(Returns(0), D+1)) # ε_q[n, iqx, iqy] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
     V_q = Array{T}(undef, ntuple(Returns(0), D+2)) # V_q[:, n, iqx, iqy] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
 
-    return DenseHamiltonian(xlims, L, M, δ, nc, isperiodic, ishermitian, 𝑈, BitMatrix(𝑈_iseven), 𝐴, Γ, H, ε, V, ε_q, V_q)
+    return DenseHamiltonian(xlims, L, M, δ, nc, isperiodic, ishermitian, 𝑈, BitMatrix(𝑈_iseven), 𝐴, Γ, H, ε, V, ε_q, V_q, Wanniers{R}())
 end
 
 # """
@@ -468,6 +469,8 @@ end
 #         dh.ε_q[:, iqx, iqy], dh.V_q[:, :, iqx, iqy] = diagonalize(dh; nev, verbose)
 #     end
 # end
+
+##### Wanniers
 
 ##### Unused but correct and tested functions
 
