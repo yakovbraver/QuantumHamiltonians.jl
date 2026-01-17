@@ -53,11 +53,11 @@ heatmap(xs, ys, 𝛺₂, c=:viridis)
 
 # Since 𝛺₂ only has the ±1st harmonic, M can be small.
 # For M=15, the (real part of) ground state energy matches M=200 at 5 digits accuracy, wfs also match well, so dense calculation (even with full diagonalisation) is possible
-M = 100
+M = 15
 𝑈 = [nothing nothing 𝛺₁      
      nothing nothing 𝛺₂
      nothing nothing nothing] # only upper triangle is needed
-@time xh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 @time xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 
 @time diagonalize!(xh, nev=5);
@@ -66,7 +66,7 @@ xh.ε
 # l = findfirst(x -> real(x) > 0, xh.ε) # find the dark state from full diagonalisation
 # xh.ε[l]
 
-stateno = 5
+stateno = 1
 @time xs, ys, ψ = make_eigenfunction(xh, stateno, 101, 101);
 
 plot_comps(xs, ys, ψ)

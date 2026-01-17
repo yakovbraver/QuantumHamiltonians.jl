@@ -16,7 +16,7 @@ A type representing a spatial, 𝑛-component, possibly quasimomentum-dependent 
 as a dense matrix.
 All 𝑈ᵢⱼ(𝑟) are assumed real (contrary to the 2D case).
 """
-mutable struct DenseHamiltonian1D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian1D{:dense} # in practice `T` shoudld be `R` if there is no 𝑞 and 𝑈 is even, or `Complex{R}` otherwise -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct DenseHamiltonian1D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian{:dense} # in practice `T` shoudld be `R` if there is no 𝑞 and 𝑈 is even, or `Complex{R}` otherwise -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Tuple{R, R}
     Lx::R # length along 𝑥
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
@@ -140,82 +140,6 @@ function DenseHamiltonian1D(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xli
     ishermitian = all(==(0), Γ) # if all `Γ`s are zeros, then Hamiltonian is Hermitian and the eigenvalues real
     S = ishermitian ? R : Complex{R} # type of eigenvalues
     return DenseHamiltonian1D(xlims, Lx, M, δ, nc, isperiodic, ishermitian, 𝑈, H, S[], eltype(H)[;;], S[;;], eltype(H)[;;;], Wanniers{R}())
-end
-
-"""
-Construct from the result of 1D FFT `u` the matrix `U` indexed by (𝑗′ₓ, 𝑗ₓ).
-`make_real=true` will mutate `u`, taking the real parts of (the first half of) elements, which is useful if the original function is even and hence the transform is known to be real.
-"""
-function fft_to_matrix_1D!(u::Vector{T}; make_real::Bool=false) where T <: Number
-    N = length(u) # number of points used for FFT
-    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
-    B = 2M + 1 # size of the resulting matrix
-
-    U = Matrix{make_real ? real(T) : T}(undef, B, B)
-    u_half = @view(u[1:B]) # we assume that `u` is the transform of a real function, so transform obeys uₘ* = u₋ₘ and we only need to work with one half
-    make_real && (u_half .= real.(u_half))
-
-    for (i, val) in enumerate(u_half)
-        U[diagind(U, 1-i)] .= val  # fill lower triangle (including the diagonal)
-        U[diagind(U, i-1)] .= val' # fill upper triangle (including the diagonal)
-    end
-    return U
-end
-
-"""
-Based on results of 1D DCT `u`, return the matrix indexed by (𝑗′ₓ, 𝑗ₓ).
-"""
-function dct_to_matrix_1D(u::Vector{T}) where T <: Number
-    N = length(u) # number of points used for FFT
-    M = (N-1) ÷ 2 # maximum harmonic number
-    U = Matrix{T}(undef, M, M)
-    @floop for jx in 1:M
-        for j′x in 1:M
-            j₋x = abs(j′x-jx)
-            U[j′x, jx] = (u[j₋x+1] - u[j′x+jx+1]) / 2
-        end
-    end
-    return U
-end
-
-"""
-Construct eigenfunctions of state numbers `statenos` on a grid having `nx` points in `x` direction.
-If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for the state `statenos[1]` at the these quasimomenta.
-Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqxs]`
-"""
-function make_eigenfunctions(xh::DenseHamiltonian1D; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[])
-    (;Lx, xlims, M, V, V_q, nc) = xh
-    xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
-    ns = isempty(iqxs) ? length(statenos) : length(iqxs)
-    R = typeof(Lx) # real working type
-    ψ_type = !xh.isperiodic && eltype(xh.H) <: Real ? R : complex(R)  # `ψ` are real if elements of H are real and if the problem is nonperiodic (meaning basis is real)
-    ψ = Array{ψ_type}(undef, nx, nc, ns)
-    if isempty(iqxs) # no quasimomentum index
-        for (is, stateno) in enumerate(statenos)
-            for c in 1:nc
-                if xh.isperiodic
-                    B = 2M + 1
-                    @floop for (ix, x) in enumerate(xs)
-                        ψ[ix, c, is] = sum(V[(c-1)*B+j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
-                    end
-                else # nonperiodic
-                    @floop for (ix, x) in enumerate(xs)
-                        ψ[ix, c, is] = sum(V[(c-1)*M+jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
-                    end
-                end
-            end
-        end
-    else # quasimomenta indices passed
-        for iqx in iqxs
-            for c in 1:nc
-                B = 2M + 1
-                @floop for (ix, x) in enumerate(xs)
-                    ψ[ix, c, iqx] = sum(V_q[(c-1)*B+j, statenos[1], iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
-                end
-            end
-        end
-    end
-    return xs .+ xlims[1], ψ # return "normal" coordinates, in `x ∈ xlims`
 end
 
 """

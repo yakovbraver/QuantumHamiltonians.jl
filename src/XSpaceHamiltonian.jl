@@ -1,37 +1,26 @@
 abstract type XSpaceHamiltonian{S} end
 
-abstract type XSpaceHamiltonian1D{S} <: XSpaceHamiltonian{S} end
-abstract type XSpaceHamiltonian2D{S} <: XSpaceHamiltonian{S} end
-
-### 1D Constructors
-
-"Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."
-function XSpaceHamiltonian{:dense}(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                   𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: Real
-    return DenseHamiltonian1D(𝑈, xlims; isperiodic, M, δ, 𝑈_iseven, Γ)
+"General constructor. If the problem is 1D, 𝐴 may be passed as a vector, whose elements are treated as corresponding to the different components."
+function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
+                                   𝑈::AbstractMatrix{<:Union{Function,Nothing}},
+                                   𝐴::AbstractVecOrMat{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1), length(xlims));
+                                   isperiodic::Bool, M::Integer, δ::R=one(R),
+                                   𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: AbstractFloat
+    return DenseHamiltonian(xlims, 𝑈, 𝐴; isperiodic, M, δ, 𝑈_iseven, Γ)
 end
 
-"Single-component constructor accepting a 𝑈 as a function and 𝑈_iseven as a bool."
-function XSpaceHamiltonian{:dense}(𝑈::Function, xlims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                   𝑈_iseven::Bool=false, Γ::R=zero(R)) where R <: Real
-    return DenseHamiltonian1D([𝑈;;], xlims; isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ])
+"""
+1-component (but many-D) constructor accepting a 𝑈 as a function, 𝐴 as a vector (with elements treated as corresponding to the different dimensions),
+𝑈_iseven as a bool, and Γ as a real.
+"""
+function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
+                                   𝑈::Union{Function,Nothing},
+                                   𝐴::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, length(xlims));
+                                   isperiodic::Bool, M::Integer, δ::R=one(R),
+                                   𝑈_iseven::Bool=false, Γ::R=zero(R)) where R <: AbstractFloat
+    return DenseHamiltonian(xlims, [𝑈;;], reshape(𝐴, (1, length(xlims))); isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ])
 end
-
-### 2D Constructors
-
-"Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."
-function XSpaceHamiltonian{:dense}(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                   𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1)),
-                                   𝐴_x::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1)), 𝐴_y::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1))) where R <: Real
-    return DenseHamiltonian2D(𝑈, xlims, ylims; isperiodic, M, δ, 𝑈_iseven, Γ, 𝐴_x, 𝐴_y)
-end
-
-"Single-component constructor accepting a 𝑈, 𝐴_x, and 𝐴_y as functions, 𝑈_iseven as a bool, and Γ as a real."
-function XSpaceHamiltonian{:dense}(𝑈::Function, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                   𝑈_iseven::Bool=false, Γ::R=zero(R),
-                                   𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing) where R <: Real
-    return DenseHamiltonian2D([𝑈;;], xlims, ylims; isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ], 𝐴_x=[𝐴_x], 𝐴_y=[𝐴_y])
-end
+    
 
 "Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."
 function XSpaceHamiltonian{:sparse}(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),

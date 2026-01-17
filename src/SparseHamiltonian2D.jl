@@ -4,7 +4,7 @@ A type representing a spatial [𝑟 = (𝑥, 𝑦)], 𝑛-component, possibly qu
     𝐻ᵢⱼ(𝑟) = 𝑈ᵢⱼ(𝑟)
 as a sparse matrix.
 """
-mutable struct SparseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian2D{:sparse} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct SparseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamiltonian{:sparse} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Tuple{R, R}
     ylims::Tuple{R, R}
     Lx::R # length along 𝑥
@@ -27,7 +27,7 @@ mutable struct SparseHamiltonian2D{R<:Real,T<:Number,S<:Number} <: XSpaceHamilto
 end
 
 """
-Construct a `SparseHamiltonian2D` object using the coordinate-space functions stored in `𝑈`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
+Construct a `SparseHamiltonian` object using the coordinate-space functions stored in `𝑈`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
 `M` is the maximum harmonic number. In the periodic case, the Hamiltonian will be `nc*(2M+1)²`-by-`nc*(2M+1)²` where `nc` is the number of components.
 In nonperiodic case, the size will be `nc*M²`-by-`nc*M²`.
 `𝑈_iseven[i, j]` matters only if `isperiodic=true` and shows whether `𝑈[i, j]` is an even function (i.e. whether 𝑢(𝑥, 𝑦) = 𝑢(-𝑥, -𝑦)). If it is, then Fourier transform is real, which is used for better accuracy.

@@ -17,5 +17,6 @@ include("XSpaceHamiltonian.jl")
 include("DenseHamiltonian1D.jl")
 include("DenseHamiltonian2D.jl")
 include("SparseHamiltonian2D.jl")
+include("FourierTransformer.jl")
 
 end
