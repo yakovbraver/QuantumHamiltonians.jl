@@ -4,7 +4,7 @@ mutable struct FourierTransformer{R,T,Plan,D} # T is the type of buffer, real fo
     basis::Symbol
     buff::Array{T,D} # buffer for the result of the transform
     buff_im::Array{T,D} # additional buffer for storing the DCT of the imaginary part of a function
-    did_complex_redft::Bool # a flag that is true if the last-performed transformation was a DST/DCT ("FFTW.REDFT") of a *complex* function
+    did_complex_redft::Bool # a flag that is true if the last-performed transformation was a DST/DCT ("FFTW.REDFT") of a *complex* function. The only reason why the type is mutable.
     plan::Plan
 end
 
@@ -149,4 +149,101 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
             end
         end
     end
+end
+
+########## Unused but correct and tested functions
+
+"""
+Based on results of a real 2D RFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+`make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
+For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
+"""
+function _rfft_to_matrix!(u::AbstractMatrix{<:Number}; make_real=false)
+    N = size(u, 2) # number of points used for FFT
+    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
+    B = 2M + 1 # the size of each block
+    H = make_real ? zeros(real(eltype(u)), B^2, B^2) : zeros(eltype(u), B^2, B^2)
+    H[diagind(H)] .= real(u[1, 1]) # store the secular component manually
+    u[1, 1] = 0 # remove because it breaks the structure of the loop below if included
+    make_real && (u .= real.(u))
+
+    # it is assumed that u[1, 1] == 0 -- otherwise, one would also need to prevent double pushing of the diagonal elements
+    @floop for c_u in axes(u, 2)
+        for r_u in axes(u, 1) # iterate over columns and rows of `u`
+            u[r_u, c_u] == 0 && continue
+            val = u[r_u, c_u]
+            for r_b in r_u:B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
+                c_b = r_b - r_u + 1 # block-column where to place the value
+                # fill the lower triangle of the block, including the main diagonal
+                if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block (`c_u=1` means main diagonal)
+                    for (r, c) in zip(c_u:B, 1:B+1-c_u)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val, conjugate=true)
+                    end
+                # fill the upper triangle of the block, but this is not needed for a diagonal block (`r_b == c_b`), because then the upper triangle has already been filled by pushing the conjugate element
+                elseif r_b != c_b # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal of the block,
+                    c_u_inv = 2B-c_u+1
+                    for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val, conjugate=true)
+                    end
+                end
+            end
+        end
+    end
+    return H
+end
+
+"""
+Based on results of a 2D FFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+`make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
+For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
+"""
+function _fft_to_matrix(u::AbstractMatrix; make_real=false)
+    N = size(u, 2) # number of points used for FFT
+    M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
+    B = 2M + 1 # the size of each block
+
+    H = make_real ? zeros(real(eltype(u)), B^2, B^2) : zeros(eltype(u), B^2, B^2)
+    H[diagind(H)] .= real(u[1, 1]) # store the secular component manually
+    make_real && (u .= real.(u))
+    
+    @floop for c_u in axes(u, 2)
+        for r_u in axes(u, 1) # iterate over columns and rows of `u`
+            u[r_u, c_u] == 0 && continue
+            val = u[r_u, c_u]
+            if r_u ≤ B # when using rows 1 through B of `u` to fill the lower block-triangle of H, including the main block-diagonal
+                d = 1 - r_u # (negative) block-diagonal number, where 0 is the main block-diagonal, -1 is first lower block-diagonal, etc.
+                r_b_range = r_u:B  # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
+            else # when using rows B+1 through end of `u` to fill the upper block-triangle of H
+                d = B - (r_u-B) # (positive) block-diagonal number, where 0 is the main block-diagonal, +1 is first upper block-diagonal, etc.
+                r_b_range = 1:r_u-B # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th
+            end
+            for r_b in r_b_range # block-rows where to place the value
+                c_b = r_b + d # block-column where to place the value
+                # fill the lower triangle of the block, including the main diagonal
+                if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block (`c_u=1` means main diagonal)
+                    for (r, c) in zip(c_u:B, 1:B+1-c_u)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
+                    end
+                # fill the upper triangle of the block
+                else # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal of the block
+                    c_u_inv = 2B-c_u+1 
+                    for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
+                        push_vals!(H; r_b, c_b, r, c, blocksize=B, val)
+                    end
+                end
+            end
+        end
+    end
+    return H
+end
+
+"""
+Push value `val` to element (`r`, `c`) of the block (`r_b`, `c_b`) of `H`, with block size being `blocksize`.
+If `conjugate=true`, then the complex-conjugate element is also pushed.
+"""
+function push_vals!(H; r_b, c_b, r, c, blocksize, val, conjugate=false)
+    i = (r_b-1)*blocksize + r
+    j = (c_b-1)*blocksize + c
+    H[i, j] = val
+    conjugate && (H[j, i] = val')
 end
