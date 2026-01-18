@@ -68,6 +68,24 @@ function transform!(ft::FourierTransformer, 𝑓::Function)
 end
 
 """
+Use the result of the transform to construct a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+"""
+function fft_to_matrix(ft::FourierTransformer{R,T}) where {R <: AbstractFloat, T <: Number}
+    (;M, buff, basis) = ft
+    D = ndims(buff)
+    if basis == :cis
+        B = (2M+1)^D
+        type = T
+    else
+        B = M^D
+        type = ft.did_complex_redft ? Complex{T} : T
+    end
+    A = Matrix{T}(undef, ntuple(Returns(B), D))
+    fft_to_matrix!(A, ft)
+    return A
+end
+
+"""
 Use the result of the transform to fill `A` as a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 """
 function fft_to_matrix!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
