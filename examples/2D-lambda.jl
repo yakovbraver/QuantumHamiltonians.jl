@@ -69,9 +69,10 @@ xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=true, M, �
 xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true, fft_threshold=1e-1)
 ncells = 11
 P = xlimits[2] - xlimits[1]
-qlimits = (-π/P, π/P)
+qlimits = (-π/P, π/P) .|> Float
 qxs = range(qlimits..., ncells)
-@time diagonalize!(xh, qxs, [0]; nev=5); # doing a cut for fixed 𝑞𝑦 = 0
+qys = Float[0] # doing a cut for fixed 𝑞_𝑦 = 0
+@time diagonalize!(xh, [qxs, qys]; nev=5);
 fig = plot();
 for n in axes(xh.ε_q, 1)
     scatter!(qxs, xh.ε_q[n, :, 1], c=n)
@@ -158,7 +159,7 @@ xlimits = (-π, π) .|> Float
 ylimits = (-π, π) .|> Float
 
 # plot potential
-M = 50
+M = 15
 xs = range(xlimits..., 2M)
 ys = range(ylimits..., 2M)
 surface(xs, ys, 𝑈)
@@ -179,13 +180,15 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Quasimomenta
 
-xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=true, M, 𝑈_iseven=false, 𝐴_x, 𝐴_y)
+@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; isperiodic=true, M, 𝑈_iseven=true);
 xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=false, 𝐴_x, 𝐴_y, fft_threshold=1e-3)
-ncells = 11
+ncells = 21
 P = xlimits[2] - xlimits[1]
-qlimits = (-π/P, π/P)
+qlimits = (-π/P, π/P) .|> Float
 qxs = range(qlimits..., ncells)
-@time diagonalize!(xh, qxs, [0]; nev=5); # doing a cut for fixed 𝑞𝑦 = 0
+qys = Float[0] # doing a cut for fixed 𝑞_𝑦 = 0
+@time diagonalize!(xh, [qxs, qys]; nev=5);
+
 fig = plot();
 for n in axes(xh.ε_q, 1)
     scatter!(qxs, xh.ε_q[n, :, 1], c=n)

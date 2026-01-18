@@ -31,7 +31,8 @@ In nonperiodic case, the size will be `nc*M²`-by-`nc*M²`.
 `𝑈_iseven[i, j]` matters only if `isperiodic=true` and shows whether `𝑈[i, j]` is an even function (i.e. whether 𝑢(𝑥, 𝑦) = 𝑢(-𝑥, -𝑦)). If it is, then Fourier transform is real, which is used for better accuracy.
 If *all* functions are even (and real), then the resulting Fourier-space Hamiltonian is real (provided also there is no 𝐴 and Γ), giving a speed-up and better accuracy (compared to complex diagonalisation).
 If `𝑈[i, j] === nothing` or it is complex, then the value of `𝑈_iseven[i, j]` does not matter.
-𝐴[c, i] is ith projection 𝐴ᵢ of cth component
+𝐴[c, i] is ith projection 𝐴ᵢ of cth component.
+Currently it is assumed that if 𝐴's are present, then Hamiltonian is necessarily complex, but this is not true in general (it is real in the cis basis if A is real-even).
 """
 function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                           𝑈::AbstractMatrix{<:Union{Function,Nothing}},
@@ -43,7 +44,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     L = [lims[2] - lims[1] for lims in xlims]
 
     # `H_isreal` will show if the resulting `H` will be real
-    𝐴ᵢ_present = [any(𝐴ᵢ .!== nothing) for 𝐴ᵢ in eachcol(𝐴)] # `i` numbers projections; 𝐴ᵢ_present = true if 𝐴ᵢ is nonzero for at least one component
+    𝐴ᵢ_present = [any(𝐴ᵢ .!== nothing) for 𝐴ᵢ in eachcol(𝐴)] # `i` numbers projections; 𝐴ᵢ_present[i] = true if 𝐴ᵢ is nonzero for at least one component
     U_isreal = all( 𝑢([xlims[i][1] for i in eachindex(xlims)]...) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢) ) # check if all functions in 𝑈 are real
     H_isreal = U_isreal && all(𝐴ᵢ_present .== false) && iszero(Γ) # without checking we assume that all 𝐴's are real. Can be generalised for the exotic cases of complex 𝐴.
     if isperiodic # for periodic potential, also check if functions are even 
@@ -59,7 +60,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     ft = FourierTransformer(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
 
     𝑈_diag_allequal = allequal(diagview(𝑈))
-    𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # note that this also checks if they are nothing
+    𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing
 
     # treat diagonal blocks, adding the diagonal potentials 𝑈ᵢᵢ and 𝑝² (conditionally)
     for jH in 1:nc
@@ -74,7 +75,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
             h_set = true
             # @debug "Wrote 𝑈[$jH, $jH] into H[$jH, $jH]" # H[iH, jH] schematically means the block (`iH`, `jH`)
         end
-        # Add 𝑝² if basis is sin/cos. But if there are no 𝐴's, add in the cis case too (if 𝐴's are present, then 𝑝ᵢ²'s will be added together with 𝐴ᵢ's)
+        # Add 𝑝² if basis is sin/cos. But if there are no 𝐴's at all, add in the cis case too (if 𝐴's are present, then 𝑝ᵢ²'s will be added together with 𝐴ᵢ's)
         if basis != :cis || all(𝐴ᵢ_present .== false)
             h .+= make_p²(L, M, δ, basis)
             h_set = true
@@ -92,7 +93,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     end
 
     # treat diagonal blocks, adding the kinetic terms (𝑝ᵢ - 𝐴ᵢ)²
-    if any(𝐴 .!== nothing)
+    if any(𝐴ᵢ_present)
         A_buff = Matrix{T}(undef, B, B)
         A_buff2 = similar(A_buff)
         for i in 1:D # iterate over projections of 𝐴
@@ -276,7 +277,7 @@ end
 """
 Calculate eigenenergies for all quasimomenta in `qs = [qxs, qys, ...]` where `qxs` are 𝑞's along 𝑥, etc.
 Calculate `nev` lowest levels using `ArnoldiMethod`.
-If `nev=0` or not passed, then full diagonalisation using `LinearAlgebra` is performed.
+Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 Note that `dh.H` is modified in the process.
 """
 function diagonalize!(dh::DenseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {R<:AbstractFloat,T<:Number,S<:Number,D1,D2}
@@ -292,97 +293,97 @@ function diagonalize!(dh::DenseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:Ab
     dh.ε_q = Array{S}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # ε_q[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
     dh.V_q = Array{T}(undef, B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # V_q[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
     
-    if all(isnothing.(𝐴)) # very simple case that we can treat separately
+    if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
         H_diag = diagview(dh.H)
         # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
-        U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal (see construction of Δ in `DenseHamiltonian1D` constructor)
-    else
-        # 𝑈_diag_allequal = allequal(diagview(𝑈)) & !isnothing(𝑈[1, 1])
-        # 𝐴_allequal = allequal(𝐴_x) & allequal(𝐴_y) & !isnothing(𝐴_x[1]) & !isnothing(𝐴_y[1])
+        U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
+    else # the general case with 𝐴
+        # two buffers that we will need in the q-loop for matrix multiplication
+        buff1 = Matrix{T}(undef, B, B)
+        buff2 = Matrix{T}(undef, B, B)
 
-        # nD = 𝐴_allequal ? 1 : nc # number of kinetic operators -iδ∂ₓ - 𝐴ₓ to allocate
-        # nU = 𝑈_diag_allequal ? 1 : nc # number of terms (𝑈ᵢᵢ)₀ - iΓ/2 to allocate
-        # D_x = Union{Matrix{T}, Nothing}[isnothing(𝐴_x[c]) ? nothing : Matrix{T}(undef, B, B) for c in 1:nD] # for storing kinetic operators -iδ∂ₓ - 𝐴ₓ
-        # D_y = Union{Matrix{T}, Nothing}[isnothing(𝐴_y[c]) ? nothing : Matrix{T}(undef, B, B) for c in 1:nD] # for storing kinetic operators -iδ∂𝑦 - 𝐴𝑦
-        # U = Union{Matrix{T}, Nothing}[isnothing(𝑈[c, c]) ? nothing : Matrix{T}(undef, B, B) for c in 1:nU] # for storing terms (𝑈ᵢᵢ)₀ (note that -iΓ/2 will not be stored here)
+        ft = FourierTransformer(xlims, M; basis=:cis)
 
-        # ∂_x = Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M]) # this is -iδ∂ₓ
-        # ∂_y = Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M]) # this is -iδ∂y
-        # # populate `D_x`, `D_y`, and `U`
-        # for c in 1:nc
-        #     𝑢 = 𝑈[c, c]
-        #     𝑎_𝑥, 𝑎_𝑦 = 𝐴_x[1], 𝐴_y[1]
-        #     if !isnothing(𝑢) nU > 1 || (nU == 1 && c == 1) # if [we need more than one 𝑈ᵢᵢ (meaning all 𝑈ᵢᵢ's are different)] or [we need only one 𝑈ᵢᵢ (meaning all 𝑈ᵢᵢ's are equal) and we are on the first iteration]
-        #         𝑢_isrealeven = (𝑢(xlims[1], ylims[1]) isa Real) & 𝑈_iseven[c, c]
-        #         fft_buff .= 𝑢.(xs, ys')
-        #         F * fft_buff # in-place FFT, weird syntax
-        #         fft_buff ./= N^2
-        #         U[c] .= fft_to_matrix_naive!(fft_buff, make_real=𝑢_isrealeven)
-        #     end
-        #     if !isnothing(𝑎_𝑥) && (nD > 1 || (nD == 1 && c == 1))
-        #         fft_buff .= 𝑎_𝑥.(xs, ys')
-        #         F * fft_buff
-        #         fft_buff ./= N^2
-        #         A_x = fft_to_matrix_naive!(fft_buff)
-        #         D_x[c] .= ∂_x .- A_x
-        #         # if there is no 𝐴𝑦, then set the 𝑦 kinetic `D_y[c]` term to -iδ∂𝑦. Otherwise `D_y[c]` will be treated in the next if clause
-        #         isnothing(𝑎_𝑦) && (D_y[c] .= ∂_y)
-        #     end
-        #     if !isnothing(𝑎_𝑦)
-        #         fft_buff .= 𝑎_𝑦.(xs, ys')
-        #         F * fft_buff
-        #         fft_buff ./= N^2
-        #         A_y = fft_to_matrix_naive!(fft_buff)
-        #         D_y[c] .= ∂_y .- A_y
-        #         # if there is no 𝐴ₓ, then set the 𝑥 kinetic `D_x[c]` term to -iδ∂ₓ. Otherwise `D_x[c]` was treated in the preceding if clause
-        #         isnothing(𝑎_𝑥) && (D_x[c] .= ∂_x)
-        #     end
-        # end
+        K = Union{Matrix{T}, Diagonal{T, Vector{T}}, Nothing}[nothing for _ in CartesianIndices(𝐴)] # Matrix of dimensions like 𝐴 for storing corresponding kinetic operators -iδ∂ᵢ - 𝐴ᵢ
+        U = Union{Matrix{T}, Nothing}[nothing for _ in axes(𝑈, 1)] # for storing terms 𝑈ᵢᵢ
+
+        𝑈_diag_allequal = allequal(diagview(𝑈))
+        𝐴ᵢ_allequal = [allequal(𝐴ᵢ) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; they could all be nothing
+
+        # fill the buffers `U`
+        for c in 1:nc
+            if !isnothing(𝑈[c, c])
+                transform!(ft, 𝑈[c, c])
+                U[c] = fft_to_matrix(ft)
+                @debug "Filled U[$c]"
+            end
+            # If all 𝑈 are equal, then we will be using only U[1], no need to fill other elements
+            𝑈_diag_allequal && break
+        end
+
+        # fill the buffers `K`
+        for i in 1:D # iterate over projections of 𝐴
+            pᵢ = make_p_i(L, M, δ, :cis, i)
+            for c in 1:nc
+                if isnothing(𝐴[c, i]) # then add 𝑝ᵢ
+                    K[c, i] = pᵢ
+                    @debug "Wrote p_$i to K[$c, $i]"
+                else
+                    transform!(ft, 𝐴[c, i])
+                    K[c, i] = fft_to_matrix(ft)
+                    K[c, i] .= pᵢ .- K[c, i]
+                    @debug "Wrote p_$i - 𝐴[$c, $i] to K[$c, $i]"
+                end
+                # If projection 𝐴ᵢ is the same for all components, then we will be using K[1, i] for all components, no need to fill other rows in the i'th column
+                𝐴ᵢ_allequal[i] && break
+            end
+        end
     end
 
-    buff_D = Matrix{T}(undef, B, B)
-    QS = Vector{R}(undef, length(qs)) # at each iteration will contain the values of quasimomenta, e.g. in 2D it will contain [qx, qy], where we defined qx ≡ qs[1], qy ≡ qs[2]
     # update diagonal blocks and diagonalise
+    QS = Vector{R}(undef, length(qs)) # at each iteration will contain the values of quasimomenta, e.g. in 2D it will contain [qx, qy], where we defined qx ≡ qs[1], qy ≡ qs[2]
     for IQ in Iterators.product(eachindex.(qs)...) # example in 2D: IQ = (iqx, iqy), where iqx is an index of qx and iqy is an index of qy
         for i in eachindex(QS)
             QS[i] = qs[i][IQ[i]]
         end
+
+        @debug "🚜 QS = $QS 🚜"
+
         # update diagonal blocks
-        if all(isnothing.(𝐴))
-            buff = make_p²(L, M, δ, :cis, QS) |> parent # `parent` returns the diagonal as a vector TODO make in-place
+        if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
+            p² = make_p²(L, M, δ, :cis, QS) |> parent # `parent` returns the diagonal as a vector TODO make in-place
             for c in 1:nc
-                H_diag[(c-1)B+1:c*B] .= buff .+ U_diags[c]
+                H_diag[(c-1)B+1:c*B] .= p² .+ U_diags[c]
             end
-        else
-            # # first treat -iδ∂ₓ-𝐴ₓ, using the first diagonal block of `H` as a buffer
-            # for c in 1:nc
-            #     H_block = @view H[(c-1)*B+1:c*B, (c-1)*B+1:c*B]
-            #     if !isnothing(D_x[c])
-            #         if (nD > 1 || (nD == 1 && c == 1))  # if [more than one D_x exist (meaning all 𝐴ₓ's are different)] or [only one D_x exists (meaning all 𝐴ₓ's are equal) and we are on the first iteration]
-            #             H_block .= (D_x[c] + LA.I*qx)^2 # then calulate
-            #         else
-            #             H_block .= @view H[1:B, 1:B] # otherwise just copy the first block
-            #         end
-            #     else # if there is no 𝐴ₓ in this block
-            #         H_block .= (∂_x + LA.I*qx)^2
-            #     end
-            # end
-            # # then treat -iδ∂𝑦-𝐴𝑦 and also 𝑈 with Γ, using the buffer `buff_D`
-            # for c in 1:nc
-            #     H_block = @view H[(c-1)*B+1:c*B, (c-1)*B+1:c*B]
-            #     if !isnothing(D_y[c])
-            #         if (nD > 1 || (nD == 1 && c == 1))  # if [more than one D_y exist (meaning all 𝐴ₓ's are different)] or [only one D_y exists (meaning all 𝐴ₓ's are equal) and we are on the first iteration]
-            #             buff_D .= (D_y[c] + LA.I*qy)^2 # then calulate
-            #             H_block .+= buff_D 
-            #         else
-            #             H_block .+= buff_D # otherwise just add the buffer
-            #         end
-            #     else # if there is no 𝐴𝑦 in this block
-            #         H_block .+= (∂_y + LA.I*qy)^2
-            #     end
-            #     Γ[c] != 0 && (H_block .-= LA.I * im*Γ[c]/2)
-            #     !isnothing(U[c]) && (H_block .+= U[nU == 1 ? 1 : c])
-            # end
+        else # the general case with 𝐴
+            for c in 1:nc
+                H_block = @view H[(c-1)*B+1:c*B, (c-1)*B+1:c*B]
+                for i in 1:D
+                    which_K = 𝐴ᵢ_allequal[i] ? 1 : c
+                    copy!(buff1, K[which_K, i])
+                    buff1 += LA.I*QS[i]
+                    mul!(buff2, buff1, buff1)
+                    if i == 1
+                        copyto!(H, CartesianIndices(((c-1)*B+1:c*B, (c-1)*B+1:c*B)), buff2, CartesianIndices(buff2))
+                        @debug "Copied (K[$which_K, $i] + QS[$i])^2 into H[$c, $c]"
+                    else
+                        H_block .+= buff2
+                        @debug "Added (K[$which_K, $i] + QS[$i])^2 to H[$c, $c]"
+                    end
+                end
+
+                if 𝑈_diag_allequal
+                    H_block .+= U[1]
+                    @debug "Added U[1] to H[$c, $c]"
+                elseif !isnothing(U[c])
+                    H_block .+= U[c]
+                    @debug "Added U[$c] to H[$c, $c]"
+                end
+                if Γ[c] != 0
+                    H_block -= LA.I * im*Γ[c]/2
+                    @debug "Added -im*Γ[$c]/2 to H[$c, $c]"
+                end
+            end
         end
 
         dh.ε_q[:, IQ...], dh.V_q[:, :, IQ...] = diagonalize(dh; nev, verbose)
