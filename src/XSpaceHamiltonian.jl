@@ -21,7 +21,6 @@ function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
     return DenseHamiltonian(xlims, [𝑈;;], reshape(𝐴, (1, length(xlims))); isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ])
 end
     
-
 "Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."
 function XSpaceHamiltonian{:sparse}(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
                                     𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1)), fft_threshold::R=√eps(R),
@@ -36,9 +35,7 @@ function XSpaceHamiltonian{:sparse}(𝑈::Function, xlims::Tuple{R,R}, ylims::Tu
     return SparseHamiltonian2D([𝑈;;], xlims, ylims; isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ], 𝐴_x=[𝐴_x], 𝐴_y=[𝐴_y], fft_threshold)
 end
 
-########## Functions that are generic for all dimensions
-
-### Dense
+########## Dense
 
 """
 Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
@@ -84,7 +81,7 @@ function dense_linear_map(A)
     LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
 end
 
-### Sparse
+########## Sparse
 
 """
 Calculate `nev` lowest eigenvectors and eigenvalues.
