@@ -50,12 +50,12 @@ M = 200
 𝑉 = [nothing nothing 𝛺₁
      nothing nothing 𝛺₂
      nothing nothing nothing]
-xh = XSpaceHamiltonian{:dense}(𝑉, xlimits; isperiodic=true, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], M)
+xh = XSpaceHamiltonian{:dense}([xlimits], 𝑉; isperiodic=true, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], M)
 
-ncells = 100
+ncells = 101
 qlimits = (-π/P, π/P)
 qs = range(qlimits[1], qlimits[2], ncells)
-@time diagonalize!(xh, qs; nev=8)
+@time diagonalize!(xh, [qs]; nev=8)
 # optionally, set to zero elements whose real part is not in filterrange (not to pollute the view)
 filterrange = (0.98, 1.1)
 xh.ε_q[(real.(xh.ε_q) .< filterrange[1]) .| (real.(xh.ε_q) .> filterrange[2])] .= 0

@@ -1,26 +1,31 @@
-"Return the momentum squared matrix 𝑝² = -𝛿Δ."
-function make_p²(L::AbstractVector{<:Real}, M::Integer, δ::Real, basis::Symbol)
+"""
+Return the momentum-squared matrix (𝛿𝑝)² = -𝛿²Δ in `D = length(L)` dimensions. If `basis=:cis`, then return (𝛿𝑝 + 𝑞)² with quasimomenta provided in `qs`.
+A real `Diagonal` matrix is returned.
+"""
+function make_p²(L::AbstractVector{R}, M::Integer, δ::Real, basis::Symbol, qs=zeros(R, length(L))) where R <: AbstractFloat # ntuple(Returns(zero(R)), length(L))
     D = length(L)
-    PI = eltype(L)(π)
+    PI = R(π)
     if basis == :cis
-        c = (2PI*δ)^2
+        cx = 2PI*δ/L[1]
         if D == 1
-            return Diagonal([c * (jx/L[1])^2 for jx in -M:M])
+            return [(cx*jx + qs[1])^2 for jx in -M:M] |> Diagonal
         elseif D == 2
-            return Diagonal([c * ((jx/L[1])^2 + (jy/L[2])^2) for jx in -M:M for jy in -M:M])
+            cy = 2PI*δ/L[2]
+            return [((cx*jx + qs[1])^2 + (cy*jy + qs[2])^2) for jx in -M:M for jy in -M:M] |> Diagonal # in D-dimensions: Ms = [-M:M for _ in 1:D]; L_r = reverse(L); [sum(@. (J * 2PI*δ/L + qs)^2) for J in Iterators.product(Ms...)] |> vec |> Diagonal 
         end
-    else
-        c = (PI*δ)^2
+    elseif basis == :sin
+        bx = PI*δ/L[1] # different name than `cx` above to prevent Core.Box
         if D == 1
-            return Diagonal([c * (jx/L[1])^2 for jx in 1:M])
+            return [(bx*jx)^2 for jx in 1:M] |> Diagonal
         elseif D == 2
-            return Diagonal([c * ((jx/L[1])^2 + (jy/L[2])^2) for jx in 1:M for jy in 1:M])
+            by = PI*δ/L[2]
+            return [(bx*jx)^2 + (by*jy)^2 for jx in 1:M for jy in 1:M] |> Diagonal
         end
     end
 end
 
 "Return the matrix of 𝑝ᵢ = -iδ𝜕ᵢ if `basis=:cis` and δ𝜕ᵢ otherwise. The output is real in both cases."
-function make_p_i(L::AbstractVector{<:Real}, M::Integer, δ::Real, basis::Symbol, i::Int)
+function make_p_i(L::AbstractVector{<:AbstractFloat}, M::Integer, δ::Real, basis::Symbol, i::Int)
     if i == 1
         return make_p_x(L, M, δ, basis)
     elseif i == 2
@@ -29,7 +34,7 @@ function make_p_i(L::AbstractVector{<:Real}, M::Integer, δ::Real, basis::Symbol
 end
 
 "Return the matrix of 𝑝ₓ = -iδ𝜕ₓ if `basis=:cis` and δ𝜕ₓ otherwise. The output is real in both cases."
-function make_p_x(L::AbstractVector{<:Real}, M::Integer, δ::Real, basis::Symbol)
+function make_p_x(L::AbstractVector{<:AbstractFloat}, M::Integer, δ::Real, basis::Symbol)
     D = length(L)
     Lx = L[1]
     if basis == :cis
@@ -55,7 +60,7 @@ function make_p_x(L::AbstractVector{<:Real}, M::Integer, δ::Real, basis::Symbol
 end
 
 "Return the matrix of 𝑝_𝑦 = -i𝛿𝜕_𝑦 if `basis=:cis` and δ𝜕_𝑦 otherwise. The output is real in both cases."
-function make_p_y(L::AbstractVector{<:Real}, M::Integer, δ::Real, basis::Symbol)
+function make_p_y(L::AbstractVector{<:AbstractFloat}, M::Integer, δ::Real, basis::Symbol)
     D = length(L)
     # D == 1 && @error "Only D ≥ 2 supported. For D = 1, use make_p_x."; return
     Ly = L[2]

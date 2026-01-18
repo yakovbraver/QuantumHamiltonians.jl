@@ -75,11 +75,13 @@ plot_comps(xs, ys, ψ)
 
 M = 30 # something like M=30 is needed to get converged lowest band
 xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 ncells = 11
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P)
 qxs = range(qlimits..., ncells)
-@time diagonalize!(xh, qxs, [0]; nev=4); # doing a cut for fixed 𝑞𝑦 = 0
+qys = [0.0]
+@time diagonalize!(xh, [qxs, qys]; nev=4); # doing a cut for fixed 𝑞𝑦 = 0
 fig = plot();
 for n in axes(xh.ε_q, 1)
     scatter!(qxs, real.(xh.ε_q[n, :, 1]), c=n)
