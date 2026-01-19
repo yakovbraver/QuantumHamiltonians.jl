@@ -279,7 +279,7 @@ Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 Note that `dh.H` is modified in the process.
 """
 function diagonalize!(dh::DenseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {R<:AbstractFloat,T<:Number,S<:Number,D1,D2}
-    if basis != :cis
+    if dh.basis != :cis
         @warn "Hamiltonian must be periodic. Construct a new one using the cis basis and try again."
         return
     end
