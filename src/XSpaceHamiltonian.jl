@@ -4,9 +4,9 @@ abstract type XSpaceHamiltonian{S} end
 function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
                                    𝑈::AbstractMatrix{<:Union{Function,Nothing}},
                                    𝐴::AbstractVecOrMat{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1), length(xlims));
-                                   isperiodic::Bool, M::Integer, δ::R=one(R),
+                                   basis::Symbol, M::Integer, δ::R=one(R),
                                    𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: AbstractFloat
-    return DenseHamiltonian(xlims, 𝑈, 𝐴; isperiodic, M, δ, 𝑈_iseven, Γ)
+    return DenseHamiltonian(xlims, 𝑈, 𝐴; basis, M, δ, 𝑈_iseven, Γ)
 end
 
 """
@@ -16,9 +16,9 @@ end
 function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
                                    𝑈::Union{Function,Nothing},
                                    𝐴::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, length(xlims));
-                                   isperiodic::Bool, M::Integer, δ::R=one(R),
+                                   basis::Symbol, M::Integer, δ::R=one(R),
                                    𝑈_iseven::Bool=false, Γ::R=zero(R)) where R <: AbstractFloat
-    return DenseHamiltonian(xlims, [𝑈;;], reshape(𝐴, (1, length(xlims))); isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ])
+    return DenseHamiltonian(xlims, [𝑈;;], reshape(𝐴, (1, length(xlims))); basis, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ])
 end
     
 "Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."

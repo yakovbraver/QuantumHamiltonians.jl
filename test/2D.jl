@@ -70,7 +70,7 @@ end
     M = 5
 
     ### Nonperiodic
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=false, M)
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
     @test dh.H isa Matrix{Float32}
     @test dh.V isa Matrix{Float32}
 
@@ -83,7 +83,7 @@ end
     @test dh.ε[1] ≈ 2.064 rtol=1e-3
 
     ### Periodic
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=true, M, 𝑈_iseven=true)
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true)
     @test dh.H isa Matrix{Float32}
 
     # exact diagonalisation
@@ -102,7 +102,7 @@ end
     ylimits = (0, π) .|> Float32
 
     ### Nonperiodic
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; isperiodic=false, M)
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:sin, M)
     
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -119,7 +119,7 @@ end
     xlimits = (0, 2π) .|> Float32
     ylimits = (0, 2π) .|> Float32
 
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; isperiodic=true, M, 𝑈_iseven=true);
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true);
 
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -163,7 +163,7 @@ end
     𝑈_iseven=trues(3, 3)
     
     ### Hermitian periodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=true, M, 𝑈_iseven)
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
     @test dh.H isa Matrix{Float32}
     @test dh.H[1, 19] ≈ Ω₁₀ / 2
     @test dh.H[10, 23] ≈ Ω₊ / 4
@@ -178,7 +178,7 @@ end
     @test dh.ε[1] ≈ 0.039 atol=1e-3
 
     ### Hermitian nonperiodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=false, M)
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
     @test dh.H isa Matrix{Float32}
         
     # exact diagonalisation
@@ -190,7 +190,7 @@ end
     @test dh.ε[1] ≈ 0.5 rtol=1e-3
     
     ### non-Hermitian periodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=true, M, 𝑈_iseven, Γ=[0, 0, Γ₃]);
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃]);
     @test dh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
@@ -205,7 +205,7 @@ end
     @test dh.ε[1] ≈ 0.039 atol=1e-3
 
     ### non-Hermitian nonperiodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=false, M, Γ=[0, 0, Γ₃]);
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M, Γ=[0, 0, Γ₃]);
     @test dh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation

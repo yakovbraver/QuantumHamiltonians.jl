@@ -10,10 +10,10 @@ mutable struct DenseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: X
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
     δ::R # coefficient of the momentum term: -iδ∇
     nc::Int # number of components
-    isperiodic::Bool
+    basis::Symbol
     ishermitian::Bool # `H` is nonhermitian if decays Γ are present
     𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings
-    𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(𝑥, 𝑦) = 𝑈ᵢⱼ(-𝑥, -𝑦)
+    𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(𝑟) = 𝑈ᵢⱼ(-𝑟)
     𝐴::Matrix{<:Union{Function,Nothing}}
     Γ::Vector{R} # decay rates
     H::Matrix{T} # momentum-space Hamiltonian used for diagonalisation
@@ -25,19 +25,18 @@ mutable struct DenseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: X
 end
 
 """
-Construct a `DenseHamiltonian` object using the coordinate-space functions stored in `𝑈`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
-`M` is the maximum harmonic number. In the periodic case, the Hamiltonian will be `nc*(2M+1)²`-by-`nc*(2M+1)²` where `nc` is the number of components.
-In nonperiodic case, the size will be `nc*M²`-by-`nc*M²`.
-`𝑈_iseven[i, j]` matters only if `isperiodic=true` and shows whether `𝑈[i, j]` is an even function (i.e. whether 𝑢(𝑥, 𝑦) = 𝑢(-𝑥, -𝑦)). If it is, then Fourier transform is real, which is used for better accuracy.
+Construct a `DenseHamiltonian` object using the coordinate-space functions stored in `𝑈`, decay rates `Γ`, and gauge fields stored in `𝐴`. `𝐴[c, i]` is the ith projection `𝐴ᵢ` of cth component.
+`M` is the maximum harmonic number. In the cis case, the Hamiltonian will be `nc*(2M+1)²`-by-`nc*(2M+1)²` where `nc` is the number of components.
+In sin/cos case, the size will be `nc*M²`-by-`nc*M²`.
+`𝑈_iseven[i, j]` matters only if `basis=:cis` and shows whether `𝑈[i, j]` is an even function (i.e. whether 𝑢(𝑟) = 𝑢(-𝑟)). If it is, then Fourier transform is real, which is used for better accuracy.
 If *all* functions are even (and real), then the resulting Fourier-space Hamiltonian is real (provided also there is no 𝐴 and Γ), giving a speed-up and better accuracy (compared to complex diagonalisation).
 If `𝑈[i, j] === nothing` or it is complex, then the value of `𝑈_iseven[i, j]` does not matter.
-𝐴[c, i] is ith projection 𝐴ᵢ of cth component.
 Currently it is assumed that if 𝐴's are present, then Hamiltonian is necessarily complex, but this is not true in general (it is real in the cis basis if A is real-even).
 """
 function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                           𝑈::AbstractMatrix{<:Union{Function,Nothing}},
                           𝐴::AbstractVecOrMat{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1), length(xlims));
-                          isperiodic::Bool, M::Integer, δ::R=one(R),
+                          basis::Symbol, M::Integer, δ::R=one(R),
                           𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: AbstractFloat
     nc = size(𝑈, 1) # number of components
     D = length(xlims) # number of spatial dimensions
@@ -47,16 +46,15 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     𝐴ᵢ_present = [any(𝐴ᵢ .!== nothing) for 𝐴ᵢ in eachcol(𝐴)] # `i` numbers projections; 𝐴ᵢ_present[i] = true if 𝐴ᵢ is nonzero for at least one component
     U_isreal = all( 𝑢([xlims[i][1] for i in eachindex(xlims)]...) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢) ) # check if all functions in 𝑈 are real
     H_isreal = U_isreal && all(𝐴ᵢ_present .== false) && iszero(Γ) # without checking we assume that all 𝐴's are real. Can be generalised for the exotic cases of complex 𝐴.
-    if isperiodic # for periodic potential, also check if functions are even 
+    if basis == :cis # for periodic potential, also check if functions are even 
         H_isreal &= all(𝑈_iseven[𝑈 .!== nothing])
     end
 
-    B = isperiodic ? (2M+1)^D : M^D # size of each Hamiltonian block
+    B = basis == :cis ? (2M+1)^D : M^D # size of each Hamiltonian block
 
     T = H_isreal ? R : Complex{R} # type of elements of the Hamiltonian
     H = zeros(T, nc*B, nc*B)
 
-    basis=(isperiodic ? :cis : :sin)
     ft = FourierTransformer(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
 
     𝑈_diag_allequal = allequal(diagview(𝑈))
@@ -167,7 +165,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     ε_q = Array{S}(undef, ntuple(Returns(0), D+1)) # ε_q[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
     V_q = Array{T}(undef, ntuple(Returns(0), D+2)) # V_q[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
 
-    return DenseHamiltonian(xlims, L, M, δ, nc, isperiodic, ishermitian, 𝑈, BitMatrix(𝑈_iseven), 𝐴, Γ, H, ε, V, ε_q, V_q, Wanniers{R}())
+    return DenseHamiltonian(xlims, L, M, δ, nc, basis, ishermitian, 𝑈, BitMatrix(𝑈_iseven), 𝐴, Γ, H, ε, V, ε_q, V_q, Wanniers{R}())
 end
 
 # """
@@ -197,15 +195,15 @@ Construct 2D coordinate-space wave function `ψ` of eigenstate `stateno` on a gr
 Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
 """
 function make_eigenfunction(xh::XSpaceHamiltonian, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0)
-    (;L, xlims, M, V, V_q, nc) = xh
+    (;L, xlims, M, basis, V, V_q, nc) = xh
     Lx, Ly = L
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1][1]`, with `x ∈ xlims[1]`
     ys = range(0, Ly, ny) # these are the differences `y - xlims[2][1]`, with `y ∈ xlims[2]`
     R = eltype(L) # real working type
-    ψ_type = !xh.isperiodic && eltype(xh.H) isa Real ? R : complex(R)
-    ψ = [Matrix{ψ_type}(undef, nx, ny) for _ in 1:nc] # `ψ` are real if elements of H are real and if the problem is nonperiodic (meaning basis is real)
+    ψ_type = basis != :cis && eltype(xh.H) isa Real ? R : complex(R)
+    ψ = [Matrix{ψ_type}(undef, nx, ny) for _ in 1:nc] # `ψ` are real if elements of H are real and the basis is real (sin/cos)
     for c in 1:nc
-        if xh.isperiodic
+        if basis == :cis
             B = 2M + 1
             if iqx != 0 # if quasimomentum index has been passed
                 @floop for (iy, y) in enumerate(ys)
@@ -239,17 +237,17 @@ If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for t
 Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqxs]`
 """
 function make_eigenfunctions(xh::DenseHamiltonian; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[])
-    (;L, xlims, M, V, V_q, nc) = xh
+    (;L, xlims, M, basis, V, V_q, nc) = xh
     Lx = L[1]
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ns = isempty(iqxs) ? length(statenos) : length(iqxs)
     R = eltype(L) # real working type
-    ψ_type = !xh.isperiodic && eltype(xh.H) <: Real ? R : complex(R)  # `ψ` are real if elements of H are real and if the problem is nonperiodic (meaning basis is real)
+    ψ_type = basis != :cis && eltype(xh.H) <: Real ? R : complex(R)  # `ψ` are real if elements of H are real and if the basis is real (sin/cos)
     ψ = Array{ψ_type}(undef, nx, nc, ns)
     if isempty(iqxs) # no quasimomentum index
         for (is, stateno) in enumerate(statenos)
             for c in 1:nc
-                if xh.isperiodic
+                if basis == :cis
                     B = 2M + 1
                     @floop for (ix, x) in enumerate(xs)
                         ψ[ix, c, is] = sum(V[(c-1)*B+j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
@@ -281,8 +279,8 @@ Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 Note that `dh.H` is modified in the process.
 """
 function diagonalize!(dh::DenseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {R<:AbstractFloat,T<:Number,S<:Number,D1,D2}
-    if !dh.isperiodic
-        @warn "Hamiltonian must be periodic. Construct a new one and try again."
+    if basis != :cis
+        @warn "Hamiltonian must be periodic. Construct a new one using the cis basis and try again."
         return
     end
     (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = dh
@@ -308,7 +306,7 @@ function diagonalize!(dh::DenseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:Ab
         U = Union{Matrix{T}, Nothing}[nothing for _ in axes(𝑈, 1)] # for storing terms 𝑈ᵢᵢ
 
         𝑈_diag_allequal = allequal(diagview(𝑈))
-        𝐴ᵢ_allequal = [allequal(𝐴ᵢ) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; they could all be nothing
+        𝐴ᵢ_allequal = [allequal(𝐴ᵢ) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; they may all be nothing
 
         # fill the buffers `U`
         for c in 1:nc

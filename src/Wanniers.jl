@@ -19,14 +19,14 @@ function compute_wanniers!(dh::XSpaceHamiltonian{:dense}; targetlevels::Abstract
     minlevel = targetlevels[1]
     Lx = dh.L[1]
     xlims = dh.xlims[1]
-    if dh.isperiodic
+    if dh.basis == :cis
         X = @view(dh.V[2:end, targetlevels])' * @view(dh.V[1:end-1, targetlevels])
         pos_complex, dh.wanniers.V = eigen(X)
         pos_real = @. mod2pi(angle(pos_complex))/2π * Lx + xlims[1] # `mod2pi` converts the angle from [-π, π) to [0, 2π)
         sp = sortperm(pos_real)               # sort the eigenvalues
         dh.wanniers.pos = pos_real[sp]
         Base.permutecols!!(dh.wanniers.V, sp) # sort the eigenvectors in the same way
-    else 
+    elseif dh.basis == :sin
         n_w = length(targetlevels)
         R = typeof(dh.δ)
         X = Matrix{R}(undef, n_w, n_w) # position operator, will fill only upper triangle

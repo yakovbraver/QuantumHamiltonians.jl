@@ -57,7 +57,7 @@ M = 15
 𝑈 = [nothing nothing 𝛺₁      
      nothing nothing 𝛺₂
      nothing nothing nothing] # only upper triangle is needed
-@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 @time xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 
 @time diagonalize!(xh, nev=5);
@@ -75,7 +75,7 @@ plot_comps(xs, ys, ψ)
 
 M = 30 # something like M=30 is needed to get converged lowest band
 xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
-xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 ncells = 11
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P)

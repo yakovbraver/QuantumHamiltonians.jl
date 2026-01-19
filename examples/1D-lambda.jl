@@ -21,7 +21,7 @@ M = 50
 xs = range(xlimits..., 2M+1)
 plot(xs, 𝑈)
 
-xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; isperiodic=true, 𝑈_iseven=true, M)
+xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M)
 
 ncells = 100
 qlimits = (-π/P, π/P)
@@ -50,7 +50,7 @@ M = 200
 𝑉 = [nothing nothing 𝛺₁
      nothing nothing 𝛺₂
      nothing nothing nothing]
-xh = XSpaceHamiltonian{:dense}([xlimits], 𝑉; isperiodic=true, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], M)
+xh = XSpaceHamiltonian{:dense}([xlimits], 𝑉; basis=:cis, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], M)
 
 ncells = 101
 qlimits = (-π/P, π/P)

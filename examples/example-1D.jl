@@ -15,8 +15,8 @@ Float = Float32 # operating type
 xlimits = (-5, 5) .|> Float
 M = 20
 
-@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; isperiodic=true, 𝑈_iseven=true, M, δ=Float(√0.5));
-xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; isperiodic=true, 𝑈_iseven=true, M, δ=Float(√0.5))
+@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, δ=Float(√0.5));
+xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, δ=Float(√0.5))
 @time diagonalize!(xh, nev=5);
 xh.ε
 
@@ -37,7 +37,7 @@ plot!(xs, part(ψ[:, 1, 1]) .+ xh.ε[stateno])
 
 # Or we can solve using the sine basis, yielding real coordinate-space eigenfunctions
 
-xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; isperiodic=false, M, δ=Float(√0.5))
+xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, M, δ=Float(√0.5))
 @time diagonalize!(xh, nev=5);
 xh.ε
 
@@ -63,7 +63,7 @@ xlimits = (-π*ncells/2, π*ncells/2) .|> Float
 xlimits = (0, π*ncells) .|> Float
 M = 32ncells * 2
 
-xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; isperiodic=true, 𝑈_iseven=true, M)
+xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M)
 
 @time diagonalize!(xh, nev=0);
 scatter(xh.ε[1:M])
@@ -96,7 +96,7 @@ H_TB = compute_tb_hamiltonian(xh)
 # study one cell using quasimomentum
 
 xlimits = (0, π) .|> Float
-xh_q = XSpaceHamiltonian{:dense}([xlimits], 𝑈; isperiodic=true, 𝑈_iseven=true, M)
+xh_q = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M)
 qlimits = (0, 2)
 dq = qlimits[2]/ncells
 qs = range(qlimits[1], qlimits[2]-dq, ncells)

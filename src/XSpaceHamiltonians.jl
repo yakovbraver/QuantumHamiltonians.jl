@@ -2,12 +2,11 @@ module XSpaceHamiltonians
 
 import FFTW
 using ArnoldiMethod: partialschur, partialeigen
-using LinearAlgebra: Hermitian, Diagonal, diag, diagind, diagview, ldiv!, factorize, eigen, dot
+using LinearAlgebra: Hermitian, Diagonal, diag, diagind, diagview, factorize, eigen, ldiv!, dot, mul!
 import LinearAlgebra as LA # mainly for the identity operator LA.I
 using LinearMaps
 import LinearSolve as LS
 using SparseArrays
-using LDLFactorizations
 using FLoops: @floop
 
 export XSpaceHamiltonian, diagonalize!, make_eigenfunction, make_eigenfunctions,
