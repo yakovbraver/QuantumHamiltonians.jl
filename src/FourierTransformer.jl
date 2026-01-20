@@ -129,8 +129,8 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
     if basis == :cis
         A[diagind(A)] .= buff[1]
         for i in 2:M+1
-            A[diagind(A, 1-i)] .= buff[i]       # fill lower triangle (including the diagonal)
-            A[diagind(A, i-1)] .= buff[end-i+2] # fill upper triangle (including the diagonal)
+            A[diagind(A, 1-i)] .= buff[i]       # fill lower triangle
+            A[diagind(A, i-1)] .= buff[end-i+2] # fill upper triangle
         end
     elseif basis == :sin
         if ft.did_complex_redft
@@ -197,14 +197,14 @@ end
 Set to zero values of `ft.buff` that are smaller by magnitude than `threshold`.
 Based on the resulting number of nonzero elements in `ft.buff`, count and return the number of values that will be stored in the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 """
-function filter_count_2D!(ft::FourierTransformer; fft_threshold::Real=0)
+function filter_count_2D!(ft::FourierTransformer; threshold::Real=0)
     (;M, buff) = ft
     n_elem = 0
     B = 2M + 1 # the size of each block
 
     # roughly, r controls the block-diagonal on which buff[r, c] will be placed, while c controls the diagonal inside all those blocks
     for c in axes(buff, 2), r in axes(buff, 1)
-        if abs(buff[r, c]) ≤ fft_threshold
+        if abs(buff[r, c]) ≤ threshold
             buff[r, c] = 0
         else
             # the block-diagonal into which buff[r, c] will be placed: 0 is main block-diagonal, 1 is the first lower or upper block-diagonal, etc.
@@ -222,7 +222,7 @@ end
 Use the result of the transform to construct a sparse matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 The type of `vals` might differ from the type of `ft.buff` since one may want to drop the imaginary part.
 """
-function fft_to_matrix_2D_sparse!(rows::AbstractVector{Integer}, cols::AbstractVector{Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformer)
+function fft_to_matrix_2D_sparse!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformer)
     B = 2ft.M + 1 # the size of each block
     u = ft.buff
 

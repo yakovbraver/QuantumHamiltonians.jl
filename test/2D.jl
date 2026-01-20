@@ -132,7 +132,7 @@ end
     diagonalize!(dh, nev=1)
     @test dh.ε[1] ≈ 0.571 atol=1e-3
 
-    sh = XSpaceHamiltonian{:sparse}(𝑈, Float64.(xlimits), Float64.(ylimits); isperiodic=true, M, 𝑈_iseven=true, 𝐴_x, 𝐴_y) # cast to Float64 because sparse diagonalisation does not support Float32
+    sh = XSpaceHamiltonian{:sparse}([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true) # cast to Float64 manually to suppress info message
     diagonalize!(sh, nev=1)
     @test sh.ε[1] ≈ 0.571 atol=1e-3
 end
@@ -247,7 +247,7 @@ end
     𝑈_iseven = trues(3, 3)
 
     ### Hermitian periodic diagonalisation
-    sh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven)
+    sh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
     @test sh.H[1, 19] ≈ Ω₁₀ / 2
     @test sh.H[10, 23] ≈ Ω₊ / 4
     @test sh.H[11, 22] ≈ -Ω₊ / 4
@@ -256,7 +256,7 @@ end
     @test sh.ε[1] ≈ 0.039 atol=1e-3
 
     ### Non-Hermitian periodic diagonalisation
-    sh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
+    sh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
     @test sh.H[1, 19] ≈ Ω₁₀ / 2
     @test sh.H[10, 23] ≈ Ω₊ / 4
     @test sh.H[11, 22] ≈ -Ω₊ / 4

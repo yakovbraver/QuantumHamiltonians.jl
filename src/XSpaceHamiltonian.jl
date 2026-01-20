@@ -1,6 +1,8 @@
 abstract type XSpaceHamiltonian{S} end
 
-"General constructor. If the problem is 1D, 𝐴 may be passed as a vector, whose elements are treated as corresponding to the different components."
+matrix_density(xh::XSpaceHamiltonian) = @error "Matrix density calculation is available for sparse Hamiltonians only."
+
+"General dense constructor. If the problem is 1D, 𝐴 may be passed as a vector, whose elements are treated as corresponding to the different components."
 function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
                                    𝑈::AbstractMatrix{<:Union{Function,Nothing}},
                                    𝐴::AbstractVecOrMat{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1), length(xlims));
@@ -10,7 +12,7 @@ function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
 end
 
 """
-1-component (but many-D) constructor accepting a 𝑈 as a function, 𝐴 as a vector (with elements treated as corresponding to the different dimensions),
+1-component (but many-D) dense constructor accepting a 𝑈 as a function, 𝐴 as a vector (with elements treated as corresponding to the different dimensions),
 𝑈_iseven as a bool, and Γ as a real.
 """
 function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
@@ -20,19 +22,40 @@ function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
                                    𝑈_iseven::Bool=false, Γ::R=zero(R)) where R <: AbstractFloat
     return DenseHamiltonian(xlims, [𝑈;;], reshape(𝐴, (1, length(xlims))); basis, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ])
 end
-    
-"Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."
-function XSpaceHamiltonian{:sparse}(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                    𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1)), fft_threshold::R=√eps(R),
-                                    𝐴_x::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1)), 𝐴_y::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1))) where R <: Real
-    return SparseHamiltonian2D(𝑈, xlims, ylims; isperiodic, M, δ, 𝑈_iseven, Γ, 𝐴_x, 𝐴_y, fft_threshold)
+
+"General sparse constructor. If the problem is 1D, 𝐴 may be passed as a vector, whose elements are treated as corresponding to the different components."
+function XSpaceHamiltonian{:sparse}(xlims::AbstractVector{Tuple{R,R}},
+                                    𝑈::AbstractMatrix{<:Union{Function,Nothing}},
+                                    𝐴::AbstractVecOrMat{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1), length(xlims));
+                                    basis::Symbol, M::Integer, δ::R=one(R), fft_threshold::R=√eps(R),
+                                    𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: AbstractFloat
+    if R !== Float64
+        @info "Sparse diagonalisation is only supported for Float64, got R = $R. Constructed object Will use Float64."
+        threshold = fft_threshold == √eps(R) ? √eps(Float64) : Float64(fft_threshold) # if `fft_threshold` is the default eps value, then switch to appropriate type
+    else
+        threshold = fft_threshold
+    end
+    lims = map(t -> Float64.(t), xlims)
+    return SparseHamiltonian(lims, 𝑈, 𝐴; basis, M, δ=Float64(δ), 𝑈_iseven, Γ=Float64.(Γ), fft_threshold=threshold)
 end
 
-"Single-component constructor accepting a 𝑈, 𝐴_x, and 𝐴_y as functions, 𝑈_iseven as a bool, and Γ as a real."
-function XSpaceHamiltonian{:sparse}(𝑈::Function, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                    𝑈_iseven::Bool=false, Γ::R=zero(R), fft_threshold::R=√eps(R),
-                                    𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing) where R <: Real
-    return SparseHamiltonian2D([𝑈;;], xlims, ylims; isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ], 𝐴_x=[𝐴_x], 𝐴_y=[𝐴_y], fft_threshold)
+"""
+1-component (but many-D) sparse constructor accepting a 𝑈 as a function, 𝐴 as a vector (with elements treated as corresponding to the different dimensions),
+𝑈_iseven as a bool, and Γ as a real.
+"""
+function XSpaceHamiltonian{:sparse}(xlims::AbstractVector{Tuple{R,R}},
+                                   𝑈::Union{Function,Nothing},
+                                   𝐴::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, length(xlims));
+                                   basis::Symbol, M::Integer, δ::R=one(R), fft_threshold::R=√eps(R),
+                                   𝑈_iseven::Bool=false, Γ::R=zero(R)) where R <: AbstractFloat
+    if R !== Float64
+        @info "Sparse diagonalisation is only supported for R = Float64, got R = $R. Constructed object Will use Float64."
+        threshold = fft_threshold == √eps(R) ? √eps(Float64) : Float64(fft_threshold) # if `fft_threshold` is the default eps value, then switch to appropriate type
+    else
+        threshold = fft_threshold
+    end
+    lims = map(t -> Float64.(t), xlims)
+    return SparseHamiltonian(lims, [𝑈;;], reshape(𝐴, (1, length(xlims))); basis, M, δ=Float64(δ), 𝑈_iseven=[𝑈_iseven;;], Γ=Float64[Γ], fft_threshold=threshold)
 end
 
 ########## Dense
@@ -102,10 +125,11 @@ function diagonalize(xh::XSpaceHamiltonian{:sparse}; nev::Integer, verbose::Bool
     ps, info = partialschur(linmap; nev, which=:LM);
     verbose && @show info
     ε, V = partialeigen(ps)
+    reverse!(ε) # we want final eigenvalues in ascending order (by abs)
+    reverse!(V; dims=2) # reverse the eigenvectors accordingly
     if xh.ishermitian # if xh.H is Hermitian but complex, the solver returns complex eigenvalues
         ε .= real.(inv.(ε)) # so we make them real manually
     else
-        reverse!(ε)  # we want final eigenvalues in ascending order (by abs)
         ε .= inv.(ε)
     end
     return ε, V

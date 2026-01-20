@@ -9,7 +9,7 @@ import LinearSolve as LS
 using SparseArrays
 using FLoops: @floop
 
-export XSpaceHamiltonian, diagonalize!, make_eigenfunction, make_eigenfunctions,
+export XSpaceHamiltonian, diagonalize!, make_eigenfunction, make_eigenfunctions, matrix_density,
        compute_wanniers!, make_wannierfunctions, make_wanniers_real, compute_tunneling, compute_tb_hamiltonian
 
 include("XSpaceHamiltonian.jl")
