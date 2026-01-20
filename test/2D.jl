@@ -9,12 +9,9 @@
      31  35  34  21  25  24  11  15  14
      32  31  35  22  21  25  12  11  15
      33  32  31  23  22  21  13  12  11]
-
-    u = [10i+j for i = 1:5, j=1:5]
-    H = XSpaceHamiltonians._fft_to_matrix(u)
-    @test H == H_true
     
     # we need a `FourierTransformer` object to test `fft_to_matrix_2D!`
+    u = [10i+j for i = 1:5, j=1:5]
     M = 1
     ft = XSpaceHamiltonians.FourierTransformer([(0.0, 1.0), (0.0, 1.0)], M; basis=:cis)
     ft.buff .= u # set as if `u` was the result of an actual fft
@@ -22,19 +19,25 @@
     XSpaceHamiltonians.fft_to_matrix_2D!(H, ft)
     @test H == H_true
     
-    u = [10i+j for i = 1:5, j=1:5]
-    n_elem = XSpaceHamiltonians.filter_count_fft!(u)
-    @test n_elem == 81
-    H = XSpaceHamiltonians.fft_to_matrix_sparse!(u)
-    @test H == H_true
+    ### legacy functions 
 
-    u = [(10i+j)*iseven(i+j) for i = 1:5, j=1:5]
-    n_elem = XSpaceHamiltonians.filter_count_fft!(u)
-    @test n_elem == 45
+    # u = [10i+j for i = 1:5, j=1:5]
+    # H = XSpaceHamiltonians._fft_to_matrix(u)
+    # @test H == H_true
 
-    u = [10i+j for i = 1:3, j=1:5]
-    H = XSpaceHamiltonians._rfft_to_matrix!(u)
-    @test H == Symmetric(H_true, :L)
+    # u = [10i+j for i = 1:5, j=1:5]
+    # n_elem = XSpaceHamiltonians.filter_count_fft!(u)
+    # @test n_elem == 81
+    # H = XSpaceHamiltonians.fft_to_matrix_sparse!(u)
+    # @test H == H_true
+
+    # u = [(10i+j)*iseven(i+j) for i = 1:5, j=1:5]
+    # n_elem = XSpaceHamiltonians.filter_count_fft!(u)
+    # @test n_elem == 45
+
+    # u = [10i+j for i = 1:3, j=1:5]
+    # H = XSpaceHamiltonians._rfft_to_matrix!(u)
+    # @test H == Symmetric(H_true, :L)
 end
 
 # TODO add additional type checks

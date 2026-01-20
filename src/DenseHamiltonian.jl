@@ -8,7 +8,7 @@ mutable struct DenseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: X
     xlims::Vector{Tuple{R, R}}
     L::Vector{R}
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
-    δ::R # coefficient of the momentum term: -iδ∇
+    δ::R # coefficient of the momentum term: -iδ∇ (same for all components)
     nc::Int # number of components
     basis::Symbol
     ishermitian::Bool # `H` is nonhermitian if decays Γ are present
@@ -60,16 +60,15 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     𝑈_diag_allequal = allequal(diagview(𝑈))
     𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing
 
+    makereal = (basis == :cis && H_isreal) # in this case the transform is actually real, but is stored in a complex array `ft.buff`; this will be passed to `fft_to_matrix` to drop imaginary part of `ft.buff`
+
     # treat diagonal blocks, adding the diagonal potentials 𝑈ᵢᵢ and 𝑝² (conditionally)
     for jH in 1:nc
         h = @view H[(jH-1)*B+1:jH*B, (jH-1)*B+1:jH*B] # a view of the `jH`th diagonal block
         h_set = false # shows if `h` has been set to something (i.e. etiher/both next two if's have been entered)
         if !isnothing(𝑈[jH, jH])
             transform!(ft, 𝑈[jH, jH])
-            if basis == :cis && H_isreal # in this case the transform is actually real, but is stored in a complex array `ft.buff`,
-                ft.buff .= real.(ft.buff) # make it real since otherwise `fft_to_matrix!` will not be able to write into `h` (which is real)
-            end
-            fft_to_matrix!(h, ft)
+            fft_to_matrix!(h, ft; makereal)
             h_set = true
             # @debug "Wrote 𝑈[$jH, $jH] into H[$jH, $jH]" # H[iH, jH] schematically means the block (`iH`, `jH`)
         end
@@ -95,14 +94,15 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
         A_buff = Matrix{T}(undef, B, B)
         A_buff2 = similar(A_buff)
         for i in 1:D # iterate over projections of 𝐴
-            if !𝐴ᵢ_present[i] && basis != :cis # if the projection 𝐴ᵢ is zero for all components, then skip 𝐴ᵢ. However, if basis is cis, we cannot skip because also need to addf 𝑝ᵢ²
+            if !𝐴ᵢ_present[i] && basis != :cis # if the projection 𝐴ᵢ is zero for all components, then skip 𝐴ᵢ. However, if basis is cis, we cannot skip because also need to add 𝑝ᵢ²
                 continue
             end
             pᵢ = make_p_i(L, M, δ, basis, i)
             for c in 1:nc
                 if isnothing(𝐴[c, i]) # then there is nothing to do, except adding 𝑝ᵢ² in the cis case
                     if basis == :cis
-                        H[(c-1)*B+1:c*B, (c-1)*B+1:c*B] .+= pᵢ^2 # TODO write an in-place squaring function for this Diagonal matrix
+                        pᵢ .^= 2 # in-place squaring
+                        H[(c-1)*B+1:c*B, (c-1)*B+1:c*B] .+= pᵢ
                         # @debug "Added p_$i^2 to H[$c, $c]"
                     end
                     continue
@@ -118,7 +118,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                 end
                 H[(c-1)*B+1:c*B, (c-1)*B+1:c*B] .+= A_buff2 # add to the curent block
                 # @debug begin basis == :cis ? "Added (p_$i - 𝐴[$c, $i])^2 to H[$c, $c]" : "Added im(𝐴[$c, $i]*p_$i + p_$i*𝐴[$c, $i] + 𝐴[$c, $i]^2) to H[$c, $c]"; end
-                if 𝐴ᵢ_allequal[i] # then also copy into all other diagonal blocks and break
+                if 𝐴ᵢ_allequal[i] # then add `A_buff2` to all other diagonal blocks and break
                     for iH in 2:nc
                         H[(iH-1)*B+1:iH*B, (iH-1)*B+1:iH*B] .+= A_buff2
                         # @debug begin basis == :cis ? "Added (p_$i - 𝐴[$c, $i])^2 to H[$iH, $iH]" : "Added im(𝐴[$c, $i]*p_$i + p_$i*𝐴[$c, $i] + 𝐴[$c, $i]^2) to H[$iH, $iH]"; end
@@ -129,28 +129,25 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
         end
     end
     # add -iΓ/2
-    for iH in 1:nc
-        if Γ[iH] != 0
-            H[diagind(H)[(iH-1)*B+1:iH*B]] .-= im*Γ[iH]/2
+    for c in 1:nc
+        if Γ[c] != 0
+            H[diagind(H)[(c-1)*B+1:c*B]] .-= im*Γ[c]/2
         end
     end
     # treat off-diagonal blocks (will not be run for a single component)
-    for jH in 1:nc
+    for jH in 2:nc
         for iH in 1:jH-1 # only upper triangle is scanned. The lower triangle is filled only if Γ is present
             isnothing(𝑈[iH, jH]) && continue
             transform!(ft, 𝑈[iH, jH])
-            if basis == :cis && H_isreal # in this case the transform is actually real, but is stored in a complex array,
-                ft.buff .= real.(ft.buff) # so make it real since otherwise `fft_to_matrix!` will not be able to write into `h` (which is a real array)
-            end
             wi = (iH-1)*B+1:iH*B
             wj = (jH-1)*B+1:jH*B
             h = @view H[wi, wj] # a view of the required block
-            fft_to_matrix!(h, ft)
-            # @debug "Wrote 𝑈[$iH, $jH] into H[$iH, $jH]" # H[jH, jH] schematically means the block (`iH`, `jH`)
+            fft_to_matrix!(h, ft; makereal)
+            # @debug "Wrote 𝑈[$iH, $jH] into H[$iH, $jH]"
 
             if !iszero(Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view)
                 H[wj, wi] .= h' # TODO possible to use `copyto!` ?
-                # @debug "Copied H[$iH, $jH]' into H[$jH, $iH]" # H[jH, jH] schematically means the block (`iH`, `jH`)
+                # @debug "Copied H[$iH, $jH]' into H[$jH, $iH]"
             end
         end
     end
@@ -236,7 +233,7 @@ Construct 1D coordinate-space eigenfunctions of state numbers `statenos` on a gr
 If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for the state `statenos[1]` at the these quasimomenta.
 Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqxs]`
 """
-function make_eigenfunctions(xh::DenseHamiltonian; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[])
+function make_eigenfunctions(xh::XSpaceHamiltonian; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[])
     (;L, xlims, M, basis, V, V_q, nc) = xh
     Lx = L[1]
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
