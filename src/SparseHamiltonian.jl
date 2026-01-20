@@ -68,7 +68,7 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
             # @debug "Set H[$jH, $jH] to spzero"
         else
             transform!(ft, 𝑈[jH, jH])
-            H_temp[jH, jH] = fft_to_matrix(ft; makedense=false, makereal, threshold=fft_threshold)
+            H_temp[jH, jH] = fft_to_matrix(ft; makesparse=true, makereal, threshold=fft_threshold)
             # @debug "Wrote 𝑈[$jH, $jH] into H[$jH, $jH]" # H[iH, jH] schematically means the block (`iH`, `jH`)
         end
         # Add 𝑝² if basis is sin/cos. But if there are no 𝐴's at all, add in the cis case too (if 𝐴's are present, then 𝑝ᵢ²'s will be added together with 𝐴ᵢ's)
@@ -104,7 +104,7 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                     continue
                 end
                 transform!(ft, 𝐴[c, i])
-                A_buff = fft_to_matrix(ft; makedense=false, threshold=fft_threshold) # contrary to the dense case, an in-place `fft_to_matrix` is impossible
+                A_buff = fft_to_matrix(ft; makesparse=true, threshold=fft_threshold) # contrary to the dense case, an in-place `fft_to_matrix` is impossible
 
                 if basis == :cis
                     A_buff .= pᵢ .- A_buff
@@ -138,7 +138,7 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                 # @debug "Set H[$jH, $jH] to spzero"
             else
                 transform!(ft, 𝑈[iH, jH])
-                H_temp[iH, jH] = fft_to_matrix(ft; makedense=false, makereal, threshold=fft_threshold)
+                H_temp[iH, jH] = fft_to_matrix(ft; makesparse=true, makereal, threshold=fft_threshold)
                 # @debug "Wrote 𝑈[$iH, $jH] into H[$iH, $jH]"
             end
             H_temp[jH, iH] = H_temp[iH, jH]' # set the conjugate block

@@ -70,10 +70,10 @@ end
 
 """
 Use the result of the transform to construct a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
-If `makedense=true`, a dense matrix is returned. Otherwise a sparse matrix is returned, with values below `threshold` in magnitude filtered out.
+If `makesparse=true`, a sparse matrix is returned, with values below `threshold` in magnitude filtered out. By default, a dense matrix is returned.
 If `makereal=true`, a real matrix (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of ft.buff.
 """
-function fft_to_matrix(ft::FourierTransformer{R,T}; makedense::Bool=true, makereal=false, threshold::Real=√(eps(R))) where {R <: AbstractFloat, T <: Number}
+function fft_to_matrix(ft::FourierTransformer{R,T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R))) where {R <: AbstractFloat, T <: Number}
     (;M, buff, basis) = ft
     D = ndims(buff)
     if basis == :cis
@@ -89,10 +89,7 @@ function fft_to_matrix(ft::FourierTransformer{R,T}; makedense::Bool=true, makere
         A_type = ft.did_complex_redft ? Complex{T} : T
     end
 
-    if makedense
-        A = Matrix{A_type}(undef, B, B)
-        fft_to_matrix!(A, ft)
-    else
+    if makesparse
         if basis == :cis
             n_elem = filter_count_2D!(ft; threshold)
             rows = Vector{Int64}(undef, n_elem)
@@ -103,6 +100,9 @@ function fft_to_matrix(ft::FourierTransformer{R,T}; makedense::Bool=true, makere
         else
             error("Sparse not available for basis = $basis. Only available for basis = :cis")
         end
+    else # dense
+        A = Matrix{A_type}(undef, B, B)
+        fft_to_matrix!(A, ft)
     end
     return A
 end
