@@ -58,6 +58,88 @@ function XSpaceHamiltonian{:sparse}(xlims::AbstractVector{Tuple{R,R}},
     return SparseHamiltonian(lims, [𝑈;;], reshape(𝐴, (1, length(xlims))); basis, M, δ=Float64(δ), 𝑈_iseven=[𝑈_iseven;;], Γ=Float64[Γ], fft_threshold=threshold)
 end
 
+"""
+Construct 1D coordinate-space eigenfunctions of state numbers `statenos` on a grid having `nx` points in `x` direction.
+If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for the state `statenos[1]` at the these quasimomenta.
+Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqxs]`
+"""
+function make_eigenfunctions(xh::XSpaceHamiltonian; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[])
+    (;L, xlims, M, basis, V, V_q, nc) = xh
+    Lx = L[1]
+    xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
+    ns = isempty(iqxs) ? length(statenos) : length(iqxs)
+    R = eltype(L) # real working type
+    ψ_type = basis != :cis && eltype(xh.H) <: Real ? R : complex(R)  # `ψ` are real if elements of H are real and if the basis is real (sin/cos)
+    ψ = Array{ψ_type}(undef, nx, nc, ns)
+    if isempty(iqxs) # no quasimomentum index
+        for (is, stateno) in enumerate(statenos)
+            for c in 1:nc
+                if basis == :cis
+                    B = 2M + 1
+                    @floop for (ix, x) in enumerate(xs)
+                        ψ[ix, c, is] = sum(V[(c-1)*B+j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                    end
+                else # nonperiodic
+                    @floop for (ix, x) in enumerate(xs)
+                        ψ[ix, c, is] = sum(V[(c-1)*M+jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
+                    end
+                end
+            end
+        end
+    else # quasimomenta indices passed
+        for iqx in iqxs
+            for c in 1:nc
+                B = 2M + 1
+                @floop for (ix, x) in enumerate(xs)
+                    ψ[ix, c, iqx] = sum(V_q[(c-1)*B+j, statenos[1], iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                end
+            end
+        end
+    end
+    return xs .+ xlims[1][1], ψ # return "normal" coordinates, in `x ∈ xlims`
+end
+
+"""
+Construct 2D coordinate-space wave function `ψ` of eigenstate `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
+Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
+"""
+function make_eigenfunction(xh::XSpaceHamiltonian, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0)
+    (;L, xlims, M, basis, V, V_q, nc) = xh
+    Lx, Ly = L
+    xs = range(0, Lx, nx) # these are the differences `x - xlims[1][1]`, with `x ∈ xlims[1]`
+    ys = range(0, Ly, ny) # these are the differences `y - xlims[2][1]`, with `y ∈ xlims[2]`
+    R = eltype(L) # real working type
+    ψ_type = basis != :cis && eltype(xh.H) isa Real ? R : complex(R)
+    ψ = [Matrix{ψ_type}(undef, nx, ny) for _ in 1:nc] # `ψ` are real if elements of H are real and the basis is real (sin/cos)
+    for c in 1:nc
+        if basis == :cis
+            B = 2M + 1
+            if iqx != 0 # if quasimomentum index has been passed
+                @floop for (iy, y) in enumerate(ys)
+                    for (ix, x) in enumerate(xs)
+                        ψ[c][ix, iy] = sum(V_q[(c-1)*B^2+(j-1)B+i, stateno, iqx, iqy]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
+                                                                                                                  for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+                    end
+                end
+            else # no quasimomentum index
+                @floop for (iy, y) in enumerate(ys)
+                    for (ix, x) in enumerate(xs)
+                        ψ[c][ix, iy] = sum(V[(c-1)*B^2+(j-1)B+i, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
+                                                                                                      for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+                    end
+                end
+            end
+        else # nonperiodic
+            @floop for (iy, y) in enumerate(ys)
+                for (ix, x) in enumerate(xs)
+                    ψ[c][ix, iy] = sum(V[(c-1)*M^2+(jx-1)M+jy, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jx in 1:M for jy in 1:M) * 2 / √(Lx*Ly)
+                end
+            end
+        end
+    end
+    return xs .+ xlims[1][1], ys .+ xlims[2][1], ψ # return "normal" coordinates, in `x ∈ xlims` and `y ∈ ylims`
+end
+
 ########## Dense
 
 """
