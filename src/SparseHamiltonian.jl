@@ -253,7 +253,7 @@ function diagonalize!(xh::SparseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:A
                     buff = K[which_K, i] + LA.I*QS[i]
                     buff = buff^2
                     if i == 1
-                        H_blocks[c, c] = copy(buff)
+                        H_blocks[c, c] = buff # set reference
                         @debug "Copied (K[$which_K, $i] + QS[$i])^2 into H[$c, $c]"
                     else
                         H_blocks[c, c] += buff
