@@ -147,7 +147,7 @@ Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 The result is written into `xh.ε` and `xh.V`.
 """
-function diagonalize!(xh::XSpaceHamiltonian{:dense}; nev::Integer, verbose::Bool=false)
+function diagonalize!(xh::XSpaceHamiltonian; nev::Integer, verbose::Bool=false)
     xh.ε, xh.V = diagonalize(xh; nev, verbose)
 end
 
@@ -187,14 +187,6 @@ function dense_linear_map(A)
 end
 
 ########## Sparse
-
-"""
-Calculate `nev` lowest eigenvectors and eigenvalues.
-The result is written into `xh.ε` and `xh.V`.
-"""
-function diagonalize!(xh::XSpaceHamiltonian{:sparse}; nev::Integer, verbose::Bool=false)
-    xh.ε, xh.V = diagonalize(xh; nev, verbose)
-end
 
 """
 Calculate `nev` lowest eigenvectors and eigenvalues.

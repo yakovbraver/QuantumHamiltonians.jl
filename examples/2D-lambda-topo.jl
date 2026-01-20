@@ -87,6 +87,8 @@ M = 50
 N = 2M + 1
 xs = range(xlimits[1], xlimits[2], N)
 ys = range(ylimits[1], ylimits[2], N)
+heatmap(xs, ys, real∘𝛺₁, c=:viridis)
+heatmap(xs, ys, imag∘𝛺₁, c=:viridis)
 heatmap(xs, ys, abs∘𝛺₁, c=:viridis)
 heatmap(xs, ys, 𝛺₂, c=:viridis)
 

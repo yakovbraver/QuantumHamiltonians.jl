@@ -24,14 +24,14 @@ function 𝛼(x::Real, y::Real)
     return ϵ^2 * (1 + ϵc^2) + η₊^2 + (ϵc*η₋)^2 - 2ϵc*η₊*η₋*cos(χ)
 end
 
-Float = Float32 # real operating type; sparse supports only Float64 :(
+Float = Float64 # real operating type; sparse supports only Float64 :(
 
 ϵ::Float = 0.1
 ϵc::Float = 1
 
 ########## χ = 0
 
-χ::Float = 0
+χ::Float = 0.0
 
 xlimits = (0, π) .|> Float
 ylimits = (0, π) .|> Float
@@ -68,14 +68,17 @@ surface(xs, ys, abs2.(ψ[1])')
 xlimits = (0, 2π) .|> Float
 ylimits = (0, 2π) .|> Float
 M = 30
-xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true)
-xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true, fft_threshold=1e-1)
-ncells = 11
+@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true); # 0.022 s construct + 8.5 s diagonalise
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1e-2); # M=30m thresh=1e-2: 0.017 s + 16.5 s diagonalise
+matrix_density(xh)
+
+ncells = 21
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P) .|> Float
 qxs = range(qlimits..., ncells)
 qys = Float[0] # doing a cut for fixed 𝑞_𝑦 = 0
 @time diagonalize!(xh, [qxs, qys]; nev=5);
+
 fig = plot();
 for n in axes(xh.ε_q, 1)
     scatter!(qxs, xh.ε_q[n, :, 1], c=n)
@@ -87,14 +90,14 @@ fig
 xlimits = (0, π) .|> Float # (0, π) for unfolded spectrum (like Fig. 4), (0, 2π) for folded
 ylimits = (0, π) .|> Float
 
-M = 35
+M = 30
 xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true) # M = 30, ncells = 5: 9.6 s.
-xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true, fft_threshold=1e-1) # M = 30, ncells = 5: 10.9 s
+xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1f-1) # M = 30, ncells = 5: 10.9 s
 ncells = 5
 P = xlimits[2] - xlimits[1]
 qlimits = (0, π/P)
 qxs = range(qlimits..., ncells)
-@time diagonalize!(xh, qxs, qxs; nev=1); # doing a cut for fixed 𝑞𝑦 = 0
+@time diagonalize!(xh, [qxs, qxs]; nev=1);
 heatmap(qxs, qxs, xh.ε_q[1, :, :], c=:viridis, xlabel="q_x", ylabel="q_y")
 
 ########## χ = π/2, x from -π/2 to π/2
@@ -154,7 +157,7 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ########## χ = 1.4, full period
 
-χ = 1.4
+χ::Float = 1.4
 
 ϵ::Float = 0.1
 ϵc::Float = 0.09
@@ -185,8 +188,10 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Quasimomenta
 
-@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true);
-xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=false, 𝐴_x, 𝐴_y, fft_threshold=1e-3)
+M = 30
+@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true); # M = 30, ncells = 21: 3 s construct + 76 s diagonalise
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1e-2) # M=30, ncells=21, thresh=1e-2: 0.17 s construct + 5.4 diagonalise (3+ digits accuracy)
+matrix_density(xh)
 ncells = 21
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P) .|> Float
