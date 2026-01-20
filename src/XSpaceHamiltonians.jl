@@ -15,7 +15,7 @@ export XSpaceHamiltonian, diagonalize!, make_eigenfunction, make_eigenfunctions,
 include("XSpaceHamiltonian.jl")
 include("Wanniers.jl")
 include("DenseHamiltonian.jl")
-include("SparseHamiltonian2D.jl")
+include("SparseHamiltonian.jl")
 include("FourierTransformer.jl")
 include("momentum.jl")
 
