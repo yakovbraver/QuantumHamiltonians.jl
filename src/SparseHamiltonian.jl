@@ -1,8 +1,8 @@
 """
-A type representing a spatial [𝑟 = (𝑥, 𝑦)], 𝑛-component, possibly quasimomentum-dependent Hamiltonian (𝐻ᵢⱼ)
-    𝐻ᵢᵢ(𝑟) = [-i𝛿∇ + 𝑞 - 𝐴(𝑟)]² + 𝑈ᵢᵢ(𝑟)
-    𝐻ᵢⱼ(𝑟) = 𝑈ᵢⱼ(𝑟)
-as a sparse matrix.
+A type representing a spatial, 𝐷-dimensional, 𝑛-component, possibly quasimomentum-dependent Hamiltonian (𝐻ᵢⱼ)
+    𝐻ᵢᵢ(r) = [-i𝛿∇ + q - Aᵢ(r)]² + 𝑈ᵢᵢ(r) - iΓᵢ/2
+    𝐻ᵢⱼ(r) = 𝑈ᵢⱼ(r)
+as a sparse matrix. Here  1 ≤ 𝑖, 𝑗 ≤ 𝑛,  r = (𝑥₁, …, 𝑥_𝐷),  Aᵢ = (𝐴ᵢ₁, …, 𝐴ᵢ_𝐷),  q = (𝑞₁, …, 𝑞_𝐷).
 """
 mutable struct SparseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: XSpaceHamiltonian{:sparse} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
     xlims::Vector{Tuple{R, R}}
@@ -27,12 +27,12 @@ mutable struct SparseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: 
 end
 
 """
-Construct a `SparseHamiltonian` object using the coordinate-space functions stored in `𝑈`, decay rates `Γ`, and gauge field (same for all components) 𝐴_x, 𝐴_y.
-`M` is the maximum harmonic number. In the periodic case, the Hamiltonian will be `nc*(2M+1)²`-by-`nc*(2M+1)²` where `nc` is the number of components.
-In nonperiodic case, the size will be `nc*M²`-by-`nc*M²`.
-`𝑈_iseven[i, j]` matters only if `isperiodic=true` and shows whether `𝑈[i, j]` is an even function (i.e. whether 𝑢(𝑥, 𝑦) = 𝑢(-𝑥, -𝑦)). If it is, then Fourier transform is real, which is used for better accuracy.
+Construct a `SparseHamiltonian` object using the coordinate-space functions stored in `𝑈`, decay rates `Γ`, and gauge fields stored in `𝐴`. `𝐴[c, i]` is the `i`th projection `𝐴ᵢ` of cth component.
+`M` is the maximum harmonic number. In the cis case, the Hamiltonian will be `nc*(2M+1)²`-by-`nc*(2M+1)²` where `nc` is the number of components. In sin/cos case, the size will be `nc*M²`-by-`nc*M²`.
+`𝑈_iseven[i, j]` matters only if `basis=:cis` and shows whether `𝑈[i, j]` is an even function (i.e. whether 𝑢(𝑟) = 𝑢(-𝑟)). If it is, then Fourier transform is real, which is used for better accuracy.
 If *all* functions are even (and real), then the resulting Fourier-space Hamiltonian is real (provided also there is no 𝐴 and Γ), giving a speed-up and better accuracy (compared to complex diagonalisation).
-If `𝑈[i, j] === nothing` or it is complex, then the value of `𝑈_iseven[i, j]` does not matter.
+If `𝑈[i, j] ≡ nothing` or it is complex, then the value of `𝑈_iseven[i, j]` does not matter.
+Currently it is assumed that if 𝐴's are present, then Hamiltonian is necessarily complex, but this is not true in general (it is real in the cis basis if A is real-even, exactly as for 𝑈).
 """
 function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                            𝑈::AbstractMatrix{<:Union{Function,Nothing}},
@@ -75,7 +75,7 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
         end
         # Add 𝑝² if basis is sin/cos. But if there are no 𝐴's at all, add in the cis case too (if 𝐴's are present, then 𝑝ᵢ²'s will be added together with 𝐴ᵢ's)
         if basis != :cis || all(𝐴ᵢ_present .== false)
-            H_blocks[jH, jH] .+= make_p²(L, M, δ, basis)
+            H_blocks[jH, jH] += make_p²(L, M, δ, basis)
             # @debug "Added 𝑝² to H[$jH, $jH]"
         end
         # If all 𝑈 are equal, then pass the reference of the just-calculated first diagonal block into all other diagonal blocks, and break.
@@ -100,7 +100,7 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                 if isnothing(𝐴[c, i]) # then there is nothing to do, except adding 𝑝ᵢ² in the cis case
                     if basis == :cis
                         pᵢ .^= 2 # in-place squaring
-                        H_blocks[c, c] .+= pᵢ
+                        H_blocks[c, c] += pᵢ
                         # @debug "Added p_$i^2 to H[$c, $c]"
                     end
                     continue
@@ -118,7 +118,7 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                 # @debug begin basis == :cis ? "Added (p_$i - 𝐴[$c, $i])^2 to H[$c, $c]" : "Added im(𝐴[$c, $i]*p_$i + p_$i*𝐴[$c, $i] + 𝐴[$c, $i]^2) to H[$c, $c]"; end
                 if 𝐴ᵢ_allequal[i] # then add `A_buff2` to all other diagonal blocks and break
                     for iH in 2:nc
-                        H_blocks[iH, iH] .+= A_buff2
+                        H_blocks[iH, iH] += A_buff2
                         # @debug begin basis == :cis ? "Added (p_$i - 𝐴[$c, $i])^2 to H[$iH, $iH]" : "Added im(𝐴[$c, $i]*p_$i + p_$i*𝐴[$c, $i] + 𝐴[$c, $i]^2) to H[$iH, $iH]"; end
                     end
                     break
@@ -167,110 +167,6 @@ end
 "Return the filling density of the Hamiltonian matrix."
 function matrix_density(xh::SparseHamiltonian)
     nnz(xh.H) / prod(size(xh.H))
-end
-
-"""
-Calculate eigenenergies for all quasimomenta in `qs = [qxs, qys, ...]` where `qxs` are 𝑞's along 𝑥, etc.
-Calculate `nev` lowest levels using `ArnoldiMethod`.
-Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
-Note that `xh.H` is modified in the process.
-"""
-function diagonalize!(xh::XSpaceHamiltonian{Storage}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {Storage}
-    if xh.basis != :cis
-        @warn "Hamiltonian must be periodic. Construct a new one using the cis basis and try again."
-        return
-    end
-    (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
-    D = length(xlims)
-    R = eltype(xh.L)
-    T = eltype(xh.V)
-    S = eltype(xh.ε)
-    if Storage == :dense
-        makesparse = false
-        threshold = zero(R) # the value does not matter since it is not be used when `makesparse=false`
-    else
-        makesparse = true
-        threshold = xh.fft_threshold
-    end
-
-    B = (2M + 1)^D # block size
-    nsaves = nev == 0 ? B : nev # number of eigenvalues and eigenvectors to allocate
-    xh.ε_q = Array{S}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # ε_q[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
-    xh.V_q = Array{T}(undef, B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # V_q[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
-    
-    if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
-        H_diag = diagview(xh.H)
-        # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
-        U_diags = T[H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
-    else # the general case with 𝐴
-        if Storage == :dense
-            # two buffers that are need in the q-loop in th dense case for matrix multiplication
-            buff1 = Matrix{T}(undef, B, B)
-            buff2 = Matrix{T}(undef, B, B)
-        else
-            buff1 = nothing
-            buff2 = nothing
-        end
-
-        ft = FourierTransformer(xlims, M; basis=:cis)
-
-        K = Union{typeof(H), Diagonal{T, Vector{T}}, Nothing}[nothing for _ in CartesianIndices(𝐴)] # Matrix of dimensions like 𝐴 for storing corresponding kinetic operators -iδ∂ᵢ - 𝐴ᵢ
-        U = Union{typeof(H), Nothing}[nothing for _ in axes(𝑈, 1)] # for storing terms 𝑈ᵢᵢ
-
-        𝑈_diag_allequal = allequal(diagview(𝑈))
-        𝐴ᵢ_allequal = Bool[allequal(𝐴ᵢ) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; they may all be nothing
-
-        # fill the buffers `U`
-        for c in 1:nc
-            if !isnothing(𝑈[c, c])
-                transform!(ft, 𝑈[c, c])
-                U[c] = fft_to_matrix(ft; makesparse, threshold)
-                # @debug "Filled U[$c]"
-            end
-            # If all 𝑈 are equal, then we will be using only U[1], no need to fill other elements
-            𝑈_diag_allequal && break
-        end
-
-        # fill the buffers `K`
-        for i in 1:D # iterate over projections of 𝐴
-            pᵢ = make_p_i(L, M, δ, :cis, i)
-            for c in 1:nc
-                if isnothing(𝐴[c, i]) # then add 𝑝ᵢ
-                    K[c, i] = pᵢ
-                    # @debug "Wrote p_$i to K[$c, $i]"
-                else
-                    transform!(ft, 𝐴[c, i])
-                    K[c, i] = fft_to_matrix(ft; makesparse, threshold)
-                    K[c, i] .= pᵢ .- K[c, i]
-                    # @debug "Wrote p_$i - 𝐴[$c, $i] to K[$c, $i]"
-                end
-                # If projection 𝐴ᵢ is the same for all components, then we will be using K[1, i] for all components, no need to fill other rows in the i'th column
-                𝐴ᵢ_allequal[i] && break
-            end
-        end
-    end
-
-    # update diagonal blocks and diagonalise
-    QS = Vector{R}(undef, length(qs)) # at each iteration will contain the values of quasimomenta, e.g. in 2D it will contain [qx, qy], where we defined qx ≡ qs[1], qy ≡ qs[2]
-    for IQ in Iterators.product(eachindex.(qs)...) # example in 2D: IQ = (iqx, iqy), where iqx is an index of qx and iqy is an index of qy
-        for i in eachindex(QS)
-            QS[i] = qs[i][IQ[i]]
-        end
-
-        # @debug "🚜 QS = $QS 🚜"
-
-        # update diagonal blocks
-        if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
-            p² = make_p²(L, M, δ, :cis, QS) |> parent # `parent` returns the diagonal as a vector TODO make in-place
-            for c in 1:nc
-                H_diag[(c-1)B+1:c*B] .= p² .+ U_diags[c]
-            end
-        else # the general case with 𝐴
-            update_diag!(xh, U, K, QS, 𝑈_diag_allequal, 𝐴ᵢ_allequal, D, buff1, buff2)
-        end
-
-        xh.ε_q[:, IQ...], xh.V_q[:, :, IQ...] = diagonalize(xh; nev, verbose)
-    end
 end
 
 "Helper function for q-diagonalisation that updates the diagonal blocks of `xh.H`."
