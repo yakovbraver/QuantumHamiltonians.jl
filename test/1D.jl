@@ -5,8 +5,8 @@
     xlimits = (-5, 5) .|> Float32
 
     ### Periodic
-    xh = XSpaceHamiltonian{:dense}(𝑈, xlimits; isperiodic=true, 𝑈_iseven=true, M=10, δ=(√0.5f0)) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
-    @test xh isa XSpaceHamiltonians.DenseHamiltonian1D{Float32,Float32,Float32}
+    xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M=10, δ=(√0.5f0)) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
+    @test xh isa XSpaceHamiltonians.DenseHamiltonian{Float32,Float32,Float32,2,3}
 
     # test 5 lowest eigenvalues
     diagonalize!(xh, nev=5)
@@ -22,8 +22,8 @@
     @test abs.(ψ) ≈ abs.(ψ_true) atol=1e-2 # test abs because a sign difference is possible
 
     ### Nonperiodic
-    xh = XSpaceHamiltonian{:dense}(𝑈, xlimits; isperiodic=false, M=15, δ=(√0.5f0)) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
-    @test xh isa XSpaceHamiltonians.DenseHamiltonian1D{Float32,Float32,Float32}
+    xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, M=15, δ=(√0.5f0)) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
+    @test xh isa XSpaceHamiltonians.DenseHamiltonian{Float32,Float32,Float32,2,3}
 
     # test 5 lowest eigenvalues
     diagonalize!(xh, nev=5)

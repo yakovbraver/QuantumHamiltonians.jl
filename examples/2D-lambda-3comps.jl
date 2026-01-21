@@ -53,12 +53,12 @@ heatmap(xs, ys, 𝛺₂, c=:viridis)
 
 # Since 𝛺₂ only has the ±1st harmonic, M can be small.
 # For M=15, the (real part of) ground state energy matches M=200 at 5 digits accuracy, wfs also match well, so dense calculation (even with full diagonalisation) is possible
-M = 100
+M = 200
 𝑈 = [nothing nothing 𝛺₁      
      nothing nothing 𝛺₂
      nothing nothing nothing] # only upper triangle is needed
-@time xh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
-@time xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], fft_threshold=1e-3)
 
 @time diagonalize!(xh, nev=5);
 xh.ε
@@ -66,20 +66,23 @@ xh.ε
 # l = findfirst(x -> real(x) > 0, xh.ε) # find the dark state from full diagonalisation
 # xh.ε[l]
 
-stateno = 5
+stateno = 1
 @time xs, ys, ψ = make_eigenfunction(xh, stateno, 101, 101);
 
 plot_comps(xs, ys, ψ)
 
 ### Quasimomenta
 
-M = 30 # something like M=30 is needed to get converged lowest band
-xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+M = 50 # something like M=30 is needed to get converged lowest band
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+# xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 ncells = 11
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P)
 qxs = range(qlimits..., ncells)
-@time diagonalize!(xh, qxs, [0]; nev=4); # doing a cut for fixed 𝑞𝑦 = 0
+qys = [0.0]
+@time diagonalize!(xh, [qxs, qys]; nev=4); # doing a cut for fixed 𝑞𝑦 = 0
+
 fig = plot();
 for n in axes(xh.ε_q, 1)
     scatter!(qxs, real.(xh.ε_q[n, :, 1]), c=n)
@@ -109,9 +112,11 @@ M = 100
 𝑈 = [nothing nothing 𝛺₁      
      nothing nothing 𝛺₂_cis
      nothing nothing nothing] # only upper triangle is needed
-@time xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], fft_threshold=1e-3)
+@time diagonalize!(xh, nev=5);
+xh.ε
 
-stateno = 5
+stateno = 1
 @time xs, ys, ψ = make_eigenfunction(xh, stateno, 101, 101);
 
 plot_comps(xs, ys, ψ)
@@ -119,12 +124,13 @@ plot_comps(xs, ys, ψ)
 ### Quasimomenta
 
 M = 50
-xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 ncells = 21
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P)
 qxs = range(qlimits..., ncells)
-@time diagonalize!(xh, qxs, [0]; nev=5); # doing a cut for fixed 𝑞𝑦 = 0
+qys = Float[0]
+@time diagonalize!(xh, [qxs, qys]; nev=5); # doing a cut for fixed 𝑞𝑦 = 0
 fig = plot();
 for n in axes(xh.ε_q, 1)
     scatter!(qxs, real.(xh.ε_q[n, :, 1]), c=n)

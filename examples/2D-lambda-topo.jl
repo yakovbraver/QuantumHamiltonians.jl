@@ -1,7 +1,7 @@
 # Analysing the system in https://doi.org/10.1103/dhkv-zvwg (https://arxiv.org/abs/2506.17096)
 using XSpaceHamiltonians
 
-using Plots, DelimitedFiles, LaTeXStrings
+using Plots, LaTeXStrings
 plotlyjs()
 cmap_rainbow = cgrad(:rainbow_bgyrm_35_85_c69_n256);
 cmap_phase = cgrad(:RdBu_9);
@@ -87,6 +87,8 @@ M = 50
 N = 2M + 1
 xs = range(xlimits[1], xlimits[2], N)
 ys = range(ylimits[1], ylimits[2], N)
+heatmap(xs, ys, real∘𝛺₁, c=:viridis)
+heatmap(xs, ys, imag∘𝛺₁, c=:viridis)
 heatmap(xs, ys, abs∘𝛺₁, c=:viridis)
 heatmap(xs, ys, 𝛺₂, c=:viridis)
 
@@ -128,7 +130,7 @@ plot(xs, A_abs_cut)
 
 M = 30
 ν = 0.95
-@time xh = XSpaceHamiltonian{:dense}(𝜙, xlimits, ylimits; isperiodic=true, M, δ, 𝑈_iseven=true, 𝐴_x=𝐴ₓ, 𝐴_y=𝐴y);
+@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝜙, [𝐴ₓ, 𝐴y]; basis=:cis, M, δ, 𝑈_iseven=true);
 
 @time diagonalize!(xh, nev=5);
 xh.ε
@@ -151,14 +153,15 @@ M = 50
 𝑈 = [nothing nothing 𝛺₁
      nothing nothing 𝛺₂
      nothing nothing 𝛥] # only upper triangle is needed
-𝑈_iseven = BitArray([0 0 0; 0 0 1; 0 0 1])
+𝑈_iseven = trues(3, 3)
 
-@time xh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, δ, 𝑈_iseven, Γ=[0, 0, Γ₃], fft_threshold=1e-3);
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, δ, 𝑈_iseven, Γ=[0, 0, Γ₃], fft_threshold=1e-3);
+matrix_density(xh)
 
 @time diagonalize!(xh, nev=5);
 xh.ε
 
-stateno = 5
+stateno = 1
 @time xs, ys, ψ = make_eigenfunction(xh, stateno, 101, 101);
 
 plot_comps(xs, ys, ψ)

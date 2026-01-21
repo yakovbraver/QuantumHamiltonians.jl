@@ -1,62 +1,262 @@
 abstract type XSpaceHamiltonian{S} end
 
-abstract type XSpaceHamiltonian1D{S} <: XSpaceHamiltonian{S} end
-abstract type XSpaceHamiltonian2D{S} <: XSpaceHamiltonian{S} end
+matrix_density(xh::XSpaceHamiltonian) = error("Matrix density calculation is available for sparse Hamiltonians only.")
 
-### 1D Constructors
-
-"Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."
-function XSpaceHamiltonian{:dense}(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                   𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: Real
-    return DenseHamiltonian1D(𝑈, xlims; isperiodic, M, δ, 𝑈_iseven, Γ)
+"General dense constructor. If the problem is 1D, 𝐴 may be passed as a vector, whose elements are treated as corresponding to the different components."
+function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
+                                   𝑈::AbstractMatrix{<:Union{Function,Nothing}},
+                                   𝐴::AbstractVecOrMat{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1), length(xlims));
+                                   basis::Symbol, M::Integer, δ::R=one(R),
+                                   𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: AbstractFloat
+    return DenseHamiltonian(xlims, 𝑈, 𝐴; basis, M, δ, 𝑈_iseven, Γ)
 end
 
-"Single-component constructor accepting a 𝑈 as a function and 𝑈_iseven as a bool."
-function XSpaceHamiltonian{:dense}(𝑈::Function, xlims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                   𝑈_iseven::Bool=false, Γ::R=zero(R)) where R <: Real
-    return DenseHamiltonian1D([𝑈;;], xlims; isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ])
+"""
+1-component (but many-D) dense constructor accepting a 𝑈 as a function, 𝐴 as a vector (with elements treated as corresponding to the different dimensions),
+𝑈_iseven as a bool, and Γ as a real.
+"""
+function XSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
+                                   𝑈::Union{Function,Nothing},
+                                   𝐴::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, length(xlims));
+                                   basis::Symbol, M::Integer, δ::R=one(R),
+                                   𝑈_iseven::Bool=false, Γ::R=zero(R)) where R <: AbstractFloat
+    return DenseHamiltonian(xlims, [𝑈;;], reshape(𝐴, (1, length(xlims))); basis, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ])
 end
 
-### 2D Constructors
-
-"Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."
-function XSpaceHamiltonian{:dense}(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                   𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1)),
-                                   𝐴_x::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1)), 𝐴_y::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1))) where R <: Real
-    return DenseHamiltonian2D(𝑈, xlims, ylims; isperiodic, M, δ, 𝑈_iseven, Γ, 𝐴_x, 𝐴_y)
+"General sparse constructor. If the problem is 1D, 𝐴 may be passed as a vector, whose elements are treated as corresponding to the different components."
+function XSpaceHamiltonian{:sparse}(xlims::AbstractVector{Tuple{R,R}},
+                                    𝑈::AbstractMatrix{<:Union{Function,Nothing}},
+                                    𝐴::AbstractVecOrMat{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1), length(xlims));
+                                    basis::Symbol, M::Integer, δ::R=one(R), fft_threshold::R=√eps(R),
+                                    𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: AbstractFloat
+    if R !== Float64
+        println("Sparse diagonalisation is only supported for R = Float64, got R = $R. Constructed object Will use Float64.")
+        threshold = fft_threshold == √eps(R) ? √eps(Float64) : Float64(fft_threshold) # if `fft_threshold` is the default eps value, then switch to appropriate type
+    else
+        threshold = fft_threshold
+    end
+    lims = map(t -> Float64.(t), xlims)
+    return SparseHamiltonian(lims, 𝑈, 𝐴; basis, M, δ=Float64(δ), 𝑈_iseven, Γ=Float64.(Γ), fft_threshold=threshold)
 end
 
-"Single-component constructor accepting a 𝑈, 𝐴_x, and 𝐴_y as functions, 𝑈_iseven as a bool, and Γ as a real."
-function XSpaceHamiltonian{:dense}(𝑈::Function, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                   𝑈_iseven::Bool=false, Γ::R=zero(R),
-                                   𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing) where R <: Real
-    return DenseHamiltonian2D([𝑈;;], xlims, ylims; isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ], 𝐴_x=[𝐴_x], 𝐴_y=[𝐴_y])
+"""
+1-component (but many-D) sparse constructor accepting a 𝑈 as a function, 𝐴 as a vector (with elements treated as corresponding to the different dimensions),
+𝑈_iseven as a bool, and Γ as a real.
+"""
+function XSpaceHamiltonian{:sparse}(xlims::AbstractVector{Tuple{R,R}},
+                                   𝑈::Union{Function,Nothing},
+                                   𝐴::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, length(xlims));
+                                   basis::Symbol, M::Integer, δ::R=one(R), fft_threshold::R=√eps(R),
+                                   𝑈_iseven::Bool=false, Γ::R=zero(R)) where R <: AbstractFloat
+    if R !== Float64
+        println("Sparse diagonalisation is only supported for R = Float64, got R = $R. Constructed object Will use Float64.")
+        threshold = fft_threshold == √eps(R) ? √eps(Float64) : Float64(fft_threshold) # if `fft_threshold` is the default eps value, then switch to appropriate type
+    else
+        threshold = fft_threshold
+    end
+    lims = map(t -> Float64.(t), xlims)
+    return SparseHamiltonian(lims, [𝑈;;], reshape(𝐴, (1, length(xlims))); basis, M, δ=Float64(δ), 𝑈_iseven=[𝑈_iseven;;], Γ=Float64[Γ], fft_threshold=threshold)
 end
 
-"Constructor accepting a 𝑈 as a matrix of functions and 𝑈_iseven as a matrix of bools."
-function XSpaceHamiltonian{:sparse}(𝑈::AbstractMatrix{<:Union{Function,Nothing}}, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                    𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1)), fft_threshold::R=√eps(R),
-                                    𝐴_x::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1)), 𝐴_y::AbstractVector{<:Union{Function,Nothing}}=fill(nothing, size(𝑈, 1))) where R <: Real
-    return SparseHamiltonian2D(𝑈, xlims, ylims; isperiodic, M, δ, 𝑈_iseven, Γ, 𝐴_x, 𝐴_y, fft_threshold)
+"""
+Construct 1D coordinate-space eigenfunctions of state numbers `statenos` on a grid having `nx` points in `x` direction.
+If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for the state `statenos[1]` at the these quasimomenta.
+Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqxs]`
+"""
+function make_eigenfunctions(xh::XSpaceHamiltonian; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[])
+    (;L, xlims, M, basis, V, V_q, nc) = xh
+    Lx = L[1]
+    xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
+    ns = isempty(iqxs) ? length(statenos) : length(iqxs)
+    R = eltype(L) # real working type
+    ψ_type = basis != :cis && eltype(xh.H) <: Real ? R : complex(R)  # `ψ` are real if elements of H are real and if the basis is real (sin/cos)
+    ψ = Array{ψ_type}(undef, nx, nc, ns)
+    if isempty(iqxs) # no quasimomentum index
+        for (is, stateno) in enumerate(statenos)
+            for c in 1:nc
+                if basis == :cis
+                    B = 2M + 1
+                    @floop for (ix, x) in enumerate(xs)
+                        ψ[ix, c, is] = sum(V[(c-1)*B+j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                    end
+                else # nonperiodic
+                    @floop for (ix, x) in enumerate(xs)
+                        ψ[ix, c, is] = sum(V[(c-1)*M+jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
+                    end
+                end
+            end
+        end
+    else # quasimomenta indices passed
+        for iqx in iqxs
+            for c in 1:nc
+                B = 2M + 1
+                @floop for (ix, x) in enumerate(xs)
+                    ψ[ix, c, iqx] = sum(V_q[(c-1)*B+j, statenos[1], iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                end
+            end
+        end
+    end
+    return xs .+ xlims[1][1], ψ # return "normal" coordinates, in `x ∈ xlims`
 end
 
-"Single-component constructor accepting a 𝑈, 𝐴_x, and 𝐴_y as functions, 𝑈_iseven as a bool, and Γ as a real."
-function XSpaceHamiltonian{:sparse}(𝑈::Function, xlims::Tuple{R,R}, ylims::Tuple{R,R}; isperiodic::Bool, M::Integer, δ::R=one(R),
-                                    𝑈_iseven::Bool=false, Γ::R=zero(R), fft_threshold::R=√eps(R),
-                                    𝐴_x::Union{Function,Nothing}=nothing, 𝐴_y::Union{Function,Nothing}=nothing) where R <: Real
-    return SparseHamiltonian2D([𝑈;;], xlims, ylims; isperiodic, M, δ, 𝑈_iseven=[𝑈_iseven;;], Γ=[Γ], 𝐴_x=[𝐴_x], 𝐴_y=[𝐴_y], fft_threshold)
+"""
+Construct 2D coordinate-space wave function `ψ` of eigenstate `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
+Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
+"""
+function make_eigenfunction(xh::XSpaceHamiltonian, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0)
+    (;L, xlims, M, basis, V, V_q, nc) = xh
+    Lx, Ly = L
+    xs = range(0, Lx, nx) # these are the differences `x - xlims[1][1]`, with `x ∈ xlims[1]`
+    ys = range(0, Ly, ny) # these are the differences `y - xlims[2][1]`, with `y ∈ xlims[2]`
+    R = eltype(L) # real working type
+    ψ_type = basis != :cis && eltype(xh.H) isa Real ? R : complex(R)
+    ψ = [Matrix{ψ_type}(undef, nx, ny) for _ in 1:nc] # `ψ` are real if elements of H are real and the basis is real (sin/cos)
+    for c in 1:nc
+        if basis == :cis
+            B = 2M + 1
+            if iqx != 0 # if quasimomentum index has been passed
+                @floop for (iy, y) in enumerate(ys)
+                    for (ix, x) in enumerate(xs)
+                        ψ[c][ix, iy] = sum(V_q[(c-1)*B^2+(j-1)B+i, stateno, iqx, iqy]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
+                                                                                                                  for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+                    end
+                end
+            else # no quasimomentum index
+                @floop for (iy, y) in enumerate(ys)
+                    for (ix, x) in enumerate(xs)
+                        ψ[c][ix, iy] = sum(V[(c-1)*B^2+(j-1)B+i, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
+                                                                                                      for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+                    end
+                end
+            end
+        else # nonperiodic
+            @floop for (iy, y) in enumerate(ys)
+                for (ix, x) in enumerate(xs)
+                    ψ[c][ix, iy] = sum(V[(c-1)*M^2+(jx-1)M+jy, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jx in 1:M for jy in 1:M) * 2 / √(Lx*Ly)
+                end
+            end
+        end
+    end
+    return xs .+ xlims[1][1], ys .+ xlims[2][1], ψ # return "normal" coordinates, in `x ∈ xlims` and `y ∈ ylims`
 end
 
-########## Functions that are generic for all dimensions
+"""
+Calculate eigenenergies for all quasimomenta in `qs = [qxs, qys, ...]` where `qxs` are 𝑞's along 𝑥, etc.
+Calculate `nev` lowest levels using `ArnoldiMethod`.
+Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 
-### Dense
+Note that `xh.H` is modified in the process. In the case when 𝐴 is absent, only the diagonal of `xh.H` is modified, and it is restored in the end (this is cheap, ~3 ms for M=50).
+When 𝐴 is present, the entire diagonal blocks of `xh.H` are modified, and they are not restored in the end. However, they are constructed from scratch when the function is called rather than using the contents of `xh.H`.
+Thus, in both cases this function can be called repeatedly (e.g. for different `qs`) without reconstructing `xh`.
+"""
+function diagonalize!(xh::XSpaceHamiltonian{Storage}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {Storage}
+    if xh.basis != :cis
+        error("Hamiltonian must be periodic. Construct a new one using the cis basis and try again.")
+        return
+    end
+    (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
+    D = length(xlims)
+    R = eltype(xh.L)
+    T = eltype(xh.V)
+    S = eltype(xh.ε)
+    if Storage == :dense
+        makesparse = false
+        threshold = zero(R) # the value does not matter since it is not be used when `makesparse=false`
+    else
+        makesparse = true
+        threshold = xh.fft_threshold
+    end
+
+    B = (2M + 1)^D # block size
+    nsaves = nev == 0 ? B : nev # number of eigenvalues and eigenvectors to allocate
+    xh.ε_q = Array{S}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # ε_q[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
+    xh.V_q = Array{T}(undef, B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # V_q[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
+    
+    if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
+        H_diag = diagview(xh.H)
+        H_diag_copy = copy(H_diag) # a copy for restoring after diagonalisation
+        # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
+        U_diags = T[H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
+    else # the general case with 𝐴
+        if Storage == :dense
+            # two buffers that are need in the q-loop in th dense case for matrix multiplication
+            buff1 = Matrix{T}(undef, B, B)
+            buff2 = Matrix{T}(undef, B, B)
+        else
+            buff1 = nothing
+            buff2 = nothing
+        end
+
+        ft = FourierTransformer(xlims, M; basis=:cis)
+
+        K = Union{typeof(H), Diagonal{T, Vector{T}}, Nothing}[nothing for _ in CartesianIndices(𝐴)] # Matrix of dimensions like 𝐴 for storing corresponding kinetic operators -iδ∂ᵢ - 𝐴ᵢ
+        U = Union{typeof(H), Nothing}[nothing for _ in axes(𝑈, 1)] # for storing terms 𝑈ᵢᵢ
+
+        𝑈_diag_allequal = allequal(diagview(𝑈))
+        𝐴ᵢ_allequal = Bool[allequal(𝐴ᵢ) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; they may all be nothing
+
+        # fill the buffers `U`
+        for c in 1:nc
+            if !isnothing(𝑈[c, c])
+                transform!(ft, 𝑈[c, c])
+                U[c] = fft_to_matrix(ft; makesparse, threshold)
+                # @debug "Filled U[$c]"
+            end
+            # If all 𝑈 are equal, then we will be using only U[1], no need to fill other elements
+            𝑈_diag_allequal && break
+        end
+
+        # fill the buffers `K`
+        for i in 1:D # iterate over projections of 𝐴
+            pᵢ = make_p_i(L, M, δ, :cis, i)
+            for c in 1:nc
+                if isnothing(𝐴[c, i]) # then add 𝑝ᵢ
+                    K[c, i] = pᵢ
+                    # @debug "Wrote p_$i to K[$c, $i]"
+                else
+                    transform!(ft, 𝐴[c, i])
+                    K[c, i] = fft_to_matrix(ft; makesparse, threshold)
+                    K[c, i] .= pᵢ .- K[c, i]
+                    # @debug "Wrote p_$i - 𝐴[$c, $i] to K[$c, $i]"
+                end
+                # If projection 𝐴ᵢ is the same for all components, then we will be using K[1, i] for all components, no need to fill other rows in the i'th column
+                𝐴ᵢ_allequal[i] && break
+            end
+        end
+    end
+
+    # update diagonal blocks and diagonalise
+    QS = Vector{R}(undef, length(qs)) # at each iteration will contain the values of quasimomenta, e.g. in 2D it will contain [qx, qy], where we defined qx ≡ qs[1], qy ≡ qs[2]
+    for IQ in Iterators.product(eachindex.(qs)...) # example in 2D: IQ = (iqx, iqy), where iqx is an index of qx and iqy is an index of qy
+        for i in eachindex(QS)
+            QS[i] = qs[i][IQ[i]]
+        end
+
+        # @debug "🚜 QS = $QS 🚜"
+
+        # update diagonal blocks
+        if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
+            p² = make_p²(L, M, δ, :cis, QS) |> parent # `parent` returns the diagonal as a vector TODO make in-place
+            for c in 1:nc
+                H_diag[(c-1)B+1:c*B] .= p² .+ U_diags[c]
+            end
+        else # the general case with 𝐴
+            update_diag!(xh, U, K, QS, 𝑈_diag_allequal, 𝐴ᵢ_allequal, D, buff1, buff2)
+        end
+
+        xh.ε_q[:, IQ...], xh.V_q[:, :, IQ...] = diagonalize(xh; nev, verbose)
+    end
+    all(isnothing.(𝐴)) && copy!(H_diag, H_diag_copy) # restore the original diagonal
+end
+
+########## Dense
 
 """
 Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 The result is written into `xh.ε` and `xh.V`.
 """
-function diagonalize!(xh::XSpaceHamiltonian{:dense}; nev::Integer, verbose::Bool=false)
+function diagonalize!(xh::XSpaceHamiltonian; nev::Integer, verbose::Bool=false)
     xh.ε, xh.V = diagonalize(xh; nev, verbose)
 end
 
@@ -95,15 +295,7 @@ function dense_linear_map(A)
     LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
 end
 
-### Sparse
-
-"""
-Calculate `nev` lowest eigenvectors and eigenvalues.
-The result is written into `xh.ε` and `xh.V`.
-"""
-function diagonalize!(xh::XSpaceHamiltonian{:sparse}; nev::Integer, verbose::Bool=false)
-    xh.ε, xh.V = diagonalize(xh; nev, verbose)
-end
+########## Sparse
 
 """
 Calculate `nev` lowest eigenvectors and eigenvalues.
@@ -116,10 +308,11 @@ function diagonalize(xh::XSpaceHamiltonian{:sparse}; nev::Integer, verbose::Bool
     ps, info = partialschur(linmap; nev, which=:LM);
     verbose && @show info
     ε, V = partialeigen(ps)
+    reverse!(ε) # we want final eigenvalues in ascending order (by abs)
+    reverse!(V; dims=2) # reverse the eigenvectors accordingly
     if xh.ishermitian # if xh.H is Hermitian but complex, the solver returns complex eigenvalues
         ε .= real.(inv.(ε)) # so we make them real manually
     else
-        reverse!(ε)  # we want final eigenvalues in ascending order (by abs)
         ε .= inv.(ε)
     end
     return ε, V

@@ -9,27 +9,35 @@
      31  35  34  21  25  24  11  15  14
      32  31  35  22  21  25  12  11  15
      33  32  31  23  22  21  13  12  11]
-
+    
+    # we need a `FourierTransformer` object to test `fft_to_matrix_2D!`
     u = [10i+j for i = 1:5, j=1:5]
-    H = XSpaceHamiltonians._fft_to_matrix(u)
+    M = 1
+    ft = XSpaceHamiltonians.FourierTransformer([(0.0, 1.0), (0.0, 1.0)], M; basis=:cis)
+    ft.buff .= u # set as if `u` was the result of an actual fft
+    H = similar(H_true)
+    XSpaceHamiltonians.fft_to_matrix_2D!(H, ft)
     @test H == H_true
     
-    H = XSpaceHamiltonians.fft_to_matrix_naive!(u)
-    @test H == H_true
-    
-    u = [10i+j for i = 1:5, j=1:5]
-    n_elem = XSpaceHamiltonians.filter_count_fft!(u)
-    @test n_elem == 81
-    H = XSpaceHamiltonians.fft_to_matrix_sparse!(u)
-    @test H == H_true
+    ### legacy functions 
 
-    u = [(10i+j)*iseven(i+j) for i = 1:5, j=1:5]
-    n_elem = XSpaceHamiltonians.filter_count_fft!(u)
-    @test n_elem == 45
+    # u = [10i+j for i = 1:5, j=1:5]
+    # H = XSpaceHamiltonians._fft_to_matrix(u)
+    # @test H == H_true
 
-    u = [10i+j for i = 1:3, j=1:5]
-    H = XSpaceHamiltonians._rfft_to_matrix!(u)
-    @test H == Symmetric(H_true, :L)
+    # u = [10i+j for i = 1:5, j=1:5]
+    # n_elem = XSpaceHamiltonians.filter_count_fft!(u)
+    # @test n_elem == 81
+    # H = XSpaceHamiltonians.fft_to_matrix_sparse!(u)
+    # @test H == H_true
+
+    # u = [(10i+j)*iseven(i+j) for i = 1:5, j=1:5]
+    # n_elem = XSpaceHamiltonians.filter_count_fft!(u)
+    # @test n_elem == 45
+
+    # u = [10i+j for i = 1:3, j=1:5]
+    # H = XSpaceHamiltonians._rfft_to_matrix!(u)
+    # @test H == Symmetric(H_true, :L)
 end
 
 # TODO add additional type checks
@@ -65,7 +73,7 @@ end
     M = 5
 
     ### Nonperiodic
-    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M)
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
     @test dh.H isa Matrix{Float32}
     @test dh.V isa Matrix{Float32}
 
@@ -78,7 +86,7 @@ end
     @test dh.ε[1] ≈ 2.064 rtol=1e-3
 
     ### Periodic
-    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true)
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true)
     @test dh.H isa Matrix{Float32}
 
     # exact diagonalisation
@@ -97,7 +105,7 @@ end
     ylimits = (0, π) .|> Float32
 
     ### Nonperiodic
-    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M, 𝐴_x, 𝐴_y)
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:sin, M)
     
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -114,7 +122,7 @@ end
     xlimits = (0, 2π) .|> Float32
     ylimits = (0, 2π) .|> Float32
 
-    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven=true, 𝐴_x, 𝐴_y);
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true);
 
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -124,7 +132,7 @@ end
     diagonalize!(dh, nev=1)
     @test dh.ε[1] ≈ 0.571 atol=1e-3
 
-    sh = XSpaceHamiltonian{:sparse}(𝑈, Float64.(xlimits), Float64.(ylimits); isperiodic=true, M, 𝑈_iseven=true, 𝐴_x, 𝐴_y) # cast to Float64 because sparse diagonalisation does not support Float32
+    sh = XSpaceHamiltonian{:sparse}([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true) # cast to Float64 manually to suppress info message
     diagonalize!(sh, nev=1)
     @test sh.ε[1] ≈ 0.571 atol=1e-3
 end
@@ -155,10 +163,10 @@ end
     𝑈 = [nothing nothing 𝛺₁      
          nothing nothing 𝛺₂
          nothing nothing nothing] # only upper triangle is needed
-    𝑈_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
-
+    𝑈_iseven=trues(3, 3)
+    
     ### Hermitian periodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven)
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
     @test dh.H isa Matrix{Float32}
     @test dh.H[1, 19] ≈ Ω₁₀ / 2
     @test dh.H[10, 23] ≈ Ω₊ / 4
@@ -173,7 +181,7 @@ end
     @test dh.ε[1] ≈ 0.039 atol=1e-3
 
     ### Hermitian nonperiodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M)
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
     @test dh.H isa Matrix{Float32}
         
     # exact diagonalisation
@@ -185,7 +193,7 @@ end
     @test dh.ε[1] ≈ 0.5 rtol=1e-3
     
     ### non-Hermitian periodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven, Γ=[0, 0, Γ₃]);
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃]);
     @test dh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
@@ -200,7 +208,7 @@ end
     @test dh.ε[1] ≈ 0.039 atol=1e-3
 
     ### non-Hermitian nonperiodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}(𝑈, xlimits, ylimits; isperiodic=false, M, Γ=[0, 0, Γ₃]);
+    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M, Γ=[0, 0, Γ₃]);
     @test dh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
@@ -236,10 +244,10 @@ end
     𝑈 = [nothing nothing 𝛺₁      
          nothing nothing 𝛺₂
          nothing nothing nothing] # only upper triangle is needed
-    𝑈_iseven = BitArray([0 0 1; 0 0 1; 0 0 0])
+    𝑈_iseven = trues(3, 3)
 
     ### Hermitian periodic diagonalisation
-    sh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven)
+    sh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
     @test sh.H[1, 19] ≈ Ω₁₀ / 2
     @test sh.H[10, 23] ≈ Ω₊ / 4
     @test sh.H[11, 22] ≈ -Ω₊ / 4
@@ -248,7 +256,7 @@ end
     @test sh.ε[1] ≈ 0.039 atol=1e-3
 
     ### Non-Hermitian periodic diagonalisation
-    sh = XSpaceHamiltonian{:sparse}(𝑈, xlimits, ylimits; isperiodic=true, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
+    sh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
     @test sh.H[1, 19] ≈ Ω₁₀ / 2
     @test sh.H[10, 23] ≈ Ω₊ / 4
     @test sh.H[11, 22] ≈ -Ω₊ / 4
