@@ -49,7 +49,7 @@ xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
 
 # Or we can solve periodic case. Potential is even, so we set `𝑈_iseven`, yielding a real Hamiltonian
 xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true)
-xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1f-1)
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1e-1);
 matrix_density(xh)
 
 heatmap(xh.H, yaxis=:flip, c=:viridis)
@@ -68,14 +68,14 @@ surface(xs, ys, abs2.(ψ[1])')
 xlimits = (0, 2π) .|> Float
 ylimits = (0, 2π) .|> Float
 M = 30
-@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true); # 0.022 s construct + 8.5 s diagonalise
-@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1e-2); # M=30m thresh=1e-2: 0.017 s + 16.5 s diagonalise
+@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true); # M=30: 0.025 s construct + 8.4 s diagonalise
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1e-2); # M=30, thresh=1e-2, ncells=21: 0.05 s + 16.8 s diagonalise
 matrix_density(xh)
 
 ncells = 21
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P) .|> Float
-qxs = range(qlimits..., ncells)
+qxs = range(qlimits..., ncells) .|> Float
 qys = Float[0] # doing a cut for fixed 𝑞_𝑦 = 0
 @time diagonalize!(xh, [qxs, qys]; nev=5);
 
@@ -102,13 +102,13 @@ heatmap(qxs, qxs, xh.ε_q[1, :, :], c=:viridis, xlabel="q_x", ylabel="q_y")
 
 ########## χ = π/2, x from -π/2 to π/2
 
-χ = π/2
+χ::Float = π/2
 
 xlimits = (-π/2, π/2) .|> Float
 ylimits = (0, π) .|> Float
 
 # plot potential
-M = 15
+M = 30
 N = 2M + 1
 xs = range(xlimits..., N)
 ys = range(ylimits..., N)
@@ -128,7 +128,7 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ########## χ = π/2, full period
 
-χ = π/2
+χ::Float = π/2
 
 xlimits = (0, 2π) .|> Float
 ylimits = (0, 2π) .|> Float
@@ -140,10 +140,9 @@ ys = range(ylimits..., 2M)
 surface(xs, ys, 𝑈)
 surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
-# The matrix is not really sparse because of 𝐴, so dense method is more efficient
-# We pass 𝑈_iseven=true so that the imaginary part of the Fourier transform of 𝑈 is dropped, although the Hamiltonian is complex anyway because of 𝐴
-@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true);
-@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1f-3); # for M = 20, density is 0.12, so sparse is inefficient
+# Pass 𝑈_iseven=true so that the imaginary part of the Fourier transform of 𝑈 is dropped, although the Hamiltonian is complex anyway because of 𝐴
+@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true); # M=50: 56 s construct + 10 s diagonalise
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1e-3); # M=50, thresh=1e-3: 4.3 s construct + 42 s diagonalise (3-5 digits accuracy). thresh=1e-2: 0.9 s construct + 6.8 s diagonalise (2-3 digits accuracy); 
 matrix_density(xh)
 
 @time diagonalize!(xh, nev=5);
@@ -172,9 +171,8 @@ ys = range(ylimits..., 2M)
 surface(xs, ys, 𝑈)
 surface(xs, ys, (x, y) -> 𝐴_x(x, y)^2 + 𝐴_y(x, y)^2)
 
-# For this configuration, sparse is more efficient
 @time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true); # M = 50, Float64: 56 s construct + 10 s diagonalise
-@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1f-3); # M = 50, Float64: 1.7 s construct + 0.6 s diagonalise, matches dense result at 4 digits accuracy for `fft_threshold=1e-3`
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1e-3); # M=50, thresh=1e-2: 1.7 s construct + 0.6 s diagonalise (4+ digits accuracy)
 matrix_density(xh)
 
 @time diagonalize!(xh, nev=5);
@@ -189,13 +187,14 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 ### Quasimomenta
 
 M = 30
-@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true); # M = 30, ncells = 21: 3 s construct + 76 s diagonalise
-@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1e-2) # M=30, ncells=21, thresh=1e-2: 0.17 s construct + 5.4 diagonalise (3+ digits accuracy)
+@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true); # M=30, ncells=21: 3 s construct + 76 s diagonalise
+@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1e-2) # M=30, ncells=21, thresh=1e-2: 0.17 s construct + 4.6 diagonalise (3+ digits accuracy)
 matrix_density(xh)
+
 ncells = 21
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P) .|> Float
-qxs = range(qlimits..., ncells)
+qxs = range(qlimits..., ncells) .|> Float
 qys = Float[0] # doing a cut for fixed 𝑞_𝑦 = 0
 @time diagonalize!(xh, [qxs, qys]; nev=5);
 
