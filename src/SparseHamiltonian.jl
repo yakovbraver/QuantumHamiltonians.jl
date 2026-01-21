@@ -175,13 +175,23 @@ Calculate `nev` lowest levels using `ArnoldiMethod`.
 Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 Note that `xh.H` is modified in the process.
 """
-function diagonalize!(xh::SparseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {R<:AbstractFloat,T<:Number,S<:Number,D1,D2}
+function diagonalize!(xh::XSpaceHamiltonian{Storage}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {Storage}
     if xh.basis != :cis
         @warn "Hamiltonian must be periodic. Construct a new one using the cis basis and try again."
         return
     end
-    (;M, xlims, L, fft_threshold, δ, nc, H, H_blocks, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
+    (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
     D = length(xlims)
+    R = eltype(xh.L)
+    T = eltype(xh.V)
+    S = eltype(xh.ε)
+    if Storage == :dense
+        makesparse = false
+        threshold = zero(R) # the value does not matter since it is not be used when `makesparse=false`
+    else
+        makesparse = true
+        threshold = xh.fft_threshold
+    end
 
     B = (2M + 1)^D # block size
     nsaves = nev == 0 ? B : nev # number of eigenvalues and eigenvectors to allocate
@@ -191,22 +201,31 @@ function diagonalize!(xh::SparseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:A
     if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
         H_diag = diagview(xh.H)
         # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
-        U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
+        U_diags = T[H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
     else # the general case with 𝐴
+        if Storage == :dense
+            # two buffers that are need in the q-loop in th dense case for matrix multiplication
+            buff1 = Matrix{T}(undef, B, B)
+            buff2 = Matrix{T}(undef, B, B)
+        else
+            buff1 = nothing
+            buff2 = nothing
+        end
+
         ft = FourierTransformer(xlims, M; basis=:cis)
 
         K = Union{typeof(H), Diagonal{T, Vector{T}}, Nothing}[nothing for _ in CartesianIndices(𝐴)] # Matrix of dimensions like 𝐴 for storing corresponding kinetic operators -iδ∂ᵢ - 𝐴ᵢ
         U = Union{typeof(H), Nothing}[nothing for _ in axes(𝑈, 1)] # for storing terms 𝑈ᵢᵢ
 
         𝑈_diag_allequal = allequal(diagview(𝑈))
-        𝐴ᵢ_allequal = [allequal(𝐴ᵢ) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; they may all be nothing
+        𝐴ᵢ_allequal = Bool[allequal(𝐴ᵢ) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; they may all be nothing
 
         # fill the buffers `U`
         for c in 1:nc
             if !isnothing(𝑈[c, c])
                 transform!(ft, 𝑈[c, c])
-                U[c] = fft_to_matrix(ft, makesparse=true, threshold=fft_threshold)
-                @debug "Filled U[$c]"
+                U[c] = fft_to_matrix(ft; makesparse, threshold)
+                # @debug "Filled U[$c]"
             end
             # If all 𝑈 are equal, then we will be using only U[1], no need to fill other elements
             𝑈_diag_allequal && break
@@ -218,12 +237,12 @@ function diagonalize!(xh::SparseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:A
             for c in 1:nc
                 if isnothing(𝐴[c, i]) # then add 𝑝ᵢ
                     K[c, i] = pᵢ
-                    @debug "Wrote p_$i to K[$c, $i]"
+                    # @debug "Wrote p_$i to K[$c, $i]"
                 else
                     transform!(ft, 𝐴[c, i])
-                    K[c, i] = fft_to_matrix(ft, makesparse=true, threshold=fft_threshold)
+                    K[c, i] = fft_to_matrix(ft; makesparse, threshold)
                     K[c, i] .= pᵢ .- K[c, i]
-                    @debug "Wrote p_$i - 𝐴[$c, $i] to K[$c, $i]"
+                    # @debug "Wrote p_$i - 𝐴[$c, $i] to K[$c, $i]"
                 end
                 # If projection 𝐴ᵢ is the same for all components, then we will be using K[1, i] for all components, no need to fill other rows in the i'th column
                 𝐴ᵢ_allequal[i] && break
@@ -238,7 +257,7 @@ function diagonalize!(xh::SparseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:A
             QS[i] = qs[i][IQ[i]]
         end
 
-        @debug "🚜 QS = $QS 🚜"
+        # @debug "🚜 QS = $QS 🚜"
 
         # update diagonal blocks
         if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
@@ -247,35 +266,41 @@ function diagonalize!(xh::SparseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:A
                 H_diag[(c-1)B+1:c*B] .= p² .+ U_diags[c]
             end
         else # the general case with 𝐴
-            for c in 1:nc
-                for i in 1:D
-                    which_K = 𝐴ᵢ_allequal[i] ? 1 : c
-                    buff = K[which_K, i] + LA.I*QS[i]
-                    buff = buff^2
-                    if i == 1
-                        H_blocks[c, c] = buff # set reference
-                        @debug "Copied (K[$which_K, $i] + QS[$i])^2 into H[$c, $c]"
-                    else
-                        H_blocks[c, c] += buff
-                        @debug "Added (K[$which_K, $i] + QS[$i])^2 to H[$c, $c]"
-                    end
-                end
-
-                if 𝑈_diag_allequal
-                    H_blocks[c, c] += U[1]
-                    @debug "Added U[1] to H[$c, $c]"
-                elseif !isnothing(U[c])
-                    H_blocks[c, c] += U[c]
-                    @debug "Added U[$c] to H[$c, $c]"
-                end
-                if Γ[c] != 0
-                    H_blocks[c, c] -= LA.I * im*Γ[c]/2
-                    @debug "Added -im*Γ[$c]/2 to H[$c, $c]"
-                end
-            end
-            xh.H = nc == 1 ? H_blocks[1] : hvcat(nc, transpose(H_blocks)...) # construct the final Hamiltonian; in the 1-component case just reference the only existing block
+            update_diag!(xh, U, K, QS, 𝑈_diag_allequal, 𝐴ᵢ_allequal, D, buff1, buff2)
         end
 
         xh.ε_q[:, IQ...], xh.V_q[:, :, IQ...] = diagonalize(xh; nev, verbose)
     end
+end
+
+"Helper function for q-diagonalisation that updates the diagonal blocks of `xh.H`."
+function update_diag!(xh::SparseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴ᵢ_allequal, D, buff1, buff2)
+    (;nc, H_blocks, Γ) = xh
+    for c in 1:nc
+        for i in 1:D
+            which_K = 𝐴ᵢ_allequal[i] ? 1 : c
+            buff = K[which_K, i] + LA.I*QS[i]
+            buff = buff^2
+            if i == 1
+                H_blocks[c, c] = buff # set reference
+                # @debug "Copied (K[$which_K, $i] + QS[$i])^2 into H[$c, $c]"
+            else
+                H_blocks[c, c] += buff
+                # @debug "Added (K[$which_K, $i] + QS[$i])^2 to H[$c, $c]"
+            end
+        end
+
+        if 𝑈_diag_allequal
+            H_blocks[c, c] += U[1]
+            # @debug "Added U[1] to H[$c, $c]"
+        elseif !isnothing(U[c])
+            H_blocks[c, c] += U[c]
+            # @debug "Added U[$c] to H[$c, $c]"
+        end
+        if Γ[c] != 0
+            H_blocks[c, c] -= LA.I * im*Γ[c]/2
+            # @debug "Added -im*Γ[$c]/2 to H[$c, $c]"
+        end
+    end
+    xh.H = nc == 1 ? H_blocks[1] : hvcat(nc, transpose(H_blocks)...) # construct the final Hamiltonian; in the 1-component case just reference the only existing block
 end

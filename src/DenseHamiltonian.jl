@@ -187,118 +187,36 @@ end
 #     return H
 # end
 
-"""
-Calculate eigenenergies for all quasimomenta in `qs = [qxs, qys, ...]` where `qxs` are 𝑞's along 𝑥, etc.
-Calculate `nev` lowest levels using `ArnoldiMethod`.
-Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
-Note that `dh.H` is modified in the process.
-"""
-function diagonalize!(dh::DenseHamiltonian{R,T,S,D1,D2}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {R<:AbstractFloat,T<:Number,S<:Number,D1,D2}
-    if dh.basis != :cis
-        @warn "Hamiltonian must be periodic. Construct a new one using the cis basis and try again."
-        return
-    end
-    (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = dh
-    D = length(xlims)
-
-    B = (2M + 1)^D # block size
-    nsaves = nev == 0 ? B : nev # number of eigenvalues and eigenvectors to allocate
-    dh.ε_q = Array{S}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # ε_q[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
-    dh.V_q = Array{T}(undef, B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # V_q[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
-    
-    if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
-        H_diag = diagview(dh.H)
-        # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
-        U_diags = [H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
-    else # the general case with 𝐴
-        # two buffers that we will need in the q-loop for matrix multiplication
-        buff1 = Matrix{T}(undef, B, B)
-        buff2 = Matrix{T}(undef, B, B)
-
-        ft = FourierTransformer(xlims, M; basis=:cis)
-
-        K = Union{Matrix{T}, Diagonal{T, Vector{T}}, Nothing}[nothing for _ in CartesianIndices(𝐴)] # Matrix of dimensions like 𝐴 for storing corresponding kinetic operators -iδ∂ᵢ - 𝐴ᵢ
-        U = Union{Matrix{T}, Nothing}[nothing for _ in axes(𝑈, 1)] # for storing terms 𝑈ᵢᵢ
-
-        𝑈_diag_allequal = allequal(diagview(𝑈))
-        𝐴ᵢ_allequal = [allequal(𝐴ᵢ) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; they may all be nothing
-
-        # fill the buffers `U`
-        for c in 1:nc
-            if !isnothing(𝑈[c, c])
-                transform!(ft, 𝑈[c, c])
-                U[c] = fft_to_matrix(ft)
-                @debug "Filled U[$c]"
-            end
-            # If all 𝑈 are equal, then we will be using only U[1], no need to fill other elements
-            𝑈_diag_allequal && break
-        end
-
-        # fill the buffers `K`
-        for i in 1:D # iterate over projections of 𝐴
-            pᵢ = make_p_i(L, M, δ, :cis, i)
-            for c in 1:nc
-                if isnothing(𝐴[c, i]) # then add 𝑝ᵢ
-                    K[c, i] = pᵢ
-                    @debug "Wrote p_$i to K[$c, $i]"
-                else
-                    transform!(ft, 𝐴[c, i])
-                    K[c, i] = fft_to_matrix(ft)
-                    K[c, i] .= pᵢ .- K[c, i]
-                    @debug "Wrote p_$i - 𝐴[$c, $i] to K[$c, $i]"
-                end
-                # If projection 𝐴ᵢ is the same for all components, then we will be using K[1, i] for all components, no need to fill other rows in the i'th column
-                𝐴ᵢ_allequal[i] && break
-            end
-        end
-    end
-
-    # update diagonal blocks and diagonalise
-    QS = Vector{R}(undef, length(qs)) # at each iteration will contain the values of quasimomenta, e.g. in 2D it will contain [qx, qy], where we defined qx ≡ qs[1], qy ≡ qs[2]
-    for IQ in Iterators.product(eachindex.(qs)...) # example in 2D: IQ = (iqx, iqy), where iqx is an index of qx and iqy is an index of qy
-        for i in eachindex(QS)
-            QS[i] = qs[i][IQ[i]]
-        end
-
-        @debug "🚜 QS = $QS 🚜"
-
-        # update diagonal blocks
-        if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
-            p² = make_p²(L, M, δ, :cis, QS) |> parent # `parent` returns the diagonal as a vector TODO make in-place
-            for c in 1:nc
-                H_diag[(c-1)B+1:c*B] .= p² .+ U_diags[c]
-            end
-        else # the general case with 𝐴
-            for c in 1:nc
-                H_block = @view H[(c-1)*B+1:c*B, (c-1)*B+1:c*B]
-                for i in 1:D
-                    which_K = 𝐴ᵢ_allequal[i] ? 1 : c
-                    copy!(buff1, K[which_K, i])
-                    buff1 += LA.I*QS[i]
-                    mul!(buff2, buff1, buff1)
-                    if i == 1
-                        copyto!(H, CartesianIndices(((c-1)*B+1:c*B, (c-1)*B+1:c*B)), buff2, CartesianIndices(buff2))
-                        @debug "Copied (K[$which_K, $i] + QS[$i])^2 into H[$c, $c]"
-                    else
-                        H_block .+= buff2
-                        @debug "Added (K[$which_K, $i] + QS[$i])^2 to H[$c, $c]"
-                    end
-                end
-
-                if 𝑈_diag_allequal
-                    H_block .+= U[1]
-                    @debug "Added U[1] to H[$c, $c]"
-                elseif !isnothing(U[c])
-                    H_block .+= U[c]
-                    @debug "Added U[$c] to H[$c, $c]"
-                end
-                if Γ[c] != 0
-                    H_block -= LA.I * im*Γ[c]/2
-                    @debug "Added -im*Γ[$c]/2 to H[$c, $c]"
-                end
+"Helper function for q-diagonalisation that updates the diagonal blocks of `xh.H`."
+function update_diag!(xh::DenseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴ᵢ_allequal, D, buff1, buff2)
+    (;nc, M, Γ, H) = xh
+    B = (2M + 1)^D
+    for c in 1:nc
+        H_block = @view H[(c-1)*B+1:c*B, (c-1)*B+1:c*B]
+        for i in 1:D
+            which_K = 𝐴ᵢ_allequal[i] ? 1 : c
+            copy!(buff1, K[which_K, i])
+            buff1 += LA.I*QS[i]
+            mul!(buff2, buff1, buff1)
+            if i == 1
+                copyto!(H, CartesianIndices(((c-1)*B+1:c*B, (c-1)*B+1:c*B)), buff2, CartesianIndices(buff2))
+                # @debug "Copied (K[$which_K, $i] + QS[$i])^2 into H[$c, $c]"
+            else
+                H_block .+= buff2
+                # @debug "Added (K[$which_K, $i] + QS[$i])^2 to H[$c, $c]"
             end
         end
 
-        dh.ε_q[:, IQ...], dh.V_q[:, :, IQ...] = diagonalize(dh; nev, verbose)
+        if 𝑈_diag_allequal
+            H_block .+= U[1]
+            # @debug "Added U[1] to H[$c, $c]"
+        elseif !isnothing(U[c])
+            H_block .+= U[c]
+            # @debug "Added U[$c] to H[$c, $c]"
+        end
+        if Γ[c] != 0
+            H_block -= LA.I * im*Γ[c]/2
+            # @debug "Added -im*Γ[$c]/2 to H[$c, $c]"
+        end
     end
 end
