@@ -68,6 +68,8 @@ function transform!(ft::FourierTransformer, 𝑓::Function)
     end
 end
 
+################ Dense ################
+
 """
 Use the result of the transform to construct a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 If `makesparse=true`, a sparse matrix is returned, with values below `threshold` in magnitude filtered out. By default, a dense matrix is returned.
@@ -91,25 +93,25 @@ function fft_to_matrix(ft::FourierTransformer{R,T}; makesparse::Bool=false, make
 
     if makesparse
         if basis == :cis
-            n_elem = filter_count_2D!(ft; threshold)
+            n_elem = filter_count!(ft; threshold)
             rows = Vector{Int64}(undef, n_elem)
             cols = Vector{Int64}(undef, n_elem)
             vals = Vector{A_type}(undef, n_elem)
-            fft_to_matrix_2D_sparse!(rows, cols, vals, ft)
+            fft_to_matrix_sparse!(rows, cols, vals, ft)
             A = sparse(rows, cols, vals)
         else
-            error("Sparse not available for basis = $basis. Only available for basis = :cis")
+            error("Sparse not available for basis = $basis. Only available for basis = :cis.")
         end
     else # dense
         A = Matrix{A_type}(undef, B, B)
-        fft_to_matrix!(A, ft)
+        fft_to_matrix!(A, ft) # we do not pass `makereal` because already performed this above
     end
     return A
 end
 
 """
-Use the result of the transform to fill `A` as a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
-`makereal=true` is useful in the cis case if you wish to drop the imaginary part of ft.buff.
+Use the result of the transform to fill `A` as a matrix indexed by (𝑗′ₓ𝑗′y⋯, 𝑗ₓ𝑗y⋯). 
+`makereal=true` is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
 function fft_to_matrix!(A::AbstractMatrix{<:Number}, ft::FourierTransformer; makereal=false)
     D = ndims(ft.buff)
@@ -118,11 +120,13 @@ function fft_to_matrix!(A::AbstractMatrix{<:Number}, ft::FourierTransformer; mak
         fft_to_matrix_1D!(A, ft)
     elseif D == 2
         fft_to_matrix_2D!(A, ft)
+    else
+        error("fft_to_matrix_$(D)D! not implemented.")
     end
 end
 
 """
-Construct from the result of 1D FFT `u` the matrix `U` indexed by (𝑗′ₓ, 𝑗ₓ).
+Use the result of the 1D transform to fill `A` as a matrix indexed by (𝑗′ₓ, 𝑗ₓ).
 """
 function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
     (;M, basis, buff, buff_im) = ft
@@ -152,7 +156,7 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
 end
 
 """
-Use the result of 2D transform to fill `A` as a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+Use the result of the 2D transform to fill `A` as a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 """
 function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
     (;M, basis, buff, buff_im) = ft
@@ -193,6 +197,94 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
     end
 end
 
+################ Sparse ################
+
+function filter_count!(ft::FourierTransformer; threshold::Real=0)
+    D = ndims(ft.buff)
+    if D == 1
+        n_elem = filter_count_1D!(ft; threshold)
+    elseif D == 2
+        n_elem = filter_count_2D!(ft; threshold)
+    else
+        error("filter_count_$(D)D! not implemented.")
+    end
+    return n_elem
+end
+
+function fft_to_matrix_sparse!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformer)
+    D = ndims(ft.buff)
+    if D == 1
+        fft_to_matrix_sparse_1D!(rows, cols, vals, ft)
+    elseif D == 2
+        fft_to_matrix_sparse_2D!(rows, cols, vals, ft)
+    else
+        error("fft_to_matrix_sparse_$(D)D! not implemented.")
+    end
+end
+
+######## 1D ########
+
+"""
+Set to zero values of `ft.buff` that are smaller by magnitude than `threshold`.
+Based on the resulting number of nonzero elements in `ft.buff`, count and return the number of values that will be stored in the matrix indexed by (𝑗′ₓ, 𝑗ₓ).
+"""
+function filter_count_1D!(ft::FourierTransformer; threshold::Real=0)
+    (;M, buff) = ft
+    n_elem = 0
+    B = 2M + 1 # Hamiltonian size
+
+    # roughly, c controls the diagonal on which buff[c] will be placed
+    for c in eachindex(buff)
+        if abs(buff[c]) ≤ threshold
+            buff[c] = 0
+        else
+            # the diagonal into which buff[c] will be placed: 0 is main diagonal, 1 is the first lower or upper diagonal, etc.
+            d = c ≤ B ? c - 1 : B - (c-B)
+
+            n_elem += B - d # the number of elements on the `d`th diagonal is `B - d`
+        end
+    end
+    return n_elem
+end
+
+"""
+Use the result of the transform to construct a sparse matrix indexed by (𝑗′ₓ, 𝑗ₓ).
+The type of `vals` might differ from the type of `ft.buff` since one may want to drop the imaginary part.
+"""
+function fft_to_matrix_sparse_1D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformer)
+    B = 2ft.M + 1 # the size of Hamiltonian
+    counter = 1
+    for (c_u, val) in enumerate(ft.buff)
+        val == 0 && continue
+        # fill the lower triangle
+        if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal (`c_u=1` means main diagonal)
+            for (r, c) in zip(c_u:B, 1:B+1-c_u)
+                counter = push_vals!(rows, cols, vals, counter, r, c, val)
+            end
+        # fill the upper triangle
+        else # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal
+            c_u_inv = 2B-c_u+1 
+            for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
+                counter = push_vals!(rows, cols, vals, counter, r, c, val)
+            end
+        end
+    end
+end
+
+"""
+Push value `val` to element (`r`, `c`) of a sparse matrix encoded in `rows`, `cols`, `vals`.
+`counter` shows where to push and the updated value is returned.
+"""
+function push_vals!(rows, cols, vals, counter, r, c, val)
+    rows[counter] = r
+    cols[counter] = c
+    vals[counter] = val
+    counter += 1
+    return counter
+end
+
+######## 2D ########
+
 """
 Set to zero values of `ft.buff` that are smaller by magnitude than `threshold`.
 Based on the resulting number of nonzero elements in `ft.buff`, count and return the number of values that will be stored in the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
@@ -222,7 +314,7 @@ end
 Use the result of the transform to construct a sparse matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 The type of `vals` might differ from the type of `ft.buff` since one may want to drop the imaginary part.
 """
-function fft_to_matrix_2D_sparse!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformer)
+function fft_to_matrix_sparse_2D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformer)
     B = 2ft.M + 1 # the size of each block
     u = ft.buff
 
@@ -243,13 +335,13 @@ function fft_to_matrix_2D_sparse!(rows::AbstractVector{<:Integer}, cols::Abstrac
             # fill the lower triangle of the block, including the main diagonal
             if c_u ≤ B # for `c_u` ≤ `B`, the value from `c_u`th column of `u` will be put to the `c_u`th lower diagonal of the block (`c_u=1` means main diagonal)
                 for (r, c) in zip(c_u:B, 1:B+1-c_u)
-                    counter = push_vals!(rows, cols, vals, counter; r_b, c_b, r, c, blocksize=B, val)
+                    counter = push_vals!(rows, cols, vals, counter, r_b, c_b, r, c, B, val)
                 end
             # fill the upper triangle of the block
             else # for `c_u` > `B`, the value from `c_u`th column of `u` will be put to the `2B-c_u`th upper diagonal of the block
                 c_u_inv = 2B-c_u+1 
                 for (r, c) in zip(1:B+1-c_u_inv, c_u_inv:B)
-                    counter = push_vals!(rows, cols, vals, counter; r_b, c_b, r, c, blocksize=B, val)
+                    counter = push_vals!(rows, cols, vals, counter, r_b, c_b, r, c, B, val)
                 end
             end
         end
@@ -257,23 +349,16 @@ function fft_to_matrix_2D_sparse!(rows::AbstractVector{<:Integer}, cols::Abstrac
 end
 
 """
-Push value `val` to element (`r`, `c`) of the block (`r_b`, `c_b`) of a sparse matrix encoded in `rows`, `cols`, `vals`; block size being `blocksize`.
+Push value `val` to element (`r`, `c`) of the block (`r_b`, `c_b`) of a sparse matrix encoded in `rows`, `cols`, `vals`; block size being `B`.
 `counter` shows where to push and the updated value is returned.
-If `conjugate=true`, then the complex-conjugate element is also pushed.
 """
-function push_vals!(rows, cols, vals, counter; r_b, c_b, r, c, blocksize, val, conjugate=false)
-    i = (r_b-1)*blocksize + r
-    j = (c_b-1)*blocksize + c
+function push_vals!(rows, cols, vals, counter, r_b, c_b, r, c, B, val)
+    i = (r_b-1)*B + r
+    j = (c_b-1)*B + c
     rows[counter] = i
     cols[counter] = j
     vals[counter] = val
     counter += 1
-    if conjugate
-        rows[counter+1] = j
-        cols[counter+1] = i
-        vals[counter+1] = val'
-        counter += 1
-    end
     return counter
 end
 
