@@ -1,4 +1,5 @@
 using XSpaceHamiltonians
+using LinearAlgebra: dot
 
 using Plots
 plotlyjs()
@@ -19,7 +20,7 @@ xlimits = (-π, π) .|> Float
 xs = range(xlimits..., N)
 plot(xs, 𝑈)
 
-# diagonalise
+# diagonalise to get exact eigenstates
 @time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M);
 @time diagonalize!(xh, nev=5);
 
@@ -31,24 +32,18 @@ plot(xs, real(ψ[:, 1, 1]))
 plot(xs, imag(ψ[:, 1, 1]))
 plot(xs, abs2.(ψ[:, 1, 1]))
 
-### 
+### Use imaginary time to get eigenstates
 
-𝜓₀(x) = cos(x)
-T_max = 1
-dt = 1e-2
-@time sol = XSpaceHamiltonians.evolve_imag(xh, 𝜓₀; 𝜓₀_iseven=true, T_max, dt, solver=XSpaceHamiltonians.DE.MagnusGauss4())
-v = sol.u[end]
-dot(v, xh.H, v)
-
-𝜓₀(x) = 0.1
-T_max = 100
+# will converge to the first 3 lowest states respectively:
+guesses = [Returns(0.1), sin, cos]
+guesses_iseven = [true, false, true]
+# we use DE.LinearExponential, which is an exact solver, so we only need to calculate the wf at some large time moment (i.e. make one large step)
+T_max = 1 # this is not really large compared to eigenenergy, but is in fact enough to "converge" to full precision
 dt = 1
-@time sol = XSpaceHamiltonians.evolve_imag(xh, 𝜓₀; 𝜓₀_iseven=true, T_max, dt);
-
+g = 1 # guess number
+@time sol = XSpaceHamiltonians.evolve_imag(xh, guesses[g]; 𝜓₀_iseven=guesses_iseven[g], T_max, dt)
 v = sol.u[end]
-dot(v, xh.H, v)
+dot(v, xh.H, v) # energy
 
 xs, ψ = make_wavefunction(xh, v; nx=101)
 plot(xs, real(ψ[:, 1]))
-plot!(xs, imag(ψ[:, 1]))
-plot(xs, abs2.(ψ[:, 1]))

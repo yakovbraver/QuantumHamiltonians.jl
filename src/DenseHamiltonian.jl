@@ -221,25 +221,44 @@ function update_diag!(xh::DenseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴�
     return
 end
 
+"Convenience caller for the 1-component case, where `𝜓₀` is a function and `𝜓₀_iseven` is a Bool."
+function evolve_imag(xh::XSpaceHamiltonian, 𝜓₀::Function; 𝜓₀_iseven::Bool=false, T_max::Real, dt::Real, solver=DE.LinearExponential())
+    evolve_imag(xh, [𝜓₀]; 𝜓₀_iseven=[𝜓₀_iseven], T_max, dt, solver)
+end
+
 """
 Calculate the Schrödinger evolution for the initial wave function `𝜓₀` in imaginary time.
-`𝜓₀_iseven` matters only if `xh.basis=:cis` and shows whether `ψ₀` is an even function (i.e. whether ψ₀(x) = 𝑢(-x)). If it is, then Fourier transform is real; if `xh.H` is also real, propagation can be done for a real type.
-Return the DifferentialEquations solution object.
+`𝜓₀_iseven[c]` matters only if `xh.basis=:cis` and shows whether `𝜓₀[c]` is an even function (i.e. whether 𝜓(x) = 𝜓(-x)). If it is, then Fourier transform is real; if `xh.H` is also real, propagation can be done for a real type.
+`solver` is a solver from DifferentialEquations.jl. Recommended are `LinearExponential` (default) or state-independent ones from
+https://docs.sciml.ai/DiffEqDocs/stable/solvers/nonautonomous_linear_ode/.
+Return the DifferentialEquations solution object. 
 """
-function evolve_imag(xh::XSpaceHamiltonian, 𝜓₀::Function; 𝜓₀_iseven::Bool=false, T_max::Real, dt::Real, solver=DE.LinearExponential())
-    (;xlims, M, basis) = xh
+function evolve_imag(xh::XSpaceHamiltonian, 𝜓₀::AbstractVector{<:Function}; 𝜓₀_iseven::AbstractVector{Bool}=falses(length(𝜓₀)), T_max::Real, dt::Real, solver=DE.LinearExponential())
+    (;xlims, M, basis, nc) = xh
+    D = length(xlims)
+    B = basis == :cis ? (2M+1)^D : M^D # size of each Hamiltonian block
+    R = typeof(xh.δ)
 
     # prepare p-space wave function
-    𝜓₀_isreal = 𝜓₀([xlims[i][1] for i in eachindex(xlims)]...) isa Real
-    ft = FourierTransformer(xlims, M; basis, target_real=𝜓₀_isreal, target_rank=1) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if 𝜓₀ is complex
-    transform!(ft, 𝜓₀)
-    ψ₀ = fft_to_vector(ft; makereal=(𝜓₀_iseven && 𝜓₀_isreal))
-    normalize!(ψ₀)
+    𝜓₀_isreal = [ 𝜓([xlims[i][1] for i in eachindex(xlims)]...) isa Real for 𝜓 in 𝜓₀ ] # checking the passed function
+    ψ₀_isreal = all(𝜓₀_isreal) # will shows if `ψ₀` should be constructed real
+    if basis == :cis # also check if functions are even 
+        ψ₀_isreal &= all(𝜓₀_iseven)
+    end
+    ψ₀ = Vector{ψ₀_isreal ? R : Complex{R}}(undef, nc*B)
+
+    # transform each component's wf and put into ψ₀
+    ft = FourierTransformer(xlims, M; basis, target_real=ψ₀_isreal, target_rank=1) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if 𝜓₀ is complex
+    for c in 1:nc
+        transform!(ft, 𝜓₀[c])
+        ψ₀_block = @view ψ₀[(c-1)*B+1:c*B]
+        fft_to_vector!(ψ₀_block, ft; makereal=(𝜓₀_iseven[c] && 𝜓₀_isreal[c]))
+        normalize!(ψ₀_block)
+    end
 
     # initialise the problem
-    R = typeof(xh.δ)
     tspan = (zero(R), R(T_max))
-    H = eltype(xh.H) <: Real && isa(ψ₀, Complex) ? -complex(xh.H) : -xh.H # cast to complex if `xh.H` is real but `ψ₀` is complex
+    H = eltype(xh.H) <: Real && !ψ₀_isreal ? -complex(xh.H) : -xh.H # cast to complex if `xh.H` is real but `ψ₀` is complex
     A = SciMLOperators.MatrixOperator(H) 
     prob = DE.ODEProblem(A, ψ₀, tspan)
     
