@@ -1,5 +1,5 @@
 mutable struct FourierTransformer{R,T,Plan,D} # T is the type of buffer, real for sin and cos, complex for cis
-    xs::Matrix{R} # coordinates matrix: 1st columns contains 𝑥's, second contains 𝑦's, etc.
+    xs::Matrix{R} # coordinates matrix: 1st column contains 𝑥's, second contains 𝑦's, etc.
     M::Int # maximum harmonic number (will use -M:M for cis basis, 1:M for sin/cos)
     basis::Symbol
     buff::Array{T,D} # buffer for the result of the transform
@@ -8,11 +8,15 @@ mutable struct FourierTransformer{R,T,Plan,D} # T is the type of buffer, real fo
     plan::Plan
 end
 
-"`target_real` is only used in the sin and cos case: set to false if you plan to calculate DST or DCT for complex functions."
-function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_real::Bool=true) where R <: AbstractFloat
+"""
+`target_real` is only used in the sin and cos case: set to false if you plan to calculate DST or DCT for complex functions.
+Set `target_rank=1` if you are making the transform for building a Fourier-space vector (using `fft_to_vector`),
+set `target_rank=2` if you are making the transform for building a Fourier-space matrix (using `fft_to_matrix`). The latter needs twice the number of harmonics.
+"""
+function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_real::Bool=true, target_rank::Integer=2) where R <: AbstractFloat
     D = length(xlims)
     if basis == :cis
-        N = 4M + 1 # number of points for FFT. This will yield harmonics from -2M to 2M
+        N = target_rank*2M + 1 # number of points for FFT. This will yield harmonics from `-target_rank*2M` to `target_rank*2M`
         xs = Matrix{R}(undef, N, D)
         for i in 1:D
             Lᵢ = xlims[i][2] - xlims[i][1]
@@ -23,7 +27,7 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
         buff_im = similar(buff, ntuple(Returns(0), D)) # this buffer is not needed in the cis case; make it 0x0 (in `D` dimesions)
         plan = FFTW.plan_fft!(buff) # the savings of rfft are negligible, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
     else
-        N = 2M + 1
+        N = target_rank*M + 1
         xs = Matrix{R}(undef, N, D)
         for d in 1:D
             xs[:, d] .= range(xlims[d][1], xlims[d][2], N)
@@ -66,9 +70,72 @@ function transform!(ft::FourierTransformer, 𝑓::Function)
         plan * buff_im
         ft.did_complex_redft = true # will be used in fft_to_matrix_*D! to inclue `buff_im` when constructing the matrix
     end
+    return
 end
 
 ################ Dense ################
+
+"""
+Use the result of the transform to construct a vector indexed by (𝑗ₓ𝑗y⋯).
+If `makesparse=true`, a sparse vector is returned, with values below `threshold` in magnitude filtered out. By default, a dense vector is returned.
+If `makereal=true`, a real vector (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of ft.buff.
+"""
+function fft_to_vector(ft::FourierTransformer{R,T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R))) where {R <: AbstractFloat, T <: Number}
+    (;M, buff, buff_im, basis) = ft
+    D = ndims(buff)
+    if basis == :cis
+        B = (2M+1)^D
+        if makereal
+            v_type = R
+            buff .= real.(buff)
+        else
+            v_type = T
+        end
+    else
+        B = M^D
+        v_type = ft.did_complex_redft ? Complex{T} : T
+    end
+
+    if makesparse
+        # if basis == :cis
+        #     n_elem = filter_count!(ft; threshold)
+        #     rows = Vector{Int64}(undef, n_elem)
+        #     cols = Vector{Int64}(undef, n_elem)
+        #     vals = Vector{v_type}(undef, n_elem)
+        #     fft_to_matrix_sparse!(rows, cols, vals, ft)
+        #     v = sparse(rows, cols, vals)
+        # else
+        #     error("Sparse not available for basis = $basis. Only available for basis = :cis.")
+        # end
+    else # dense
+        v = Vector{v_type}(undef, B)
+        fft_to_vector!(v, ft) # we do not pass `makereal` because already performed this above
+    end
+    return v
+end
+
+"""
+Use the result of the transform to fill `v` as a vector indexed by (𝑗ₓ𝑗y⋯). 
+`makereal=true` is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
+"""
+function fft_to_vector!(v::AbstractVector{<:Number}, ft::FourierTransformer; makereal=false)
+    (;buff, buff_im, basis) = ft
+    D = ndims(buff)
+    makereal && (buff .= real.(buff))
+    if D == 1
+        if basis == :cis
+            FFTW.fftshift!(v, buff) # we also do fftshift in `fft_to_matrix`, and hence go over the harmonics in the order -M:M when constructing x-space wf's.
+        else # sin/cos
+            copy!(v, buff)
+            if ft.did_complex_redft
+                v .+= im.*buff_im
+            end
+        end
+    else
+        error("fft_to_vector not implemented in $(D)D.")
+    end
+    return
+end
 
 """
 Use the result of the transform to construct a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
