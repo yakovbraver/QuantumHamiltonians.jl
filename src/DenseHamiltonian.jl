@@ -218,4 +218,36 @@ function update_diag!(xh::DenseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴�
             # @debug "Added -im*Γ[$c]/2 to H[$c, $c]"
         end
     end
+    return
+end
+
+"""
+Calculate the Schrödinger evolution for the initial wave function `𝜓₀` in imaginary time.
+`𝜓₀_iseven` matters only if `xh.basis=:cis` and shows whether `ψ₀` is an even function (i.e. whether ψ₀(x) = 𝑢(-x)). If it is, then Fourier transform is real; if `xh.H` is also real, propagation can be done for a real type.
+Return the DifferentialEquations solution object.
+"""
+function evolve_imag(xh::XSpaceHamiltonian, 𝜓₀::Function; 𝜓₀_iseven::Bool=false, T_max::Real, dt::Real, solver=DE.LinearExponential())
+    (;xlims, M, basis) = xh
+
+    # prepare p-space wave function
+    𝜓₀_isreal = 𝜓₀([xlims[i][1] for i in eachindex(xlims)]...) isa Real
+    ft = FourierTransformer(xlims, M; basis, target_real=𝜓₀_isreal, target_rank=1) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if 𝜓₀ is complex
+    transform!(ft, 𝜓₀)
+    ψ₀ = fft_to_vector(ft; makereal=(𝜓₀_iseven && 𝜓₀_isreal))
+    normalize!(ψ₀)
+
+    # initialise the problem
+    R = typeof(xh.δ)
+    tspan = (zero(R), R(T_max))
+    H = eltype(xh.H) <: Real && isa(ψ₀, Complex) ? -complex(xh.H) : -xh.H # cast to complex if `xh.H` is real but `ψ₀` is complex
+    A = SciMLOperators.MatrixOperator(H) 
+    prob = DE.ODEProblem(A, ψ₀, tspan)
+    
+    # prepare the callback that remormalises wave function at every step
+    condition = Returns(true) # condition is checked at the end of each time step; we want this at every step
+    affect!(integrator) = normalize!(integrator.u)
+    cb = DE.DiscreteCallback(condition, affect!) 
+
+    # return DE.solve(prob, DE.MagnusGauss4(); callback=cb, save_everystep=false, save_start=false, dt=R(dt))
+    return DE.solve(prob, solver; callback=cb, save_everystep=false, save_start=false, dt=R(dt))
 end

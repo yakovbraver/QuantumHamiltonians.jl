@@ -100,6 +100,32 @@ function make_eigenfunctions(xh::XSpaceHamiltonian; statenos::AbstractVector{<:I
 end
 
 """
+Construct a 1D coordinate-space wave function using its Fourier-space representation `v`.
+Return (`xs`, `ψ`) where `ψ[x, components]`.
+"""
+function make_wavefunction(xh::XSpaceHamiltonian, v::AbstractVector; nx::Integer)
+    (;L, xlims, M, basis, nc) = xh
+    Lx = L[1]
+    xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
+    R = eltype(L) # real working type
+    ψ_type = basis != :cis && eltype(v) <: Real ? R : complex(R)  # `ψ` are real if elements of v are real and if the basis is real (sin/cos)
+    ψ = Matrix{ψ_type}(undef, nx, nc)
+    for c in 1:nc
+        if basis == :cis
+            B = 2M + 1
+            @floop for (ix, x) in enumerate(xs)
+                ψ[ix, c] = sum(v[(c-1)*B+j]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+            end
+        else # nonperiodic
+            @floop for (ix, x) in enumerate(xs)
+                ψ[ix, c] = sum(v[(c-1)*M+jx]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
+            end
+        end
+    end
+    return xs .+ xlims[1][1], ψ # return "normal" coordinates, in `x ∈ xlims`
+end
+
+"""
 Construct 2D coordinate-space wave function `ψ` of eigenstate `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
 Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
 """

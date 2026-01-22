@@ -20,11 +20,6 @@ xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M,
 @time diagonalize!(xh, nev=5);
 xh.ε
 
-using LinearAlgebra
-ma = copy(xh.H)
-ma[diagind(ma)] .= 0
-heatmap(ma, yaxis=:flip, c=:viridis)
-
 # For real Hamiltonian matrix (in momentum space), the eigenstates can be chosen real. But since we are using a complex cis basis, the coordinate-space functions are complex.
 # However, if potential is even, the eigenstates have definite parity. E.g. ground state is even, and so can be expressed in terms of cos, i.e. the real part of cis.
 # First excited state is odd, and so can be expressed in terms of sin, i.e. the imaginary part of cis.

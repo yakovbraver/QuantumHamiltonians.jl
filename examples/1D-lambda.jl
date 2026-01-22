@@ -11,7 +11,7 @@ function 𝑈(x::Real)
     (ϵ*cos(x) / (ϵ^2 + sin(x)^2))^2
 end
 
-Float = Float64 # operating type
+Float = Float32 # operating type
 
 ϵ::Float = 0.1
 
