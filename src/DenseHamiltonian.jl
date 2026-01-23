@@ -221,19 +221,22 @@ function update_diag!(xh::DenseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴�
     return
 end
 
-"Convenience caller for the 1-component case, where `𝜓₀` is a function and `𝜓₀_iseven` is a Bool."
-function evolve_imag(xh::XSpaceHamiltonian, 𝜓₀::Function; 𝜓₀_iseven::Bool=false, T_max::Real, dt::Real, solver=DE.LinearExponential())
-    evolve_imag(xh, [𝜓₀]; 𝜓₀_iseven=[𝜓₀_iseven], T_max, dt, solver)
+"Convenience caller for the 1-component case, where `𝜓₀` is a function, `g` is a number, and `𝜓₀_iseven` is a Bool."
+function propagate(xh::XSpaceHamiltonian, 𝜓₀::Function, g::Real=zero(typeof(xh.δ));
+                     𝜓₀_iseven::Bool=false, T_max::Real, dt::Real, itime::Bool=false, solver=(itime ? DE.LinearExponential() : DE.RKMK4()))
+    propagate(xh, [𝜓₀], [g;;]; 𝜓₀_iseven=[𝜓₀_iseven], T_max, dt, itime, solver)
 end
 
 """
-Calculate the Schrödinger evolution for the initial wave function `𝜓₀` in imaginary time.
-`𝜓₀_iseven[c]` matters only if `xh.basis=:cis` and shows whether `𝜓₀[c]` is an even function (i.e. whether 𝜓(x) = 𝜓(-x)). If it is, then Fourier transform is real; if `xh.H` is also real, propagation can be done for a real type.
-`solver` is a solver from DifferentialEquations.jl. Recommended are `LinearExponential` (default) or state-independent ones from
-https://docs.sciml.ai/DiffEqDocs/stable/solvers/nonautonomous_linear_ode/.
+Propagate the time-dependent Schrödinger or Gross-Pitaevskii (with nonlinearity matrix `g`) equation for the initial wave function `𝜓₀`. Set `itime=true` for imaginary time propagation.
+`𝜓₀_iseven[c]` matters only if `xh.basis=:cis` and shows whether `𝜓₀[c]` is an even function (i.e. whether 𝜓(x) = 𝜓(-x)).
+If it is, then Fourier transform is real; if `xh.H` is also real, the imaginary time propagation can be done for a real type.
+`solver` is a solver from DifferentialEquations.jl. For SE, use recommended are `LinearExponential` (default) or state-independent ones from https://docs.sciml.ai/DiffEqDocs/stable/solvers/nonautonomous_linear_ode/.
+For GPE, use state-dependent ones.
 Return the DifferentialEquations solution object. 
 """
-function evolve_imag(xh::XSpaceHamiltonian, 𝜓₀::AbstractVector{<:Function}; 𝜓₀_iseven::AbstractVector{Bool}=falses(length(𝜓₀)), T_max::Real, dt::Real, solver=DE.LinearExponential())
+function propagate(xh::XSpaceHamiltonian, 𝜓₀::AbstractVector{<:Function}, g::AbstractMatrix{<:Real}=zeros(typeof(xh.δ), xh.nc, xh.nc);
+                     𝜓₀_iseven::AbstractVector{Bool}=falses(length(𝜓₀)), T_max::Real, dt::Real, itime::Bool=false, solver=(itime ? DE.LinearExponential() : DE.RKMK4()))
     (;xlims, M, basis, nc) = xh
     D = length(xlims)
     B = basis == :cis ? (2M+1)^D : M^D # size of each Hamiltonian block
@@ -245,7 +248,7 @@ function evolve_imag(xh::XSpaceHamiltonian, 𝜓₀::AbstractVector{<:Function};
     if basis == :cis # also check if functions are even 
         ψ₀_isreal &= all(𝜓₀_iseven)
     end
-    ψ₀ = Vector{ψ₀_isreal ? R : Complex{R}}(undef, nc*B)
+    ψ₀ = Vector{ψ₀_isreal && itime ? R : Complex{R}}(undef, nc*B)
 
     # transform each component's wf and put into ψ₀
     ft = FourierTransformer(xlims, M; basis, target_real=ψ₀_isreal, target_rank=1) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if 𝜓₀ is complex
@@ -256,17 +259,70 @@ function evolve_imag(xh::XSpaceHamiltonian, 𝜓₀::AbstractVector{<:Function};
         normalize!(ψ₀_block)
     end
 
+    if itime # propagation in imaginary time: equation is real if `xh.H` and `ψ₀` are real
+        H = !ψ₀_isreal && eltype(xh.H) <: Real ? -complex(xh.H) : -xh.H # if `ψ₀` is complex then solver needs complex matrix. So cast `xh.H` to complex if it is real
+        G = g
+    else # propagation in real time: equation is always complex
+        H = -im * xh.H
+        G = -im * g
+    end
+
     # initialise the problem
     tspan = (zero(R), R(T_max))
-    H = eltype(xh.H) <: Real && !ψ₀_isreal ? -complex(xh.H) : -xh.H # cast to complex if `xh.H` is real but `ψ₀` is complex
-    A = SciMLOperators.MatrixOperator(H) 
-    prob = DE.ODEProblem(A, ψ₀, tspan)
-    
-    # prepare the callback that remormalises wave function at every step
-    condition = Returns(true) # condition is checked at the end of each time step; we want this at every step
-    affect!(integrator) = normalize!(integrator.u)
-    cb = DE.DiscreteCallback(condition, affect!) 
+    if iszero(g) # nonlinearity absent
+        A = SciMLOperators.MatrixOperator(H) 
+        prob = DE.ODEProblem(A, ψ₀, tspan)
+    else # nonlinearity present
+        # treat each case separately beacuse we don't want any loops in update functions
+        if nc == 1
+            params = (diag(H), G[1])
+            A = SciMLOperators.MatrixOperator(H, update_func! = update_A_1comp!)
+        elseif nc == 2
+            # first two ranges take two components from the solution vector; next two take the corresponding diagonal elements
+            params = (diag(H), G, 1:B, B+1:2B, diagind(H)[1:B], diagind(H)[B+1:2B])
+            A = SciMLOperators.MatrixOperator(H, update_func! = update_A_2comp!)
+        end
 
-    # return DE.solve(prob, DE.MagnusGauss4(); callback=cb, save_everystep=false, save_start=false, dt=R(dt))
-    return DE.solve(prob, solver; callback=cb, save_everystep=false, save_start=false, dt=R(dt))
+        prob = DE.ODEProblem(A, ψ₀, tspan, params)
+    end
+
+    if itime
+        # prepare the callback that remormalises wave function at every step
+        condition = Returns(true) # condition is checked at the end of each time step; we want this to be always true
+        affect!(integrator) = normalize!(integrator.u)
+        cb = DE.DiscreteCallback(condition, affect!) 
+        return DE.solve(prob, solver; callback=cb, save_everystep=false, save_start=false, dt=R(dt))
+    else
+        return DE.solve(prob, solver; save_everystep=false, save_start=false, dt=R(dt))
+    end
+end
+
+"Update the 𝐴 matrix of the nonlinear equation 𝑢′(𝑡) = 𝐴(𝑢)𝑢(𝑡) in the 1-component case."
+function update_A_1comp!(A, u, params, t)
+    d, g = params # original diagonal of the Hamiltonian and the coupling strength
+    A[diagind(A)] .= d .- g .* abs2.(u)
+    return
+end
+
+"Update the 𝐴 matrix of the nonlinear equation 𝑢′(𝑡) = 𝐴(𝑢)𝑢(𝑡) in the 2-component case."
+function update_A_2comp!(A, u, params, t)
+    d, g, w1, w2, dw1, dw2 = params
+    u₁ = @view u[w1]
+    u₂ = @view u[w2]
+    A[dw1] .= d[dw1] .- g[1, 1].*abs2.(u₁) .- g[1, 2].*abs2.(u₂)
+    A[dw2] .= d[dw2] .- g[1, 2].*abs2.(u₁) .- g[2, 2].*abs2.(u₂)
+    return
+end
+
+"Return mean energy and chemical potential for a p-space state `v`. (currently, 1-component only)"
+function get_ε_μ(xh, v, g=zeros(typeof(xh.δ), xh.nc, xh.nc))
+    # (; nc) = xh
+    ε = dot(v, xh.H, v)
+    μ = ε
+    if !iszero(g)
+        U = g[1] * sum((abs2.(v)).^2)
+        μ += U
+        ε += U / 2
+    end
+    return ε, μ
 end

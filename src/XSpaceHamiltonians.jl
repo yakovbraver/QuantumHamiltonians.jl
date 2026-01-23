@@ -12,7 +12,8 @@ using SparseArrays
 using FLoops: @floop
 
 export XSpaceHamiltonian, diagonalize!, make_eigenfunction, make_eigenfunctions, matrix_density, make_wavefunction,
-       compute_wanniers!, make_wannierfunctions, make_wanniers_real, compute_tunneling, compute_tb_hamiltonian
+       compute_wanniers!, make_wannierfunctions, make_wanniers_real, compute_tunneling, compute_tb_hamiltonian,
+       propagate, get_ε_μ
 
 include("XSpaceHamiltonian.jl")
 include("Wanniers.jl")
