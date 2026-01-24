@@ -222,31 +222,32 @@ function update_diag!(xh::DenseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴�
 end
 
 "Convenience caller for the 1-component case, where `𝜓₀` is a function, `g` is a number, and `𝜓₀_iseven` is a Bool."
-function propagate(xh::XSpaceHamiltonian, 𝜓₀::Union{Function,Vector}, g::Real=zero(typeof(xh.δ));
-                     𝜓₀_iseven::Bool=false, T_max::Real, dt::Real, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0)
+function propagate(xh::XSpaceHamiltonian{Storage,R}, 𝜓₀::Union{Function,AbstractVector}, g::R=zero(R);
+                   𝜓₀_iseven::Bool=false, T_max::R, dt::R, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0) where {Storage,R}
     propagate(xh, [𝜓₀], [g;;]; 𝜓₀_iseven=[𝜓₀_iseven], T_max, dt, itime, solver, nsaves)
 end
 
 """
-Propagate the time-dependent Schrödinger or Gross-Pitaevskii (with nonlinearity matrix `g`) equation for the initial wave function `𝜓₀`. Set `itime=true` for imaginary time propagation.
+Propagate the time-dependent Schrödinger or Gross-Pitaevskii (with nonlinearity matrix `g`) equation for the initial wave function `𝜓₀`.
+`𝜓₀` is either a vector of functions (for each component) or a vector of vectors representing discretised functions.
+ Set `itime=true` for imaginary time propagation.
 `𝜓₀_iseven[c]` matters only if `xh.basis=:cis` and shows whether `𝜓₀[c]` is an even function (i.e. whether 𝜓(x) = 𝜓(-x)).
 If it is, then Fourier transform is real; if `xh.H` is also real, the imaginary time propagation can be done for a real type.
 `solver` is a solver from DifferentialEquations.jl. For SE, recommended are `LinearExponential` (default) or state-independent ones from https://docs.sciml.ai/DiffEqDocs/stable/solvers/nonautonomous_linear_ode/.
 For GPE, the default is `Tsit5`.
 Return the DifferentialEquations solution object. 
 """
-function propagate(xh::XSpaceHamiltonian, 𝜓₀::Union{AbstractVector{<:Function},AbstractVector{<:AbstractVector}}, g::AbstractMatrix{<:Real}=zeros(typeof(xh.δ), xh.nc, xh.nc);
-                   𝜓₀_iseven::AbstractVector{Bool}=falses(length(𝜓₀)), T_max::Real, dt::Real, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0)
+function propagate(xh::XSpaceHamiltonian{Storage,R}, 𝜓₀::Union{AbstractVector{<:Function},AbstractVector{<:AbstractVector}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
+                   𝜓₀_iseven::AbstractVector{Bool}=falses(length(𝜓₀)), T_max::R, dt::R, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0) where {Storage,R}
     (;xlims, L, M, basis, nc) = xh
     D = length(xlims)
     B = basis == :cis ? (2M+1)^D : M^D # size of each Hamiltonian block
-    R = typeof(xh.δ)
 
     # prepare p-space wave function
-    if 𝜓₀ isa AbstractVector{<:Function}
-        𝜓₀_isreal = [ 𝜓([xlims[i][1] for i in eachindex(xlims)]...) isa Real for 𝜓 in 𝜓₀ ] # checking the passed function
-    else
-        𝜓₀_isreal = [eltype(𝜓) isa Real for 𝜓 in 𝜓₀] # checking the passed function
+    if 𝜓₀ isa AbstractVector{<:Function} # `𝜓₀` a vector of analytic functions
+        𝜓₀_isreal = [ 𝜓([xlims[i][1] for i in eachindex(xlims)]...) isa Real for 𝜓 in 𝜓₀ ]
+    else # `𝜓₀` is a vector of vectors of discretised functions
+        𝜓₀_isreal = [eltype(𝜓) isa Real for 𝜓 in 𝜓₀]
     end
     ψ₀_isreal = all(𝜓₀_isreal) # will show if `ψ₀` should be constructed real
     if basis == :cis # also check if functions are even 
@@ -272,7 +273,7 @@ function propagate(xh::XSpaceHamiltonian, 𝜓₀::Union{AbstractVector{<:Functi
     end
 
     # initialise the problem
-    tspan = (zero(R), R(T_max))
+    tspan = (zero(R), T_max)
     if iszero(g) # nonlinearity absent
         prob = DE.ODEProblem(SciMLOperators.MatrixOperator(H), ψ₀, tspan)
     else # nonlinearity present
@@ -298,9 +299,9 @@ function propagate(xh::XSpaceHamiltonian, 𝜓₀::Union{AbstractVector{<:Functi
         condition = Returns(true) # condition is checked at the end of each time step; we want this to be always true
         affect!(integrator) = normalize!(integrator.u)
         cb = DE.DiscreteCallback(condition, affect!) 
-        return DE.solve(prob, solver; callback=cb, save_everystep=false, save_start=false, dt=R(dt), saveat)
+        return DE.solve(prob, solver; callback=cb, save_everystep=false, save_start=false, dt, saveat)
     else
-        return DE.solve(prob, solver; save_everystep=false, save_start=true, dt=R(dt), saveat)
+        return DE.solve(prob, solver; save_everystep=false, save_start=true, dt, saveat)
     end
 end
 
@@ -310,11 +311,6 @@ function gpe!(du, u, params, t)
     mul!(du, H, u)
     for p in eachindex(u)
         du[p] += g * sum(u[k] * sum(u[k′] * u[k′+k-p]' for k′ in max(1, 1+p-k):min(B, B+p-k)) for k in eachindex(u))
-        # s = 0.0
-        # for k in eachindex(u), k′ in max(1, 1+p-k):min(B, B+p-k)
-        #     s += u[k] * u[k′] * conj(u[k+k′-p])
-        # end
-        # du[p] += g * s
     end
     return
 end

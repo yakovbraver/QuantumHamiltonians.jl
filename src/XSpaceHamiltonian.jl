@@ -1,5 +1,6 @@
 abstract type XSpaceHamiltonian{Storage, R<:AbstractFloat, T<:Union{R,Complex{R}}, S<:Union{R,Complex{R}}, D1, D2} end
 # `R` - base real type, `T` - Hamiltonian, eigenvectors elements, `S` - eigenvalues
+# The types are restricted *here*, therefore no need to specify restrictions in functions (except for constructors). E.g. and object with complex R cannot be constructed.
 
 matrix_density(xh::XSpaceHamiltonian) = error("Matrix density calculation is available for sparse Hamiltonians only.")
 

@@ -13,7 +13,7 @@ function 𝑈₁(x::Real)
     (ϵ / (ϵ^2 + x^2))^2
 end
 
-Float = Float64 # operating type
+Float = Float32 # operating type
 
 ϵ::Float = 0.1
 
@@ -41,8 +41,8 @@ plot(xs, abs2.(ψ[:, 1, 1]))
 guesses = [Returns(0.1), sin, cos]
 guesses_iseven = [true, false, true]
 # we use DE.LinearExponential, which is an exact solver (equivalent to diagonalisation) so a few large steps is enough to converge to full precision
-T_max = 2
-dt = 1
+T_max = 2 |> Float
+dt = 1 |> Float
 gs = 3 # guess number
 @time sol = propagate(xh, guesses[gs]; 𝜓₀_iseven=guesses_iseven[gs], T_max, dt, itime=true)
 v = sol.u[end]
@@ -62,7 +62,8 @@ R = 5
 xlimits = (-R, R) .|> Float
 
 # diagonalise to get exact eigenstates
-@time xh = XSpaceHamiltonian{:dense}([xlimits], nothing; basis=:cis, M, δ=√0.5)
+δ = √0.5 |> Float
+@time xh = XSpaceHamiltonian{:dense}([xlimits], nothing; basis=:cis, M, δ)
 @time diagonalize!(xh, nev=0);
 xh.ε
 
@@ -74,16 +75,16 @@ plot(xs, abs2.(ψ[:, 1, 1]))
 
 ### Use imaginary time to get eigenstates
 
-g = Float(500) # nonlinearity
+g = 500 |> Float # nonlinearity
 get_ε_μ(xh, xh.V[:, 1], [g;;])
 
-𝜓₀(x) = 0.5
-p = 1/√(2R) # value of wf in the bulk (= ground state solution for the free case)
-ξ = √(1/(p^2 * g)) # healing length
+𝜓₀(x) = one(Float)
+p = 1/√(2R) |> Float # value of wf in the bulk (= ground state solution for the free case)
+ξ = √(1/(p^2 * g)) |> Float # healing length
 𝜓₀(x) = p * tanh(x/ξ) # soliton trial
 
-T_max = 1e-1
-dt = 1e-4
+T_max = 1e-1 |> Float
+dt = 1e-4 |> Float
 @time sol = propagate(xh, 𝜓₀, g; 𝜓₀_iseven=false, T_max, dt, itime=true)
 v = sol.u[end]
 get_ε_μ(xh, v, [g;;])
@@ -105,10 +106,10 @@ a0 = √(ħ / (m*ω)) # [1/m] -- unit of length
 τ = 1/ω # [s] unit of time
 
 n_atoms = 1e4
-g = 2 * α * (aₛ/a0) * n_atoms # coefficient of nonlinearity
+g = 2 * α * (aₛ/a0) * n_atoms |> Float # coefficient of nonlinearity
 R = 11 # trap half-length, in units of a0
 
-δ = √0.5 # coefficient of the momentum term
+δ = √0.5 |> Float # coefficient of the momentum term
 
 𝑈(x::Real) = x^2 / 2
 
@@ -120,19 +121,19 @@ plot(xs, 𝑈)
 
 @time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, δ)
 
-𝜓₀(x) = 0.5 # constant trial
-p = 1/√(2R) # value of wf in the bulk (= ground state solution for the free case)
-ξ = √(1/(p^2 * g)) # healing length
+𝜓₀(x) = one(Float)
+p = 1/√(2R) |> Float # value of wf in the bulk (= ground state solution for the free case)
+ξ = √(1/(p^2 * g)) |> Float # healing length
 𝜓₀(x) = p * tanh(x/ξ) # soliton trial
 
-T_max = 1.0
-dt = 1e-2
+T_max = 1.0 |> Float 
+dt = 1e-2 |> Float
 @time sol = propagate(xh, 𝜓₀, g; 𝜓₀_iseven=false, T_max, dt, itime=true)
 v = sol.u[end]
 get_ε_μ(xh, v, [g;;])
 
 xs, ψ = make_wavefunction(xh, v; nx=N)
-plot(xs, real(ψ₀[:, 1]))
+plot(xs, real(ψ[:, 1]))
 
 # real time
 
