@@ -1,4 +1,5 @@
-abstract type XSpaceHamiltonian{S} end
+abstract type XSpaceHamiltonian{Storage, R<:AbstractFloat, T<:Union{R,Complex{R}}, S<:Union{R,Complex{R}}, D1, D2} end
+# `R` - base real type, `T` - Hamiltonian, eigenvectors elements, `S` - eigenvalues
 
 matrix_density(xh::XSpaceHamiltonian) = error("Matrix density calculation is available for sparse Hamiltonians only.")
 
@@ -63,12 +64,11 @@ Construct 1D coordinate-space eigenfunctions of state numbers `statenos` on a gr
 If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for the state `statenos[1]` at the these quasimomenta.
 Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqxs]`
 """
-function make_eigenfunctions(xh::XSpaceHamiltonian; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[])
+function make_eigenfunctions(xh::XSpaceHamiltonian{Storage,R}; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[]) where {Storage,R}
     (;L, xlims, M, basis, V, V_q, nc) = xh
     Lx = L[1]
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ns = isempty(iqxs) ? length(statenos) : length(iqxs)
-    R = eltype(L) # real working type
     ψ_type = basis != :cis && eltype(xh.H) <: Real ? R : complex(R)  # `ψ` are real if elements of H are real and if the basis is real (sin/cos)
     ψ = Array{ψ_type}(undef, nx, nc, ns)
     if isempty(iqxs) # no quasimomentum index
@@ -103,11 +103,10 @@ end
 Construct a 1D coordinate-space wave function using its Fourier-space representation `v`.
 Return (`xs`, `ψ`) where `ψ[x, components]`.
 """
-function make_wavefunction(xh::XSpaceHamiltonian, v::AbstractVector; nx::Integer)
+function make_wavefunction(xh::XSpaceHamiltonian{Storage,R}, v::AbstractVector; nx::Integer) where {Storage,R}
     (;L, xlims, M, basis, nc) = xh
     Lx = L[1]
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
-    R = eltype(L) # real working type
     ψ_type = basis != :cis && eltype(v) <: Real ? R : complex(R)  # `ψ` are real if elements of v are real and if the basis is real (sin/cos)
     ψ = Matrix{ψ_type}(undef, nx, nc)
     for c in 1:nc
@@ -129,12 +128,11 @@ end
 Construct 2D coordinate-space wave function `ψ` of eigenstate `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
 Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
 """
-function make_eigenfunction(xh::XSpaceHamiltonian, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0)
+function make_eigenfunction(xh::XSpaceHamiltonian{Storage,R}, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0) where {Storage,R}
     (;L, xlims, M, basis, V, V_q, nc) = xh
     Lx, Ly = L
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1][1]`, with `x ∈ xlims[1]`
     ys = range(0, Ly, ny) # these are the differences `y - xlims[2][1]`, with `y ∈ xlims[2]`
-    R = eltype(L) # real working type
     ψ_type = basis != :cis && eltype(xh.H) isa Real ? R : complex(R)
     ψ = [Matrix{ψ_type}(undef, nx, ny) for _ in 1:nc] # `ψ` are real if elements of H are real and the basis is real (sin/cos)
     for c in 1:nc
@@ -175,16 +173,13 @@ Note that `xh.H` is modified in the process. In the case when 𝐴 is absent, on
 When 𝐴 is present, the entire diagonal blocks of `xh.H` are modified, and they are not restored in the end. However, they are constructed from scratch when the function is called rather than using the contents of `xh.H`.
 Thus, in both cases this function can be called repeatedly (e.g. for different `qs`) without reconstructing `xh`.
 """
-function diagonalize!(xh::XSpaceHamiltonian{Storage}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {Storage}
+function diagonalize!(xh::XSpaceHamiltonian{Storage,R,T,S}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {Storage,R,T,S}
     if xh.basis != :cis
         error("Hamiltonian must be periodic. Construct a new one using the cis basis and try again.")
         return
     end
     (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
     D = length(xlims)
-    R = eltype(xh.L)
-    T = eltype(xh.V)
-    S = eltype(xh.ε)
     if Storage == :dense
         makesparse = false
         threshold = zero(R) # the value does not matter since it is not be used when `makesparse=false`

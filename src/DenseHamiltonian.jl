@@ -4,7 +4,7 @@ A type representing a spatial, 𝐷-dimensional, 𝑛-component, possibly quasim
     𝐻ᵢⱼ(r) = 𝑈ᵢⱼ(r)
 as a dense matrix. Here  1 ≤ 𝑖, 𝑗 ≤ 𝑛,  r = (𝑥₁, …, 𝑥_𝐷),  Aᵢ = (𝐴ᵢ₁, …, 𝐴ᵢ_𝐷),  q = (𝑞₁, …, 𝑞_𝐷).
 """
-mutable struct DenseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: XSpaceHamiltonian{:dense} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct DenseHamiltonian{R,T,S,D1,D2} <: XSpaceHamiltonian{:dense,R,T,S,D1,D2}
     xlims::Vector{Tuple{R, R}}
     L::Vector{R}
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
@@ -12,9 +12,9 @@ mutable struct DenseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: X
     nc::Int # number of components
     basis::Symbol
     ishermitian::Bool # `H` is nonhermitian if decays Γ are present
-    𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings
-    𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(𝑟) = 𝑈ᵢⱼ(-𝑟)
-    𝐴::Matrix{<:Union{Function,Nothing}}
+    𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings. Return type must be R or T
+    𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(r) = 𝑈ᵢⱼ(-r)
+    𝐴::Matrix{<:Union{Function,Nothing}} # 𝐴[c, i] is `i`th projection of the `c`th component of hte vector potential
     Γ::Vector{R} # decay rates
     H::Matrix{T} # momentum-space Hamiltonian used for diagonalisation
     ε::Vector{S} # eigenvalues, can be complex for nonhermitian `H`, hence additional type `S`
