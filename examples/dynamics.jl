@@ -1,15 +1,19 @@
 using XSpaceHamiltonians
-using LinearAlgebra: dot
 
 using Plots
 plotlyjs()
 theme(:dark, size=(600, 500))
+CMAP = cgrad(:Spectral, rev=true);
 
 function 𝑈(x::Real)
     (ϵ*cos(x) / (ϵ^2 + sin(x)^2))^2
 end
 
-Float = Float32 # operating type
+function 𝑈₁(x::Real)
+    (ϵ / (ϵ^2 + x^2))^2
+end
+
+Float = Float64 # operating type
 
 ϵ::Float = 0.1
 
@@ -23,10 +27,9 @@ plot(xs, 𝑈)
 # diagonalise to get exact eigenstates
 @time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M);
 @time diagonalize!(xh, nev=5);
-
 xh.ε
 
-stateno = 2
+stateno = 3
 xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=N)
 plot(xs, real(ψ[:, 1, 1]))
 plot(xs, imag(ψ[:, 1, 1]))
@@ -34,16 +37,130 @@ plot(xs, abs2.(ψ[:, 1, 1]))
 
 ### Use imaginary time to get eigenstates
 
-# will converge to the first 3 lowest states respectively:
+# will converge to the first 3 lowest states in 𝑈, respectively:
 guesses = [Returns(0.1), sin, cos]
 guesses_iseven = [true, false, true]
-# we use DE.LinearExponential, which is an exact solver, so we only need to calculate the wf at some large time moment (i.e. make one large step)
-T_max = 1 # this is not really large compared to eigenenergy, but is in fact enough to "converge" to full precision
+# we use DE.LinearExponential, which is an exact solver (equivalent to diagonalisation) so a few large steps is enough to converge to full precision
+T_max = 2
 dt = 1
-g = 1 # guess number
-@time sol = XSpaceHamiltonians.evolve_imag(xh, guesses[g]; 𝜓₀_iseven=guesses_iseven[g], T_max, dt)
+gs = 3 # guess number
+@time sol = propagate(xh, guesses[gs]; 𝜓₀_iseven=guesses_iseven[gs], T_max, dt, itime=true)
 v = sol.u[end]
-dot(v, xh.H, v) # energy
+get_ε_μ(xh, v)
 
 xs, ψ = make_wavefunction(xh, v; nx=101)
 plot(xs, real(ψ[:, 1]))
+
+
+################ nonlinear
+
+######## Free system
+
+M = 50
+N = 2M + 1
+R = 5
+xlimits = (-R, R) .|> Float
+
+# diagonalise to get exact eigenstates
+@time xh = XSpaceHamiltonian{:dense}([xlimits], nothing; basis=:cis, M, δ=√0.5)
+@time diagonalize!(xh, nev=0);
+xh.ε
+
+stateno = 1
+xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=N)
+plot(xs, real(ψ[:, 1, 1]))
+plot(xs, imag(ψ[:, 1, 1]))
+plot(xs, abs2.(ψ[:, 1, 1]))
+
+### Use imaginary time to get eigenstates
+
+g = Float(500) # nonlinearity
+get_ε_μ(xh, xh.V[:, 1], [g;;])
+
+𝜓₀(x) = 0.5
+p = 1/√(2R) # value of wf in the bulk (= ground state solution for the free case)
+ξ = √(1/(p^2 * g)) # healing length
+𝜓₀(x) = p * tanh(x/ξ) # soliton trial
+
+T_max = 1e-1
+dt = 1e-4
+@time sol = propagate(xh, 𝜓₀, g; 𝜓₀_iseven=false, T_max, dt, itime=true)
+v = sol.u[end]
+get_ε_μ(xh, v, [g;;])
+
+xs, ψ = make_wavefunction(xh, v; nx=N)
+plot!(xs, real(ψ[:, 1]), ylims=(-0.5, 0.5))
+
+###### Na23 soliton in harmonic potential (https://doi.org/10.1103/PhysRevLett.87.130402, https://arxiv.org/abs/cond-mat/0104549)
+
+# imaginary time
+
+m = 3.8165e-26
+aₛ = 2.5e-9
+h = 6.62607015e-34
+ħ = h / 2π
+ω = 3.5 * 2π # 1D trap frequency
+a0 = √(ħ / (m*ω)) # [1/m] -- unit of length
+α = 100 # omega_perp / ω ratio
+τ = 1/ω # [s] unit of time
+
+n_atoms = 1e4
+g = 2 * α * (aₛ/a0) * n_atoms # coefficient of nonlinearity
+R = 11 # trap half-length, in units of a0
+
+δ = √0.5 # coefficient of the momentum term
+
+𝑈(x::Real) = x^2 / 2
+
+M = 50
+N = 2M + 1
+xlimits = (-R, R) .|> Float
+xs = range(xlimits..., N)
+plot(xs, 𝑈)
+
+@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, δ)
+
+𝜓₀(x) = 0.5 # constant trial
+p = 1/√(2R) # value of wf in the bulk (= ground state solution for the free case)
+ξ = √(1/(p^2 * g)) # healing length
+𝜓₀(x) = p * tanh(x/ξ) # soliton trial
+
+T_max = 1.0
+dt = 1e-2
+@time sol = propagate(xh, 𝜓₀, g; 𝜓₀_iseven=false, T_max, dt, itime=true)
+v = sol.u[end]
+get_ε_μ(xh, v, [g;;])
+
+xs, ψ = make_wavefunction(xh, v; nx=N)
+plot(xs, real(ψ₀[:, 1]))
+
+# real time
+
+# ψ₀ = ψ .* tanh.(9 .* xs) |> vec # ground state times soliton
+
+# 𝜓₀(x) = p * tanh(x/ξ) # soliton trial
+# ψ₀ = vec(ψ)
+
+# T_max = 1e-2
+# dt = 1e-3
+# nsaves = 10
+# @time sol = propagate(xh, ψ₀, g; 𝜓₀_iseven=false, T_max, dt, itime=false, nsaves)
+
+# v = sol.u[1]
+# get_ε_μ(xh, v, [g;;])
+# xs, ψ = make_wavefunction(xh, v; nx=N)
+
+# plot(xs, abs2.(ψ[:, 1]))
+
+# U = make_map(sol)
+# ts = range(0, T_max, nsaves+1)
+# heatmap(xs, 0:T_max/nsaves:T_max, abs2.(U)', c=CMAP, xlabel="x", ylabel="t")
+
+# "return a 2D evolution map using the solution"
+# function make_map(sol)
+#     U = Matrix{eltype(sol.u[1])}(undef, N, length(sol.u))
+#     for i in axes(U, 2)
+#         _, U[:, i] = make_wavefunction(xh, sol.u[i]; nx=N)
+#     end
+#     return U
+# end

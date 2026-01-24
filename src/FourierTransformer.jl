@@ -41,7 +41,7 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
     return FourierTransformer(xs, M, basis, buff, buff_im, did_complex_redft, plan)
 end
 
-"Perform the transformation on `𝑓`."
+"Perform the transformation of a callable function `𝑓`."
 function transform!(ft::FourierTransformer, 𝑓::Function)
     (;xs, basis, buff, buff_im, plan) = ft
     N, D = size(xs)
@@ -65,6 +65,28 @@ function transform!(ft::FourierTransformer, 𝑓::Function)
             for iy in axes(xs, 1), ix in axes(xs, 1)
                 buff[ix, iy], buff_im[ix, iy] = reim(𝑓(xs[ix, 1], xs[iy, 2])) ./ npoints
             end
+        end
+        plan * buff
+        plan * buff_im
+        ft.did_complex_redft = true # will be used in fft_to_matrix_*D! to inclue `buff_im` when constructing the matrix
+    end
+    return
+end
+
+"Perform the transformation of a discretised function `f`."
+function transform!(ft::FourierTransformer, f::AbstractArray{<:Number})
+    (;xs, basis, buff, buff_im, plan) = ft
+    N, D = size(xs)
+    npoints = ft.basis == :cis ? N^D : (N-1)^D # total number of points, used for proper normalisation
+
+    if basis == :cis || eltype(f) isa Real
+        buff .= f ./ npoints
+        plan * buff # in-place transform, weird syntax
+        ft.did_complex_redft = false
+    else # if basis is sin/cos and `f` is complex
+        # `FFTW.REDFT00` can only handle real ones. So we transform Re and Im separately.
+        for i in eachindex(f)
+            buff[i], buff_im[i] = reim(f[i]) ./ npoints
         end
         plan * buff
         plan * buff_im

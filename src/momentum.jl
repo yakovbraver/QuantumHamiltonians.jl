@@ -59,7 +59,7 @@ function make_p_x(L::AbstractVector{<:AbstractFloat}, M::Integer, δ::Real, basi
     end
 end
 
-"Return the matrix of 𝑝_𝑦 = -i𝛿𝜕_𝑦 if `basis=:cis` and δ𝜕_𝑦 otherwise. The output is real in both cases."
+"Return the matrix of 𝑝_𝑦 = -i𝛿𝜕_𝑦 if `basis=:cis` and 𝛿𝜕_𝑦 otherwise. The output is real in both cases."
 function make_p_y(L::AbstractVector{<:AbstractFloat}, M::Integer, δ::Real, basis::Symbol)
     D = length(L)
     # D == 1 && @error "Only D ≥ 2 supported. For D = 1, use make_p_x."; return
