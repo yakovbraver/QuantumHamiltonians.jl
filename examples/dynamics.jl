@@ -52,9 +52,9 @@ xs, ψ = make_wavefunction(xh, v; nx=101)
 plot(xs, real(ψ[:, 1]))
 
 
-################ nonlinear
+################ nonlinear ################
 
-######## Free system
+######## Free system ########
 
 M = 50
 N = 2M + 1
@@ -113,55 +113,66 @@ R = 11 # trap half-length, in units of a0
 
 𝑈(x::Real) = x^2 / 2
 
-M = 50
+M = 100
 N = 2M + 1
 xlimits = (-R, R) .|> Float
 xs = range(xlimits..., N)
 plot(xs, 𝑈)
 
-@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, δ)
+@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, 𝑈_iseven=true, M, δ)
+diagonalize!(xh, nev=5)
+
 
 𝜓₀(x) = one(Float)
 p = 1/√(2R) |> Float # value of wf in the bulk (= ground state solution for the free case)
 ξ = √(1/(p^2 * g)) |> Float # healing length
 𝜓₀(x) = p * tanh(x/ξ) # soliton trial
 
-T_max = 1.0 |> Float 
+T_max = 1 |> Float 
 dt = 1e-2 |> Float
-@time sol = propagate(xh, 𝜓₀, g; 𝜓₀_iseven=false, T_max, dt, itime=true)
-v = sol.u[end]
-get_ε_μ(xh, v, [g;;])
+@time sol = propagate(xh, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true)
+V = sol.u[end]
+get_ε_μ(xh, V, [g;;])
 
-xs, ψ = make_wavefunction(xh, v; nx=N)
+xs, ψ = make_wavefunction(xh, V; nx=N)
 plot(xs, real(ψ[:, 1]))
+plot!(xs, imag(ψ[:, 1]))
 
 # real time
 
-# ψ₀ = ψ .* tanh.(9 .* xs) |> vec # ground state times soliton
+# ground state times soliton
+ψ₀ = real(ψ) .* tanh.(9 .* xs) |> vec
+plot(xs, ψ₀)
 
-# 𝜓₀(x) = p * tanh(x/ξ) # soliton trial
-# ψ₀ = vec(ψ)
+𝜓₀(x) = p * tanh(x/ξ) # soliton trial
+ψ₀ = vec(ψ)
 
-# T_max = 1e-2
-# dt = 1e-3
-# nsaves = 10
-# @time sol = propagate(xh, ψ₀, g; 𝜓₀_iseven=false, T_max, dt, itime=false, nsaves)
+T_max = 10 |> Float
+dt = 1e-3 |> Float
+nsaves = 100
 
-# v = sol.u[1]
-# get_ε_μ(xh, v, [g;;])
-# xs, ψ = make_wavefunction(xh, v; nx=N)
+# starting from x-space functions
+@time sol = propagate(xh, real(ψ₀), g; T_max, dt, itime=false, nsaves)
+@time sol = propagate(xh, real(ψ[:, 1]), g; T_max, dt, itime=false, nsaves)
 
-# plot(xs, abs2.(ψ[:, 1]))
+# starting from p-space functions
+@time sol = propagate(xh, V, [g;;]; T_max, dt, itime=false, nsaves)
 
-# U = make_map(sol)
-# ts = range(0, T_max, nsaves+1)
-# heatmap(xs, 0:T_max/nsaves:T_max, abs2.(U)', c=CMAP, xlabel="x", ylabel="t")
+v = sol.u[end]
+get_ε_μ(xh, v, [g;;])
+xs, ψ = make_wavefunction(xh, v; nx=N)
+plot(xs, real.(ψ[:, 1]))
+plot!(xs, imag.(ψ[:, 1]))
 
-# "return a 2D evolution map using the solution"
-# function make_map(sol)
-#     U = Matrix{eltype(sol.u[1])}(undef, N, length(sol.u))
-#     for i in axes(U, 2)
-#         _, U[:, i] = make_wavefunction(xh, sol.u[i]; nx=N)
-#     end
-#     return U
-# end
+U = make_map(sol)
+ts = range(0, T_max, nsaves+1)
+heatmap(xs, 0:T_max/nsaves:T_max, abs2.(U)', c=CMAP, xlabel="x", ylabel="t")
+
+"return a 2D evolution map using the solution"
+function make_map(sol)
+    U = Matrix{eltype(sol.u[1])}(undef, N, length(sol.u))
+    for i in axes(U, 2)
+        _, U[:, i] = make_wavefunction(xh, sol.u[i]; nx=N)
+    end
+    return U
+end

@@ -108,7 +108,7 @@ function make_wavefunction(xh::XSpaceHamiltonian{Storage,R}, v::AbstractVector; 
     (;L, xlims, M, basis, nc) = xh
     Lx = L[1]
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
-    ψ_type = basis != :cis && eltype(v) <: Real ? R : complex(R)  # `ψ` are real if elements of v are real and if the basis is real (sin/cos)
+    ψ_type = basis != :cis && eltype(v) <: Real ? R : complex(R)  # `ψ` are real if elements of v are real and if the basis is real (sin/cos). If basis is real but `v` are complex, this will yield complex function as expected.
     ψ = Matrix{ψ_type}(undef, nx, nc)
     for c in 1:nc
         if basis == :cis
@@ -269,6 +269,7 @@ function diagonalize!(xh::XSpaceHamiltonian{Storage,R,T,S}, qs::AbstractVector{<
         xh.ε_q[:, IQ...], xh.V_q[:, :, IQ...] = diagonalize(xh; nev, verbose)
     end
     all(isnothing.(𝐴)) && copy!(H_diag, H_diag_copy) # restore the original diagonal
+    return
 end
 
 ########## Dense
@@ -280,6 +281,7 @@ The result is written into `xh.ε` and `xh.V`.
 """
 function diagonalize!(xh::XSpaceHamiltonian; nev::Integer, verbose::Bool=false)
     xh.ε, xh.V = diagonalize(xh; nev, verbose)
+    return
 end
 
 """
@@ -299,7 +301,7 @@ function diagonalize(xh::XSpaceHamiltonian{:dense}; nev::Integer, verbose::Bool=
             ps, info = partialschur(dense_linear_map(Hermitian(xh.H)); nev, which=:LM)
             verbose && @show info
             ps.eigenvalues .= inv.(real.(ps.eigenvalues)) # invert back
-            return ps.eigenvalues, ps.Q
+            return ps.eigenvalues, ps.Q # here `ps.eigenvalues` is Copmlex, but once returned it will copied into real `xh.ε` with no error because imaginary part is zeroed out
         else
             ps, info = partialschur(dense_linear_map(xh.H); nev, which=:LM)
             verbose && @show info
@@ -314,7 +316,7 @@ end
 "Helper function for shift-and-invert: construct a linear map that applies the inverse of `A`."
 function dense_linear_map(A)
     F = factorize(A) # Bunch-Kaufman for Hermitian `A`, LU otherwise
-    LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
+    return LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
 end
 
 ########## Sparse

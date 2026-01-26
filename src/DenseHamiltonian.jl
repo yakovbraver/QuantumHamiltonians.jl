@@ -221,74 +221,88 @@ function update_diag!(xh::DenseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴�
     return
 end
 
-"Convenience caller for the 1-component case, where `𝜓₀` is a function, `g` is a number, and `𝜓₀_iseven` is a Bool."
-function propagate(xh::XSpaceHamiltonian{Storage,R}, 𝜓₀::Union{Function,AbstractVector}, g::R=zero(R);
-                   𝜓₀_iseven::Bool=false, T_max::R, dt::R, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0) where {Storage,R}
-    propagate(xh, [𝜓₀], [g;;]; 𝜓₀_iseven=[𝜓₀_iseven], T_max, dt, itime, solver, nsaves)
+"Convenience caller for the 1-component case, where `ψ₀` is an analytic function or a vector representing discretised functions, `g` is a number, and `ψ₀_iseven` is a Bool."
+function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{Function,AbstractVector}, g::R=zero(R);
+                   ψ₀_iseven::Bool=false, T_max::R, dt::R, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0) where {Storage,R}
+    propagate(xh, [ψ₀], [g;;]; ψ₀_iseven=[ψ₀_iseven], T_max, dt, itime, solver, nsaves)
 end
 
 """
-Propagate the time-dependent Schrödinger or Gross-Pitaevskii (with nonlinearity matrix `g`) equation for the initial wave function `𝜓₀`.
-`𝜓₀` is either a vector of functions (for each component) or a vector of vectors representing discretised functions.
- Set `itime=true` for imaginary time propagation.
-`𝜓₀_iseven[c]` matters only if `xh.basis=:cis` and shows whether `𝜓₀[c]` is an even function (i.e. whether 𝜓(x) = 𝜓(-x)).
+Propagate the time-dependent Schrödinger or Gross-Pitaevskii (with nonlinearity matrix `g`) equation for the initial wave function `ψ₀`.
+`ψ₀` can be:
+    * a vector of x-space analytic functions (one for each component)
+    * a vector of vectors (one for each component) representing discretised x-space functions
+    * a vector representing discretised p-space functions, all lumped together 
+Set `itime=true` for imaginary time propagation.
+`ψ₀_iseven[c]` matters only if `xh.basis=:cis` and shows whether `ψ₀[c]` is an even function (i.e. whether ψ(x) = ψ(-x)).
 If it is, then Fourier transform is real; if `xh.H` is also real, the imaginary time propagation can be done for a real type.
 `solver` is a solver from DifferentialEquations.jl. For SE, recommended are `LinearExponential` (default) or state-independent ones from https://docs.sciml.ai/DiffEqDocs/stable/solvers/nonautonomous_linear_ode/.
 For GPE, the default is `Tsit5`.
 Return the DifferentialEquations solution object. 
 """
-function propagate(xh::XSpaceHamiltonian{Storage,R}, 𝜓₀::Union{AbstractVector{<:Function},AbstractVector{<:AbstractVector}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
-                   𝜓₀_iseven::AbstractVector{Bool}=falses(length(𝜓₀)), T_max::R, dt::R, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0) where {Storage,R}
+function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector{<:Function},AbstractVector{<:AbstractVector},AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
+                   ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), T_max::R, dt::R, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0) where {Storage,R}
     (;xlims, L, M, basis, nc) = xh
     D = length(xlims)
-    B = basis == :cis ? (2M+1)^D : M^D # size of each Hamiltonian block
-
-    # prepare p-space wave function
-    if 𝜓₀ isa AbstractVector{<:Function} # `𝜓₀` a vector of analytic functions
-        𝜓₀_isreal = [ 𝜓([xlims[i][1] for i in eachindex(xlims)]...) isa Real for 𝜓 in 𝜓₀ ]
-    else # `𝜓₀` is a vector of vectors of discretised functions
-        𝜓₀_isreal = [eltype(𝜓) isa Real for 𝜓 in 𝜓₀]
-    end
-    ψ₀_isreal = all(𝜓₀_isreal) # will show if `ψ₀` should be constructed real
-    if basis == :cis # also check if functions are even 
-        ψ₀_isreal &= all(𝜓₀_iseven)
-    end
-    ψ₀ = Vector{ψ₀_isreal && itime ? R : Complex{R}}(undef, nc*B)
-
-    # transform each component's wf and put into ψ₀
-    ft = FourierTransformer(xlims, M; basis, target_real=ψ₀_isreal, target_rank=1) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if 𝜓₀ is complex
-    for c in 1:nc
-        transform!(ft, 𝜓₀[c])
-        ψ₀_block = @view ψ₀[(c-1)*B+1:c*B]
-        fft_to_vector!(ψ₀_block, ft; makereal=(𝜓₀_iseven[c] && 𝜓₀_isreal[c]))
-        normalize!(ψ₀_block)
+    B = if basis == :cis  # size of each Hamiltonian block
+        (2M+1)^D
+    elseif basis == :sin
+        M^D
+    else # basis == :cos
+        (M+1)^D
     end
 
-    if itime # propagation in imaginary time: equation is real if `xh.H` and `ψ₀` are real
-        H = !ψ₀_isreal && eltype(xh.H) <: Real ? -complex(xh.H) : -xh.H # if `ψ₀` is complex then solver needs complex matrix. So cast `xh.H` to complex if it is real
+    # prepare the p-space wave function
+    if ψ₀ isa AbstractVector{<:Number} # `ψ₀` is given in p-space
+        if eltype(ψ₀) <: Real && !itime # if `ψ₀` is real, but we are going to solve real-time equation
+            ψ₀ₚ = complex(ψ₀) # convert to complex
+        else
+            ψ₀ₚ = ψ₀ # just a reference
+        end
+    else # `ψ₀` is given in x-space
+        if ψ₀ isa AbstractVector{<:Function} # `ψ₀` a vector of analytic functions
+            ψ₀_isreal = [ ψ([xlims[i][1] for i in eachindex(xlims)]...) isa Real for ψ in ψ₀ ]
+        else # `ψ₀` is a vector of vectors of discretised functions
+            ψ₀_isreal = [eltype(ψ) isa Real for ψ in ψ₀]
+        end
+        ψ₀ₚ_isreal = all(ψ₀_isreal) # will show if `ψ₀ₚ` should be constructed real
+        if basis == :cis # also check if functions are even 
+            ψ₀ₚ_isreal &= all(ψ₀_iseven)
+        end
+        ψ₀ₚ = Vector{ψ₀ₚ_isreal && itime ? R : Complex{R}}(undef, nc*B)
+
+        # transform each component's wf and put into ψ₀ₚ
+        ft = FourierTransformer(xlims, M; basis, target_real=ψ₀ₚ_isreal, target_rank=1) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
+        for c in 1:nc
+            transform!(ft, ψ₀[c])
+            ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
+            fft_to_vector!(ψ₀ₚ_block, ft; makereal=(ψ₀_iseven[c] && ψ₀_isreal[c]))
+            normalize!(ψ₀ₚ_block)
+        end
+    end
+
+    if itime # propagation in imaginary time: equation is real if `xh.H` and `ψ₀ₚ` are real
+        H = !ψ₀ₚ_isreal && eltype(xh.H) <: Real ? -complex(xh.H) : -xh.H # if `ψ₀ₚ` is complex then solver needs complex matrix. So cast `xh.H` to complex if it is real
         G = -g ./ L[1]
     else # propagation in real time: equation is always complex
         H = -im * xh.H
-        G = -im * g
+        G = -im * g ./ L[1]
     end
+    basis != :cis && (G ./= 2)
 
     # initialise the problem
     tspan = (zero(R), T_max)
     if iszero(g) # nonlinearity absent
-        prob = DE.ODEProblem(SciMLOperators.MatrixOperator(H), ψ₀, tspan)
+        prob = DE.ODEProblem(SciMLOperators.MatrixOperator(H), ψ₀ₚ, tspan)
     else # nonlinearity present
-        # treat each case separately beacuse we don't want any loops in update functions
-        # if nc == 1
-        #     params = (diag(H), G[1]/L[1])
-        #     A = SciMLOperators.MatrixOperator(H, update_func! = update_A_1comp!)
-        # elseif nc == 2
-        #     # first two ranges take two components from the solution vector; next two take the corresponding diagonal elements
-        #     params = (diag(H), G, 1:B, B+1:2B, diagind(H)[1:B], diagind(H)[B+1:2B])
-        #     A = SciMLOperators.MatrixOperator(H, update_func! = update_A_2comp!)
-        # end
-        # prob = DE.ODEProblem(A, ψ₀, tspan, params)
         params = (H, G[1], B)
-        prob = DE.ODEProblem(gpe!, ψ₀, tspan, params)
+        if basis == :cis
+            prob = DE.ODEProblem(gpe_cis_1D!, ψ₀ₚ, tspan, params)
+        elseif basis == :sin
+            prob = DE.ODEProblem(gpe_sin_1D!, ψ₀ₚ, tspan, params)
+        else # basis == :cos
+            # prob = DE.ODEProblem(gpe_cos_1D!, ψ₀ₚ, tspan, params)
+        end
     end
 
     # when `saveat` is set, saving happens at points `tspan[1]:saveat:tspan[2]`
@@ -306,11 +320,35 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, 𝜓₀::Union{AbstractVect
 end
 
 "Update the 𝑢′ matrix of the GPE."
-function gpe!(du, u, params, t)
+function gpe_cis_1D!(du, u, params, t)
     H, g, B = params
     mul!(du, H, u)
     for p in eachindex(u)
         du[p] += g * sum(u[k] * sum(u[k′] * u[k′+k-p]' for k′ in max(1, 1+p-k):min(B, B+p-k)) for k in eachindex(u))
+    end
+    return
+end
+
+function gpe_sin_1D!(du, u, params, t)
+    H, g, B = params
+    mul!(du, H, u)
+    null = zero(g)
+    for p in eachindex(u)
+        for k in eachindex(u)
+            s = null
+            for k′ in eachindex(u)
+                s′ = null
+                k″ = -k + p + k′; 1 ≤ k″ ≤ B && (s′ += u[k″])
+                k″ =  k - p + k′; 1 ≤ k″ ≤ B && (s′ += u[k″])
+                k″ =  k - p - k′; 1 ≤ k″ ≤ B && (s′ -= u[k″])
+                k″ = -k + p - k′; 1 ≤ k″ ≤ B && (s′ -= u[k″])
+                k″ = -k - p + k′; 1 ≤ k″ ≤ B && (s′ -= u[k″])
+                k″ =  k + p + k′; 1 ≤ k″ ≤ B && (s′ -= u[k″])
+                k″ =  k + p - k′; 1 ≤ k″ ≤ B && (s′ += u[k″])
+                s += u[k′]' * s′
+            end
+            du[p] += g * u[k] * s
+        end
     end
     return
 end
@@ -334,19 +372,43 @@ end
 
 "Return mean energy and chemical potential for a p-space state `v`. (currently, 1-component only)"
 function get_ε_μ(xh, v, g=zeros(typeof(xh.δ), xh.nc, xh.nc))
-    # (; nc) = xh
+    (; basis) = xh
     L = xh.L[1]
     B = length(v)    
     ε = dot(v, xh.H, v)
     μ = ε
     if !iszero(g)
         U = zero(μ)
-        for p′ in eachindex(v), p in eachindex(v), k in eachindex(v)
-            k′ = k+p-p′
-            (k′ < 1 || k′ > B) && continue
-            U += conj(v[p′]*v[k′]) * v[p]*v[k] |> real
+        if basis == :cis
+            for p′ in eachindex(v), p in eachindex(v), k in eachindex(v)
+                k′ = k+p-p′
+                (k′ < 1 || k′ > B) && continue
+                U += conj(v[p′]*v[k′]) * v[p]*v[k] |> real
+            end
+            U *= g[1]/L
+        elseif basis == :sin
+            null = zero(μ)
+            for p in eachindex(v)
+                sp = null
+                for k in eachindex(v)
+                    s = null
+                    for k′ in eachindex(v)
+                        s′ = null
+                        k″ = -k + p + k′; 1 ≤ k″ ≤ B && (s′ += v[k″])
+                        k″ =  k - p + k′; 1 ≤ k″ ≤ B && (s′ += v[k″])
+                        k″ =  k - p - k′; 1 ≤ k″ ≤ B && (s′ -= v[k″])
+                        k″ = -k + p - k′; 1 ≤ k″ ≤ B && (s′ -= v[k″])
+                        k″ = -k - p + k′; 1 ≤ k″ ≤ B && (s′ -= v[k″])
+                        k″ =  k + p + k′; 1 ≤ k″ ≤ B && (s′ -= v[k″])
+                        k″ =  k + p - k′; 1 ≤ k″ ≤ B && (s′ += v[k″])
+                        s += v[k′]' * s′
+                    end
+                    sp += v[k] * s
+                end
+                U += v[p]' * sp |> real
+            end
+            U *= g[1] / 2L
         end
-        U *= g[1]/L
         μ += U
         ε += U / 2
     end
