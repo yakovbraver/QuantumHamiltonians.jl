@@ -1,10 +1,10 @@
 mutable struct FourierTransformer{R,T,Plan,D} # T is the type of buffer, real for sin and cos, complex for cis
     xs::Matrix{R} # coordinates matrix: 1st column contains 𝑥's, second contains 𝑦's, etc.
-    M::Int # maximum harmonic number (will use -M:M for cis basis, 1:M for sin/cos)
+    M::Int # maximum harmonic number (will use -M:M for cis basis, 1:M for sin, 0:M for cos)
     basis::Symbol
     buff::Array{T,D} # buffer for the result of the transform
     buff_im::Array{T,D} # additional buffer for storing the DCT of the imaginary part of a function
-    did_complex_redft::Bool # a flag that is true if the last-performed transformation was a DST/DCT ("FFTW.REDFT") of a *complex* function. The only reason why the type is mutable.
+    did_complex_rxdft::Bool # a flag that is true if the last-performed transformation was a DST/DCT ("FFTW.RODFT"/"FFTW.REDFT") of a *complex* function. The only reason why the type is mutable.
     plan::Plan
 end
 
@@ -26,26 +26,40 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
         buff = Array{Complex{R}}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
         buff_im = similar(buff, ntuple(Returns(0), D)) # this buffer is not needed in the cis case; make it 0x0 (in `D` dimesions)
         plan = FFTW.plan_fft!(buff) # the savings of rfft are negligible, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
-    else
-        N = target_rank*M + 1
-        xs = Matrix{R}(undef, N, D)
-        for d in 1:D
-            xs[:, d] .= range(xlims[d][1], xlims[d][2], N)
+    else # sin/cos
+        if basis == :cos || target_rank == 2 # for `target_rank == 2` we always need DCT, even if the basis is sin
+            N = target_rank*M + 1
+            xs = Matrix{R}(undef, N, D)
+            for d in 1:D
+                xs[:, d] .= range(xlims[d][1], xlims[d][2], N)
+            end
+            buff = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
+            buff_im = similar(buff, ntuple(Returns(target_real ? 0 : N), D)) # if `target_real`, then this buffer is not needed; make it 0x0 (in `D` dimesions)
+            plan = FFTW.plan_r2r!(buff, FFTW.REDFT00)
+        else # basis == :sin && target_rank == 1 # the only case when we need DST
+            N = M
+            xs = Matrix{R}(undef, N, D)
+            for i in 1:D
+                Lᵢ = xlims[i][2] - xlims[i][1]
+                dxᵢ = Lᵢ / (N+1)
+                xs[:, i] .= range(xlims[i][1]+dxᵢ, xlims[i][2]-dxᵢ, N)
+            end
+            buff = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
+            buff_im = similar(buff, ntuple(Returns(target_real ? 0 : N), D)) # if `target_real`, then this buffer is not needed; make it 0x0 (in `D` dimesions)
+            plan = FFTW.plan_r2r!(buff, FFTW.RODFT00)
         end
-        buff = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
-        buff_im = similar(buff, ntuple(Returns(target_real ? 0 : N), D)) # if `target_real`, then this buffer is not needed; make it 0x0 (in `D` dimesions)
-        plan = FFTW.plan_r2r!(buff, FFTW.REDFT00)
     end
-
-    did_complex_redft = false # value does not matter before any transform is performed
-    return FourierTransformer(xs, M, basis, buff, buff_im, did_complex_redft, plan)
+    did_complex_rxdft = false # value does not matter before any transform is performed
+    return FourierTransformer(xs, M, basis, buff, buff_im, did_complex_rxdft, plan)
 end
 
 "Perform the transformation of a callable function `𝑓`."
 function transform!(ft::FourierTransformer, 𝑓::Function)
     (;xs, basis, buff, buff_im, plan) = ft
     N, D = size(xs)
-    npoints = ft.basis == :cis ? N^D : (N-1)^D # total number of points, used for proper normalisation
+    # Total number of points, used for proper normalisation when transforming operators.
+    # For transforming vectors, normalisation should be different (e.g. Δ𝑥/√𝐿 instead of Δ𝑥/𝐿 in the cis case), but we don't care because the user can easily normalise the vectors himself
+    npoints = ft.basis == :cis ? N^D : (N-1)^D
 
     if basis == :cis || 𝑓(xs[1, 1:D]...) isa Real
         if D == 1
@@ -54,9 +68,9 @@ function transform!(ft::FourierTransformer, 𝑓::Function)
             @views buff .= 𝑓.(xs[:, 1], xs[:, 2]') ./ npoints
         end
         plan * buff # in-place transform, weird syntax
-        ft.did_complex_redft = false
+        ft.did_complex_rxdft = false
     else # if basis is sin/cos and 𝑓 is complex
-        # `FFTW.REDFT00` can only handle real ones. So we transform Re and Im separately.
+        # `FFTW.RxDFT00` can only handle real input. So we transform Re and Im separately.
         if D == 1
             for (ix, x) in enumerate(xs)
                 buff[ix], buff_im[ix] = reim(𝑓(x)) ./ npoints
@@ -68,7 +82,7 @@ function transform!(ft::FourierTransformer, 𝑓::Function)
         end
         plan * buff
         plan * buff_im
-        ft.did_complex_redft = true # will be used in fft_to_matrix_*D! to inclue `buff_im` when constructing the matrix
+        ft.did_complex_rxdft = true # will be used in fft_to_matrix_*D! to inclue `buff_im` when constructing the matrix
     end
     return
 end
@@ -82,15 +96,15 @@ function transform!(ft::FourierTransformer, f::AbstractArray{<:Number})
     if basis == :cis || eltype(f) isa Real
         buff .= f ./ npoints
         plan * buff # in-place transform, weird syntax
-        ft.did_complex_redft = false
+        ft.did_complex_rxdft = false
     else # if basis is sin/cos and `f` is complex
-        # `FFTW.REDFT00` can only handle real ones. So we transform Re and Im separately.
+        # `FFTW.REDFT00` can only handle real input. So we transform Re and Im separately.
         for i in eachindex(f)
             buff[i], buff_im[i] = reim(f[i]) ./ npoints
         end
         plan * buff
         plan * buff_im
-        ft.did_complex_redft = true # will be used in fft_to_matrix_*D! to inclue `buff_im` when constructing the matrix
+        ft.did_complex_rxdft = true # will be used in fft_to_matrix_*D! to inclue `buff_im` when constructing the matrix
     end
     return
 end
@@ -114,8 +128,8 @@ function fft_to_vector(ft::FourierTransformer{R,T}; makesparse::Bool=false, make
             v_type = T
         end
     else
-        B = M^D
-        v_type = ft.did_complex_redft ? Complex{T} : T
+        B = basis == :sin ? M^D : (M+1)^D
+        v_type = ft.did_complex_rxdft ? Complex{T} : T
     end
 
     if makesparse
@@ -149,7 +163,7 @@ function fft_to_vector!(v::AbstractVector{<:Number}, ft::FourierTransformer; mak
             FFTW.fftshift!(v, buff) # we also do fftshift in `fft_to_matrix`, and hence go over the harmonics in the order -M:M when constructing x-space wf's.
         else # sin/cos
             copy!(v, buff)
-            if ft.did_complex_redft
+            if ft.did_complex_rxdft
                 v .+= im.*buff_im
             end
         end
@@ -176,8 +190,8 @@ function fft_to_matrix(ft::FourierTransformer{R,T}; makesparse::Bool=false, make
             A_type = T
         end
     else
-        B = M^D
-        A_type = ft.did_complex_redft ? Complex{T} : T
+        B = basis == :sin ? M^D : (M+1)^D
+        A_type = ft.did_complex_rxdft ? Complex{T} : T
     end
 
     if makesparse
@@ -226,7 +240,7 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
             A[diagind(A, i-1)] .= buff[end-i+2] # fill upper triangle
         end
     elseif basis == :sin
-        if ft.did_complex_redft
+        if ft.did_complex_rxdft
             @floop for jx in 1:M
                 for j′x in 1:M
                     j₋x = abs(j′x-jx)
@@ -241,7 +255,24 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
                 end
             end
         end
+    else # cos
+        if ft.did_complex_rxdft
+            @floop for jx in 0:M
+                for j′x in 0:M
+                    j₋x = abs(j′x-jx)
+                    A[j′x+1, jx+1] = ( (buff[j₋x+1] + buff[j′x+jx+1]) + im*(buff_im[j₋x+1] + buff_im[j′x+jx+1]) ) / 2
+                end
+            end
+        else
+            @floop for jx in 0:M
+                for j′x in 0:M
+                    j₋x = abs(j′x-jx)
+                    A[j′x+1, jx+1] = (buff[j₋x+1] + buff[j′x+jx+1]) / 2
+                end
+            end
+        end
     end
+    return
 end
 
 """
@@ -265,7 +296,7 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
         end
     elseif basis == :sin
         # TODO add check size(A) .== M^2
-        if ft.did_complex_redft
+        if ft.did_complex_rxdft
             @floop for jx in 1:M
                 for jy in 1:M, j′x in 1:M, j′y in 1:M
                     j₋x = abs(j′x-jx)
@@ -280,6 +311,26 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
                     j₋x = abs(j′x-jx)
                     j₋y = abs(j′y-jy)
                     A[(j′x-1)M+j′y, (jx-1)M+jy] = (buff[j₋x+1, j₋y+1] - buff[j₋x+1, j′y+jy+1] - buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]) / 4
+                end
+            end
+        end
+    else # basis == :cos
+        b = M + 1 # not `B` to preven Core.Box :(
+        if ft.did_complex_rxdft
+            @floop for jx in 0:M
+                for jy in 0:M, j′x in 0:M, j′y in 0:M
+                    j₋x = abs(j′x-jx)
+                    j₋y = abs(j′y-jy)
+                    A[j′x*b+j′y+1, jx*b+jy+1] = (buff[j₋x+1, j₋y+1] + buff[j₋x+1, j′y+jy+1] + buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]) / 4 +
+                               im * (buff_im[j₋x+1, j₋y+1] + buff_im[j₋x+1, j′y+jy+1] + buff_im[j′x+jx+1, j₋y+1] + buff_im[j′x+jx+1, j′y+jy+1]) / 4
+                end
+            end
+        else
+            @floop for jx in 0:M
+                for jy in 0:M, j′x in 0:M, j′y in 0:M
+                    j₋x = abs(j′x-jx)
+                    j₋y = abs(j′y-jy)
+                    A[j′x*b+j′y+1, jx*b+jy+1] = (buff[j₋x+1, j₋y+1] + buff[j₋x+1, j′y+jy+1] + buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]) / 4
                 end
             end
         end
