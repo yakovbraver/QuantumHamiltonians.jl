@@ -4,7 +4,7 @@ import FFTW
 import DifferentialEquations as DE
 import SciMLOperators
 using ArnoldiMethod: partialschur, partialeigen
-using LinearAlgebra: Hermitian, Diagonal, diag, diagind, diagview, factorize, eigen, ldiv!, dot, mul!, normalize!
+using LinearAlgebra: Hermitian, Diagonal, diag, diagind, diagview, factorize, eigen, ldiv!, dot, mul!, normalize!, norm
 import LinearAlgebra as LA # mainly for the identity operator LA.I
 using LinearMaps
 import LinearSolve as LS

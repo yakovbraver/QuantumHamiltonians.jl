@@ -281,21 +281,25 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
         end
     end
 
+    dx = L[1] / B
+    g *= dx / L[1]^2 # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
+
     if itime # propagation in imaginary time: equation is real if `xh.H` and `ψ₀ₚ` are real
         H = !ψ₀ₚ_isreal && eltype(xh.H) <: Real ? -complex(xh.H) : -xh.H # if `ψ₀ₚ` is complex then solver needs complex matrix. So cast `xh.H` to complex if it is real
-        G = -g ./ L[1]
+        G = -g
     else # propagation in real time: equation is always complex
         H = -im * xh.H
-        G = -im * g ./ L[1]
+        G = -im * g
     end
-    basis != :cis && (G ./= 2)
 
     # initialise the problem
     tspan = (zero(R), T_max)
     if iszero(g) # nonlinearity absent
         prob = DE.ODEProblem(SciMLOperators.MatrixOperator(H), ψ₀ₚ, tspan)
     else # nonlinearity present
-        params = (H, G[1], B)
+        fft_plan = FFTW.plan_fft!(ψ₀ₚ)
+        bfft_plan = FFTW.plan_bfft(ψ₀ₚ) # this is out-of-place but will write to a buffer
+        params = (H, G[1], similar(ψ₀ₚ), fft_plan, bfft_plan)
         if basis == :cis
             prob = DE.ODEProblem(gpe_cis_1D!, ψ₀ₚ, tspan, params)
         elseif basis == :sin
@@ -321,11 +325,12 @@ end
 
 "Update the 𝑢′ matrix of the GPE."
 function gpe_cis_1D!(du, u, params, t)
-    H, g, B = params
+    H, g, u_buff, fft_plan, bfft_plan = params
     mul!(du, H, u)
-    for p in eachindex(u)
-        du[p] += g * sum(u[k] * sum(u[k′] * u[k′+k-p]' for k′ in max(1, 1+p-k):min(B, B+p-k)) for k in eachindex(u))
-    end
+    mul!(u_buff, bfft_plan, u) # transform `u` and write into `u_buff`
+    u_buff .*= g .* abs2.(u_buff)
+    fft_plan * u_buff # in-place transform of `u_buff`
+    du .+= u_buff
     return
 end
 
@@ -378,15 +383,12 @@ function get_ε_μ(xh, v, g=zeros(typeof(xh.δ), xh.nc, xh.nc))
     ε = dot(v, xh.H, v)
     μ = ε
     if !iszero(g)
-        U = zero(μ)
         if basis == :cis
-            for p′ in eachindex(v), p in eachindex(v), k in eachindex(v)
-                k′ = k+p-p′
-                (k′ < 1 || k′ > B) && continue
-                U += conj(v[p′]*v[k′]) * v[p]*v[k] |> real
-            end
-            U *= g[1]/L
+            dx = L / B
+            v_buff = FFTW.bfft(v) / √L # transform to x-space
+            U = g[1] * sum(abs2.(v_buff).^2) * dx
         elseif basis == :sin
+            U = zero(μ)
             null = zero(μ)
             for p in eachindex(v)
                 sp = null
