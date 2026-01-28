@@ -100,29 +100,26 @@ function make_eigenfunctions(xh::XSpaceHamiltonian{Storage,R}; statenos::Abstrac
     return xs .+ xlims[1][1], ψ # return "normal" coordinates, in `x ∈ xlims`
 end
 
+# TODO tweak ψ a bit to generalise to any D
 """
 Construct a 1D coordinate-space wave function using its Fourier-space representation `v`.
 Return (`xs`, `ψ`) where `ψ[x, components]`.
 """
-function make_wavefunction(xh::XSpaceHamiltonian{Storage,R}, v::AbstractVector; nx::Integer) where {Storage,R}
-    (;L, xlims, M, basis, nc) = xh
-    Lx = L[1]
-    xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
-    ψ_type = basis != :cis && eltype(v) <: Real ? R : complex(R)  # `ψ` are real if elements of v are real and if the basis is real (sin/cos). If basis is real but `v` are complex, this will yield complex function as expected.
-    ψ = Matrix{ψ_type}(undef, nx, nc)
+function make_wavefunction(xh::XSpaceHamiltonian{Storage,R}, v::AbstractVector) where {Storage,R}
+    (;xlims, M, basis, nc) = xh
+    v_isreal = eltype(v) <: Real
+    ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, forward=false)
+    ψ_type = basis != :cis && v_isreal ? R : complex(R)  # `ψ` are real if elements of v are real and if the basis is real (sin/cos). If basis is real but `v` are complex, this will yield complex function as expected.
+    B = size(ft.xs, 1) # component-block size (= number of x points in each dimension)
+    ψ = Matrix{ψ_type}(undef, B, nc)
     for c in 1:nc
-        if basis == :cis
-            B = 2M + 1
-            @floop for (ix, x) in enumerate(xs)
-                ψ[ix, c] = sum(v[(c-1)*B+j]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
-            end
-        else # nonperiodic
-            @floop for (ix, x) in enumerate(xs)
-                ψ[ix, c] = sum(v[(c-1)*M+jx]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
-            end
+        transform!(ft, v[(c-1)B+1:B])
+        ψ[:, c] = ft.buff
+        if ft.did_complex_rxdft
+            ψ[:, c] .+= im .* ft.buff_im
         end
     end
-    return xs .+ xlims[1][1], ψ # return "normal" coordinates, in `x ∈ xlims`
+    return ft.xs, ψ, ψ # return "normal" coordinates, in `x ∈ xlims`
 end
 
 """
