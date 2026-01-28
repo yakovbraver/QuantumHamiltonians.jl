@@ -113,7 +113,8 @@ function make_wavefunction(xh::XSpaceHamiltonian{Storage,R}, v::AbstractVector) 
     B = size(ft.xs, 1) # component-block size (= number of x points in each dimension)
     ψ = Matrix{ψ_type}(undef, B, nc)
     for c in 1:nc
-        transform!(ft, v[(c-1)B+1:B])
+        v_input = basis == :cis ? FFTW.ifftshift(v[(c-1)B+1:B]) : @view(v[(c-1)B+1:B]) # `ifftshift` because our matrices and vectors assume -M:M ordering, but FFT assumes 0..M,-M,..-1
+        transform!(ft, v_input)
         ψ[:, c] = ft.buff
         if ft.did_complex_rxdft
             ψ[:, c] .+= im .* ft.buff_im
