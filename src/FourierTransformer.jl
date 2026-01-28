@@ -46,9 +46,9 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
             N = M
             xs = Matrix{R}(undef, N, D)
             for i in 1:D
-                Lᵢ = xlims[i][2] - xlims[i][1]
-                dxᵢ = Lᵢ / (N+1)
-                xs[:, i] .= range(xlims[i][1]+dxᵢ, xlims[i][2]-dxᵢ, N)
+                L[i] = xlims[i][2] - xlims[i][1]
+                dx[i] = L[i] / (N+1)
+                xs[:, i] .= range(xlims[i][1]+dx[i], xlims[i][2]-dx[i], N)
             end
             buff = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
             buff_im = similar(buff, ntuple(Returns(target_real ? 0 : N), D)) # if `target_real`, then this buffer is not needed; make it 0x0 (in `D` dimesions)
@@ -105,7 +105,7 @@ function transform!(ft::FourierTransformer, f::AbstractArray{<:Number})
         plan * buff # in-place transform, weird syntax
         ft.did_complex_rxdft = false
     else # if basis is sin/cos and `f` is complex
-        # `FFTW.REDFT00` can only handle real input. So we transform Re and Im separately.
+        # `FFTW.RxDFT00` can only handle real input. So we transform Re and Im separately.
         for i in eachindex(f)
             buff[i], buff_im[i] = reim(f[i]) .* normalisation
         end
