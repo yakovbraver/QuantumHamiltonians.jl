@@ -99,10 +99,8 @@ end
 
 "Perform the transformation of a discretised function `f`."
 function transform!(ft::FourierTransformer, f::AbstractArray{<:Number})
-    (;xs, normalisation, basis, buff, buff_im, plan) = ft
-    D = size(xs)
-
-    if basis == :cis || eltype(f) isa Real
+    (;normalisation, basis, buff, buff_im, plan) = ft
+    if basis == :cis || eltype(f) <: Real
         buff .= f .* normalisation
         plan * buff # in-place transform, weird syntax
         ft.did_complex_rxdft = false
@@ -126,7 +124,7 @@ If `makesparse=true`, a sparse vector is returned, with values below `threshold`
 If `makereal=true`, a real vector (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of ft.buff.
 """
 function fft_to_vector(ft::FourierTransformer{R,T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R))) where {R <: AbstractFloat, T <: Number}
-    (;M, buff, buff_im, basis) = ft
+    (;M, buff, basis) = ft
     D = ndims(buff)
     if basis == :cis
         B = (2M+1)^D
@@ -185,7 +183,7 @@ end
 """
 Use the result of the transform to construct a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 If `makesparse=true`, a sparse matrix is returned, with values below `threshold` in magnitude filtered out. By default, a dense matrix is returned.
-If `makereal=true`, a real matrix (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of ft.buff.
+If `makereal=true`, a real matrix (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
 function fft_to_matrix(ft::FourierTransformer{R,T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R))) where {R <: AbstractFloat, T <: Number}
     (;M, buff, basis) = ft
