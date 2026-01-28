@@ -2,7 +2,7 @@
 Return the momentum-squared matrix (𝛿𝑝)² = -𝛿²Δ in `D = length(L)` dimensions. If `basis=:cis`, then return (𝛿𝑝 + 𝑞)² with quasimomenta provided in `qs`.
 A real `Diagonal` matrix is returned.
 """
-function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zeros(R, length(L))) where R <: AbstractFloat # ntuple(Returns(zero(R)), length(L))
+function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zeros(R, length(L))) where R <: AbstractFloat
     D = length(L)
     PI = R(π) # for type stability. Otherwise 2*π*2f0 gets converted to Float64 (and so does 2f0*2π, while 2f0*2*π does not...)
     if basis == :cis
@@ -11,18 +11,22 @@ function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zer
             return [(cx*jx + qs[1])^2 for jx in -M:M] |> Diagonal
         elseif D == 2
             cy = 2PI*δ/L[2]
-            return [((cx*jx + qs[1])^2 + (cy*jy + qs[2])^2) for jx in -M:M for jy in -M:M] |> Diagonal # in D-dimensions: Ms = [-M:M for _ in 1:D]; L_r = reverse(L); [sum(@. (J * 2PI*δ/L + qs)^2) for J in Iterators.product(Ms...)] |> vec |> Diagonal 
+            return [((cx*jx + qs[1])^2 + (cy*jy + qs[2])^2) for jx in -M:M for jy in -M:M] |> Diagonal
+        # else # arbitrary `D`
+        #     Ms = ntuple(Returns(-M:M), D)
+        #     L_r = reverse(L) # because `J` will be be enumerated in "reverse" order compared to that used by us (first dimesnion is 𝑥, then 𝑦, ...)
+        #     qs_r = reverse(L)
+        #     return [sum(@. (J * 2PI*δ/L_r + qs_r)^2) for J in Iterators.product(Ms...)] |> vec |> Diagonal 
         end
-    elseif basis == :sin
+    else # basis == :sin || basis == :cos
         bx = PI*δ/L[1] # different name than `cx` above to prevent Core.Box
+        j₁ = basis == :sin ? 1 : 0
         if D == 1
-            return [(bx*jx)^2 for jx in 1:M] |> Diagonal
+            return [(bx*jx)^2 for jx in j₁:M] |> Diagonal
         elseif D == 2
             by = PI*δ/L[2]
-            return [(bx*jx)^2 + (by*jy)^2 for jx in 1:M for jy in 1:M] |> Diagonal
+            return [(bx*jx)^2 + (by*jy)^2 for jx in j₁:M for jy in j₁:M] |> Diagonal
         end
-    else
-        error("make_p² not implemented for basis $basis.")
     end
     return Diagonal(R[]) # for type stability
 end
