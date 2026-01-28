@@ -54,6 +54,7 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
             buff_im = similar(buff, ntuple(Returns(target_real ? 0 : N), D)) # if `target_real`, then this buffer is not needed; make it 0x0 (in `D` dimesions)
             plan = FFTW.plan_r2r!(buff, FFTW.RODFT00) # note that `RODFT00` is its own inverse
         end
+        target_rank == 1 && (L .*= 2) # just because the normalisation factors feature 1/√(2𝐿) in the case (target_rank == 1 && basis != :cos)
     end
 
     if forward
