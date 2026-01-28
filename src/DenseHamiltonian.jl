@@ -256,8 +256,10 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
     if ψ₀ isa AbstractVector{<:Number} # `ψ₀` is given in p-space
         if eltype(ψ₀) <: Real && !itime # if `ψ₀` is real, but we are going to solve real-time equation
             ψ₀ₚ = complex(ψ₀) # convert to complex
+            ψ₀ₚ_isreal = false # shows if the initial wf in p-space is stored in a real array
         else
             ψ₀ₚ = ψ₀ # just a reference
+            ψ₀ₚ_isreal = true
         end
     else # `ψ₀` is given in x-space
         if ψ₀ isa AbstractVector{<:Function} # `ψ₀` a vector of analytic functions
@@ -281,8 +283,19 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
         end
     end
 
-    dx = L[1] / B
-    g *= dx / L[1]^2 # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
+    if basis == :cis
+        N = 2M + 1 # number of points
+        dx = L[1] / N
+        g *= dx / L[1]^2 # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
+    elseif basis == :sin
+        N = M # number of points
+        dx = L[1] / (N+1)
+        g *= dx / (2L[1])^2 # Same as for cis but with √(2𝐿) instead of √𝐿
+    else # basis == :cos
+        N = M + 1 # number of points
+        dx = L[1] / (N-1)
+        g *= dx / (2L[1])^2 # Same as for cis but with √(2𝐿) instead of √𝐿
+    end
 
     if itime # propagation in imaginary time: equation is real if `xh.H` and `ψ₀ₚ` are real
         H = !ψ₀ₚ_isreal && eltype(xh.H) <: Real ? -complex(xh.H) : -xh.H # if `ψ₀ₚ` is complex then solver needs complex matrix. So cast `xh.H` to complex if it is real
@@ -297,15 +310,23 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
     if iszero(g) # nonlinearity absent
         prob = DE.ODEProblem(SciMLOperators.MatrixOperator(H), ψ₀ₚ, tspan)
     else # nonlinearity present
-        fft_plan = FFTW.plan_fft!(ψ₀ₚ)
-        bfft_plan = FFTW.plan_bfft(ψ₀ₚ) # this is out-of-place but will write to a buffer
-        params = (H, G[1], similar(ψ₀ₚ), fft_plan, bfft_plan)
         if basis == :cis
+            bfft_plan = FFTW.plan_bfft(ψ₀ₚ) # will first use this and write the result to the buffer
+            fft_plan! = FFTW.plan_fft!(ψ₀ₚ) # then will use this in-place on that buffer
+            params = (H, G[1], similar(ψ₀ₚ), bfft_plan, fft_plan!)
             prob = DE.ODEProblem(gpe_cis_1D!, ψ₀ₚ, tspan, params)
-        elseif basis == :sin
-            prob = DE.ODEProblem(gpe_sin_1D!, ψ₀ₚ, tspan, params)
-        else # basis == :cos
-            # prob = DE.ODEProblem(gpe_cos_1D!, ψ₀ₚ, tspan, params)
+        else # basis == :sin || basis == :cos
+            ft_type = basis == :sin ? FFTW.RODFT00 : FFTW.REDFT00
+            if itime
+                rft_plan  = FFTW.plan_r2r(real(ψ₀ₚ), ft_type)  # will first use this and write the result to the buffer
+                rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ), ft_type) # then will use this in-place on that buffer
+                params = (H, G[1], similar(ψ₀ₚ, R), rft_plan, rft_plan!)
+                prob = DE.ODEProblem(gpe_sincos_itime_1D!, ψ₀ₚ, tspan, params)
+            else
+                rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ), ft_type)
+                params = (H, G[1], similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), rft_plan!)
+                prob = DE.ODEProblem(gpe_sincos_1D!, ψ₀ₚ, tspan, params)
+            end
         end
     end
 
@@ -323,38 +344,44 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
     end
 end
 
-"Update the 𝑢′ matrix of the GPE."
+"Update the 𝑢′ matrix of the GPE in the cis basis."
 function gpe_cis_1D!(du, u, params, t)
-    H, g, u_buff, fft_plan, bfft_plan = params
+    H, g, u_buff, bfft_plan, fft_plan! = params
     mul!(du, H, u)
     mul!(u_buff, bfft_plan, u) # transform `u` and write into `u_buff`
     u_buff .*= g .* abs2.(u_buff)
-    fft_plan * u_buff # in-place transform of `u_buff`
+    fft_plan! * u_buff # in-place transform of `u_buff`
     du .+= u_buff
     return
 end
 
-function gpe_sin_1D!(du, u, params, t)
-    H, g, B = params
+"Update the 𝑢′ matrix of the imaginary-time GPE in the sin/cos basis. The equation is real."
+function gpe_sincos_itime_1D!(du, u, params, t)
+    H, g, u_buff, rft_plan, rft_plan! = params
     mul!(du, H, u)
-    null = zero(g)
-    for p in eachindex(u)
-        for k in eachindex(u)
-            s = null
-            for k′ in eachindex(u)
-                s′ = null
-                k″ = -k + p + k′; 1 ≤ k″ ≤ B && (s′ += u[k″])
-                k″ =  k - p + k′; 1 ≤ k″ ≤ B && (s′ += u[k″])
-                k″ =  k - p - k′; 1 ≤ k″ ≤ B && (s′ -= u[k″])
-                k″ = -k + p - k′; 1 ≤ k″ ≤ B && (s′ -= u[k″])
-                k″ = -k - p + k′; 1 ≤ k″ ≤ B && (s′ -= u[k″])
-                k″ =  k + p + k′; 1 ≤ k″ ≤ B && (s′ -= u[k″])
-                k″ =  k + p - k′; 1 ≤ k″ ≤ B && (s′ += u[k″])
-                s += u[k′]' * s′
-            end
-            du[p] += g * u[k] * s
-        end
-    end
+    mul!(u_buff, rft_plan, u) # transform `u` and write into `u_buff`
+    u_buff .*= g .* u_buff.^2
+    rft_plan! * u_buff # in-place transform of `u_buff`
+    du .+= u_buff
+    return
+end
+
+"Update the 𝑢′ matrix of the real-time GPE in the sin/cos basis. The equation is complex."
+function gpe_sincos_1D!(du, u, params, t)
+    H, g, u_buff, u_buff_im, rft_plan! = params
+    mul!(du, H, u)
+    # treat real part
+    u_buff .= real.(u)
+    rft_plan! * u_buff
+    u_buff .*= u_buff.^2
+    rft_plan! * u_buff
+    # treat imaginary part
+    u_buff_im .= imag.(u)
+    rft_plan! * u_buff_im
+    u_buff_im .*= u_buff_im.^2
+    rft_plan! * u_buff_im
+    # add re and im
+    @. du += g * (u_buff + im * u_buff_im)
     return
 end
 
