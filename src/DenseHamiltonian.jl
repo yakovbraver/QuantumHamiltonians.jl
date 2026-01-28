@@ -246,13 +246,9 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
                    ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), T_max::R, dt::R, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0) where {Storage,R}
     (;xlims, L, M, basis, nc) = xh
     D = length(xlims)
-    B = if basis == :cis  # size of each Hamiltonian block
-        (2M+1)^D
-    elseif basis == :sin
-        M^D
-    else # basis == :cos
-        (M+1)^D
-    end
+    # size of each Hamiltonian block
+    B = basis == :cis ? (2M+1)^D :
+        basis == :sin ?      M^D : (M+1)^D
 
     # prepare the p-space wave function
     if ψ₀ isa AbstractVector{<:Number} # `ψ₀` is given in p-space
@@ -286,17 +282,17 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
     end
 
     if basis == :cis
-        N = 2M + 1 # number of points
-        dx = L[1] / N
-        g *= dx / L[1]^2 # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
+        N = 2M + 1 # number of points in each dimension
+        dx = L ./ N
+        g *= prod(@. dx / L^2) # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
     elseif basis == :sin
-        N = M # number of points
-        dx = L[1] / (N+1)
-        g *= dx / (2L[1])^2 # Same as for cis but with √(2𝐿) instead of √𝐿
+        N = M
+        dx = L ./ (N+1)
+        g *= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
     else # basis == :cos
-        N = M + 1 # number of points
-        dx = L[1] / (N-1)
-        g *= dx / (2L[1])^2 # Same as for cis but with √(2𝐿) instead of √𝐿
+        N = M + 1
+        dx = L ./ (N-1)
+        g *= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
     end
 
     if itime # propagation in imaginary time: equation is real if `xh.H` and `ψ₀ₚ` are real
@@ -316,18 +312,18 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
             bfft_plan = FFTW.plan_bfft(ψ₀ₚ) # will first use this and write the result to the buffer
             fft_plan! = FFTW.plan_fft!(ψ₀ₚ) # then will use this in-place on that buffer
             params = (H, G[1], similar(ψ₀ₚ), bfft_plan, fft_plan!)
-            prob = DE.ODEProblem(gpe_cis_1D!, ψ₀ₚ, tspan, params)
+            prob = DE.ODEProblem(gpe_cis_1comp!, ψ₀ₚ, tspan, params)
         else # basis == :sin || basis == :cos
             ft_type = basis == :sin ? FFTW.RODFT00 : FFTW.REDFT00
             if itime
                 rft_plan  = FFTW.plan_r2r(real(ψ₀ₚ), ft_type)  # will first use this and write the result to the buffer
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ), ft_type) # then will use this in-place on that buffer
                 params = (H, G[1], similar(ψ₀ₚ, R), rft_plan, rft_plan!)
-                prob = DE.ODEProblem(gpe_sincos_itime_1D!, ψ₀ₚ, tspan, params)
+                prob = DE.ODEProblem(gpe_sincos_itime_1comp!, ψ₀ₚ, tspan, params)
             else
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ), ft_type)
                 params = (H, G[1], similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), rft_plan!)
-                prob = DE.ODEProblem(gpe_sincos_1D!, ψ₀ₚ, tspan, params)
+                prob = DE.ODEProblem(gpe_sincos_1comp!, ψ₀ₚ, tspan, params)
             end
         end
     end
@@ -347,7 +343,7 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
 end
 
 "Update the 𝑢′ matrix of the GPE in the cis basis."
-function gpe_cis_1D!(du, u, params, t)
+function gpe_cis_1comp!(du, u, params, t)
     H, g, u_buff, bfft_plan, fft_plan! = params
     mul!(du, H, u)
     mul!(u_buff, bfft_plan, u) # transform `u` and write into `u_buff`
@@ -358,7 +354,7 @@ function gpe_cis_1D!(du, u, params, t)
 end
 
 "Update the 𝑢′ matrix of the imaginary-time GPE in the sin/cos basis. The equation is real."
-function gpe_sincos_itime_1D!(du, u, params, t)
+function gpe_sincos_itime_1comp!(du, u, params, t)
     H, g, u_buff, rft_plan, rft_plan! = params
     mul!(du, H, u)
     mul!(u_buff, rft_plan, u) # transform `u` and write into `u_buff`
@@ -369,7 +365,7 @@ function gpe_sincos_itime_1D!(du, u, params, t)
 end
 
 "Update the 𝑢′ matrix of the real-time GPE in the sin/cos basis. The equation is complex."
-function gpe_sincos_1D!(du, u, params, t)
+function gpe_sincos_1comp!(du, u, params, t)
     H, g, u_buff, u_buff_im, rft_plan! = params
     mul!(du, H, u)
     # treat real part
@@ -422,7 +418,8 @@ function get_ε_μ(xh::XSpaceHamiltonian{Storage,R}, v, g=zeros(typeof(xh.δ), x
         if ft.did_complex_rxdft
             ψ = im .* ft.buff_im
         end
-        U = g[1] * sum(abs2.(ψ).^2) * (ft.xs[2, 1] - ft.xs[1, 1])
+        dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
+        U = g[1] * sum(abs2.(ψ).^2) * dV
         μ += U
         ε += U / 2
     end
