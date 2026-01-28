@@ -405,41 +405,24 @@ end
 # end
 
 "Return mean energy and chemical potential for a p-space state `v`. (currently, 1-component only)"
-function get_ε_μ(xh, v, g=zeros(typeof(xh.δ), xh.nc, xh.nc))
-    (; basis) = xh
-    L = xh.L[1]
+function get_ε_μ(xh::XSpaceHamiltonian{Storage,R}, v, g=zeros(typeof(xh.δ), xh.nc, xh.nc)) where {Storage,R}
+    (;xlims, M, nc, basis) = xh
     B = length(v)    
     ε = dot(v, xh.H, v)
     μ = ε
     if !iszero(g)
-        if basis == :cis
-            dx = L / B
-            v_buff = FFTW.bfft(v) / √L # transform to x-space
-            U = g[1] * sum(abs2.(v_buff).^2) * dx
-        elseif basis == :sin
-            U = zero(μ)
-            null = zero(μ)
-            for p in eachindex(v)
-                sp = null
-                for k in eachindex(v)
-                    s = null
-                    for k′ in eachindex(v)
-                        s′ = null
-                        k″ = -k + p + k′; 1 ≤ k″ ≤ B && (s′ += v[k″])
-                        k″ =  k - p + k′; 1 ≤ k″ ≤ B && (s′ += v[k″])
-                        k″ =  k - p - k′; 1 ≤ k″ ≤ B && (s′ -= v[k″])
-                        k″ = -k + p - k′; 1 ≤ k″ ≤ B && (s′ -= v[k″])
-                        k″ = -k - p + k′; 1 ≤ k″ ≤ B && (s′ -= v[k″])
-                        k″ =  k + p + k′; 1 ≤ k″ ≤ B && (s′ -= v[k″])
-                        k″ =  k + p - k′; 1 ≤ k″ ≤ B && (s′ += v[k″])
-                        s += v[k′]' * s′
-                    end
-                    sp += v[k] * s
-                end
-                U += v[p]' * sp |> real
-            end
-            U *= g[1] / 2L
+        v_isreal = eltype(v) <: Real
+        ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, forward=false)
+        c = 1
+        v_input = basis == :cis ? FFTW.fftshift(v[(c-1)B+1:B]) : @view(v[(c-1)B+1:B]) # `ifftshift` because our matrices and vectors assume -M:M ordering, but FFT assumes 0..M,-M,..-1
+        transform!(ft, v_input)
+        ψ_type = basis != :cis && v_isreal ? R : complex(R)  # `ψ` are real if elements of v are real and if the basis is real (sin/cos). If basis is real but `v` are complex, this will yield complex function as expected.
+        ψ = Matrix{ψ_type}(undef, B, nc)
+        ψ .= ft.buff
+        if ft.did_complex_rxdft
+            ψ = im .* ft.buff_im
         end
+        U = g[1] * sum(abs2.(ψ).^2) * (ft.xs[2, 1] - ft.xs[1, 1])
         μ += U
         ε += U / 2
     end
