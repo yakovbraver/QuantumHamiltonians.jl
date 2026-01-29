@@ -54,7 +54,7 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
             buff_im = similar(buff, ntuple(Returns(target_real ? 0 : N), D)) # if `target_real`, then this buffer is not needed; make it 0x0 (in `D` dimesions)
             plan = FFTW.plan_r2r!(buff, FFTW.RODFT00) # note that `RODFT00` is its own inverse
         end
-        target_rank == 1 && (L .*= 2) # just because the normalisation factors feature 1/√(2𝐿) in the case (target_rank == 1 && basis != :cos)
+        L .*= 2 # for proper calculation of `normalisation`, to cancel the 2 included in FFTW DST/DCT
     end
 
     if forward
@@ -252,14 +252,14 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
             for jx in 1:M # not enough work for @floop, slows down execution (checked for M up to 300)
                 for j′x in 1:M
                     j₋x = abs(j′x-jx)
-                    A[j′x, jx] = ( (buff[j₋x+1] - buff[j′x+jx+1]) + im*(buff_im[j₋x+1] - buff_im[j′x+jx+1]) ) / 2
+                    A[j′x, jx] = buff[j₋x+1] - buff[j′x+jx+1] + im*(buff_im[j₋x+1] - buff_im[j′x+jx+1])
                 end
             end
         else
             for jx in 1:M
                 for j′x in 1:M
                     j₋x = abs(j′x-jx)
-                    A[j′x, jx] = (buff[j₋x+1] - buff[j′x+jx+1]) / 2
+                    A[j′x, jx] = buff[j₋x+1] - buff[j′x+jx+1]
                 end
             end
         end
@@ -270,7 +270,7 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
                 for j′x in 0:M
                     ζ′ₓ = ifelse(iszero(j′x), 2, 1)
                     j₋x = abs(j′x-jx)
-                    A[j′x+1, jx+1] = ( (buff[j₋x+1] + buff[j′x+jx+1]) + im*(buff_im[j₋x+1] + buff_im[j′x+jx+1]) ) / 2√(ζₓ*ζ′ₓ)
+                    A[j′x+1, jx+1] = ( (buff[j₋x+1] + buff[j′x+jx+1]) + im*(buff_im[j₋x+1] + buff_im[j′x+jx+1]) ) / √(ζₓ*ζ′ₓ)
                 end
             end
         else
@@ -279,7 +279,7 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
                 for j′x in 0:M
                     ζ′ₓ = ifelse(iszero(j′x), 2, 1)
                     j₋x = abs(j′x-jx)
-                    A[j′x+1, jx+1] = (buff[j₋x+1] + buff[j′x+jx+1]) / 2√(ζₓ*ζ′ₓ)
+                    A[j′x+1, jx+1] = (buff[j₋x+1] + buff[j′x+jx+1]) / √(ζₓ*ζ′ₓ)
                 end
             end
         end
@@ -313,8 +313,8 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
                 for jy in 1:M, j′x in 1:M, j′y in 1:M
                     j₋x = abs(j′x-jx)
                     j₋y = abs(j′y-jy)
-                    A[(j′x-1)M+j′y, (jx-1)M+jy] = (buff[j₋x+1, j₋y+1] - buff[j₋x+1, j′y+jy+1] - buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]) / 4 +
-                                 im * (buff_im[j₋x+1, j₋y+1] - buff_im[j₋x+1, j′y+jy+1] - buff_im[j′x+jx+1, j₋y+1] + buff_im[j′x+jx+1, j′y+jy+1]) / 4
+                    A[(j′x-1)M+j′y, (jx-1)M+jy] = buff[j₋x+1, j₋y+1] - buff[j₋x+1, j′y+jy+1] - buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1] +
+                                im * (buff_im[j₋x+1, j₋y+1] - buff_im[j₋x+1, j′y+jy+1] - buff_im[j′x+jx+1, j₋y+1] + buff_im[j′x+jx+1, j′y+jy+1])
                 end
             end
         else
@@ -322,7 +322,7 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
                 for jy in 1:M, j′x in 1:M, j′y in 1:M
                     j₋x = abs(j′x-jx)
                     j₋y = abs(j′y-jy)
-                    A[(j′x-1)M+j′y, (jx-1)M+jy] = (buff[j₋x+1, j₋y+1] - buff[j₋x+1, j′y+jy+1] - buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]) / 4
+                    A[(j′x-1)M+j′y, (jx-1)M+jy] = buff[j₋x+1, j₋y+1] - buff[j₋x+1, j′y+jy+1] - buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]
                 end
             end
         end
@@ -333,8 +333,8 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
                 for jy in 0:M, j′x in 0:M, j′y in 0:M
                     j₋x = abs(j′x-jx)
                     j₋y = abs(j′y-jy)
-                    A[j′x*b+j′y+1, jx*b+jy+1] = (buff[j₋x+1, j₋y+1] + buff[j₋x+1, j′y+jy+1] + buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]) / 4 +
-                               im * (buff_im[j₋x+1, j₋y+1] + buff_im[j₋x+1, j′y+jy+1] + buff_im[j′x+jx+1, j₋y+1] + buff_im[j′x+jx+1, j′y+jy+1]) / 4
+                    A[j′x*b+j′y+1, jx*b+jy+1] = buff[j₋x+1, j₋y+1] + buff[j₋x+1, j′y+jy+1] + buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1] +
+                              im * (buff_im[j₋x+1, j₋y+1] + buff_im[j₋x+1, j′y+jy+1] + buff_im[j′x+jx+1, j₋y+1] + buff_im[j′x+jx+1, j′y+jy+1])
                 end
             end
         else
@@ -342,7 +342,7 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
                 for jy in 0:M, j′x in 0:M, j′y in 0:M
                     j₋x = abs(j′x-jx)
                     j₋y = abs(j′y-jy)
-                    A[j′x*b+j′y+1, jx*b+jy+1] = (buff[j₋x+1, j₋y+1] + buff[j₋x+1, j′y+jy+1] + buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]) / 4
+                    A[j′x*b+j′y+1, jx*b+jy+1] = buff[j₋x+1, j₋y+1] + buff[j₋x+1, j′y+jy+1] + buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]
                 end
             end
         end
