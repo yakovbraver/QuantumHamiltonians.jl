@@ -107,7 +107,7 @@ end
 
 # TODO tweak ψ a bit to generalise to any D
 """
-Construct a 1D coordinate-space wave function using its Fourier-space representation `v`.
+Construct a 1D coordinate-space wave function using its p-space representation `v`.
 Return (`xs`, `ψ`) where `ψ[x, components]`.
 """
 function make_wavefunction(xh::XSpaceHamiltonian{Storage,R}, v::AbstractVector) where {Storage,R}
@@ -118,14 +118,19 @@ function make_wavefunction(xh::XSpaceHamiltonian{Storage,R}, v::AbstractVector) 
     B = size(ft.xs, 1) # component-block size (= number of x points in each dimension)
     ψ = Matrix{ψ_type}(undef, B, nc)
     for c in 1:nc
-        v_input = basis == :cis ? FFTW.ifftshift(v[(c-1)B+1:B]) : @view(v[(c-1)B+1:B]) # `ifftshift` because our matrices and vectors assume -M:M ordering, but FFT assumes 0..M,-M,..-1
+        v_input = basis == :cis ? FFTW.ifftshift(v[(c-1)B+1:c*B]) : @view(v[(c-1)B+1:c*B]) # `ifftshift` because our matrices and vectors assume -M:M ordering, but FFT assumes 0..M,-M,..-1
+        if basis == :cos # 0th and last harmonics need additional normalisation
+            v[(c-1)B+1] *= √2
+            v[c*B] *= √2
+        end
         transform!(ft, v_input)
-        ψ[:, c] = ft.buff
-        if ft.did_complex_rxdft
-            ψ[:, c] .+= im .* ft.buff_im
+        fft_to_vector!(@view(ψ[:, c]), ft)
+        if basis == :cos # undo what is done in `fft_to_vector!` (that assumes p-space while we actually got back to x-space)
+            ψ[1, c] *= √2
+            ψ[end, c] *= √2
         end
     end
-    return ft.xs, ψ, ψ # return "normal" coordinates, in `x ∈ xlims`
+    return ft.xs, ψ
 end
 
 """
