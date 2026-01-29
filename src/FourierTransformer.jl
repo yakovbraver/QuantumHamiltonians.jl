@@ -249,14 +249,14 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
         end
     elseif basis == :sin
         if ft.did_complex_rxdft
-            @floop for jx in 1:M
+            for jx in 1:M # not enough work for @floop, slows down execution (checked for M up to 300)
                 for j′x in 1:M
                     j₋x = abs(j′x-jx)
                     A[j′x, jx] = ( (buff[j₋x+1] - buff[j′x+jx+1]) + im*(buff_im[j₋x+1] - buff_im[j′x+jx+1]) ) / 2
                 end
             end
         else
-            @floop for jx in 1:M
+            for jx in 1:M
                 for j′x in 1:M
                     j₋x = abs(j′x-jx)
                     A[j′x, jx] = (buff[j₋x+1] - buff[j′x+jx+1]) / 2
@@ -265,17 +265,21 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
         end
     else # basis == :cos
         if ft.did_complex_rxdft
-            @floop for jx in 0:M
+            for jx in 0:M
+                ζₓ = ifelse(iszero(jx), 2, 1)
                 for j′x in 0:M
+                    ζ′ₓ = ifelse(iszero(j′x), 2, 1)
                     j₋x = abs(j′x-jx)
-                    A[j′x+1, jx+1] = ( (buff[j₋x+1] + buff[j′x+jx+1]) + im*(buff_im[j₋x+1] + buff_im[j′x+jx+1]) ) / 2
+                    A[j′x+1, jx+1] = ( (buff[j₋x+1] + buff[j′x+jx+1]) + im*(buff_im[j₋x+1] + buff_im[j′x+jx+1]) ) / 2√(ζₓ*ζ′ₓ)
                 end
             end
         else
-            @floop for jx in 0:M
+            for jx in 0:M
+                ζₓ = ifelse(iszero(jx), 2, 1)
                 for j′x in 0:M
+                    ζ′ₓ = ifelse(iszero(j′x), 2, 1)
                     j₋x = abs(j′x-jx)
-                    A[j′x+1, jx+1] = (buff[j₋x+1] + buff[j′x+jx+1]) / 2
+                    A[j′x+1, jx+1] = (buff[j₋x+1] + buff[j′x+jx+1]) / 2√(ζₓ*ζ′ₓ)
                 end
             end
         end

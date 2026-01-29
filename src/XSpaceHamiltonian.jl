@@ -80,10 +80,15 @@ function make_eigenfunctions(xh::XSpaceHamiltonian{Storage,R}; statenos::Abstrac
                     @floop for (ix, x) in enumerate(xs)
                         ψ[ix, c, is] = sum(V[(c-1)*B+j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
                     end
-                else # nonperiodic
+                elseif basis == :sin
                     @floop for (ix, x) in enumerate(xs)
                         ψ[ix, c, is] = sum(V[(c-1)*M+jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
                     end
+                else # basis == :cos
+                    @floop for (ix, x) in enumerate(xs)
+                        ψ[ix, c, is] = sum(V[(c-1)*M+jx+1, stateno]cos(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
+                    end
+                    ψ[:, c, is] .+= V[(c-1)*M+1, stateno] / √Lx # treat zeroth harmonic separately
                 end
             end
         end
