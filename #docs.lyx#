@@ -1,0 +1,4941 @@
+#LyX 2.4 created this file. For more info see https://www.lyx.org/
+\lyxformat 620
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass article
+\use_default_options true
+\maintain_unincluded_children no
+\language british
+\language_package default
+\inputencoding utf8
+\fontencoding auto
+\font_roman "lmodern" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_roman_osf false
+\font_sans_osf false
+\font_typewriter_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\use_microtype false
+\use_dash_ligatures true
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\float_placement class
+\float_alignment class
+\paperfontsize default
+\spacing single
+\use_hyperref true
+\pdf_bookmarks true
+\pdf_bookmarksnumbered false
+\pdf_bookmarksopen false
+\pdf_bookmarksopenlevel 1
+\pdf_breaklinks false
+\pdf_pdfborder true
+\pdf_colorlinks true
+\pdf_backref false
+\pdf_pdfusetitle true
+\papersize default
+\use_geometry true
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\biblio_style plain
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\use_refstyle 1
+\use_formatted_ref 0
+\use_minted 0
+\use_lineno 0
+\index Index
+\shortcut idx
+\color #b8bb26
+\end_index
+\leftmargin 2cm
+\topmargin 2.5cm
+\rightmargin 2cm
+\bottommargin 2.5cm
+\secnumdepth 4
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\is_math_indent 0
+\math_numbering_side default
+\quotes_style british
+\dynamic_quotes 0
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tablestyle default
+\tracking_changes false
+\output_changes false
+\change_bars false
+\postpone_fragile_content true
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\docbook_table_output 0
+\docbook_mathml_prefix 1
+\end_header
+
+\begin_body
+
+\begin_layout Standard
+\begin_inset FormulaMacro
+\newcommand{\bra}[1]{\left\langle #1\right|}
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\ket}[1]{\left|#1\right\rangle }
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\braket}[2]{\left\langle #1|#2\right\rangle }
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\ketbra}[2]{\left|#1\right\rangle \!\left\langle #2\right|}
+{\left|#1\right\rangle \left\langle #2\right|}
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\i}{\mathrm{i}}
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\d}{\mathrm{d}}
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\e}{\mathrm{e}}
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\Tr}{\mathrm{Tr}}
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\dbra}[1]{\left\langle \!\left\langle #1\right|\!\right.}
+{\left\langle \left\langle #1\right|\right.}
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\dket}[1]{\left.\!\left|#1\right\rangle \!\right\rangle }
+{\left.\left|#1\right\rangle \right\rangle }
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\dbraket}[2]{\left\langle \!\left\langle #1|#2\right\rangle \!\right\rangle }
+{\left\langle \left\langle #1|#2\right\rangle \right\rangle }
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\dketbra}[2]{\left.\!\left|#1\right\rangle \!\right\rangle \!\left\langle \!\left\langle #2\right|\!\right.}
+{\left.\left|#1\right\rangle \right\rangle \left\langle \left\langle #2\right|\right.}
+\end_inset
+
+
+\begin_inset FormulaMacro
+\newcommand{\ps}[3]{\prescript{#1}{#2}{#3}}
+{_{#2}^{#1}#3}
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The code solves
+\begin_inset Formula 
+\[
+\hat{H}(\boldsymbol{r})\ket{\Psi^{\lambda}(\boldsymbol{r})}=\varepsilon^{\lambda}\ket{\Psi^{\lambda}(\boldsymbol{r})}
+\]
+
+\end_inset
+
+where 
+\begin_inset Formula $\ket{\Psi(\boldsymbol{r})}$
+\end_inset
+
+ is an 
+\begin_inset Formula $n$
+\end_inset
+
+-component vector
+\begin_inset Formula 
+\[
+\ket{\Psi^{\lambda}(\boldsymbol{r})}=\begin{pmatrix}\Psi_{1}^{\lambda}(\boldsymbol{r})\\
+\vdots\\
+\Psi_{n}^{\lambda}(\boldsymbol{r})
+\end{pmatrix}
+\]
+
+\end_inset
+
+while the Hamiltonian is
+\begin_inset Formula 
+\[
+\hat{H}(\boldsymbol{r})=\begin{pmatrix}(-\i\nabla-\boldsymbol{A})^{2}+H_{11}(\boldsymbol{r})-\i\Gamma_{1} & H_{21}(\boldsymbol{r}) & \cdots\\
+H_{12}(\boldsymbol{r}) & (-\i\nabla-\boldsymbol{A})^{2}+H_{22}(\boldsymbol{r})-\i\Gamma_{2} & \cdots\\
+\vdots & \vdots & \ddots
+\end{pmatrix}.
+\]
+
+\end_inset
+
+Presently,
+ 
+\begin_inset Formula $\boldsymbol{A}$
+\end_inset
+
+ can only be the same for all states.
+ If 
+\family typewriter
+A_x
+\family default
+ and 
+\family typewriter
+A_y
+\family default
+ are passed,
+ they are used for all states.
+ If they are passed as 
+\family typewriter
+nothing
+\family default
+,
+ then only the Laplace is used:
+ 
+\begin_inset Formula $(-\i\nabla-\boldsymbol{A})^{2}\to-\Delta$
+\end_inset
+
+.
+ The functions 
+\begin_inset Formula $H_{ij}(\boldsymbol{r})$
+\end_inset
+
+ are passed in the 
+\family typewriter
+H
+\family default
+ matrix.
+ Constants 
+\begin_inset Formula $\Gamma_{i}$
+\end_inset
+
+ are passed in the 
+\begin_inset Formula $\mathtt{\Gamma}$
+\end_inset
+
+ array.
+\end_layout
+
+\begin_layout Standard
+The orthonormality of eigenvectors is expressed as
+\begin_inset Formula 
+\[
+\intop\d\boldsymbol{r}\,\braket{\Psi^{\lambda}(\boldsymbol{r})}{\Psi^{\mu}(\boldsymbol{r})}=\intop\d\boldsymbol{r}\,\sum_{i}\Psi_{i}^{\lambda}(\boldsymbol{r})\Psi_{i}^{\mu}(\boldsymbol{r})=\delta^{\lambda\mu}.
+\]
+
+\end_inset
+
+Note that the functions 
+\begin_inset Formula $\Psi_{i}^{\lambda}(\boldsymbol{r})$
+\end_inset
+
+ for different 
+\begin_inset Formula $i$
+\end_inset
+
+'s need not be orthogonal,
+ i.e.
+ there is no requirement for 
+\begin_inset Formula $\intop\d\boldsymbol{r}\,\Psi_{i}^{\lambda}(\boldsymbol{r})\Psi_{j}^{\lambda}(\boldsymbol{r})$
+\end_inset
+
+ to be proportional to 
+\begin_inset Formula $\delta_{ij}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+We use 
+\family typewriter
+H
+\family default
+ to denote the momentum-space Hamiltonian matrix constructed in the code.
+\end_layout
+
+\begin_layout Section
+Cartesian
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\hat{H}_{\boldsymbol{q}}(\boldsymbol{r})=(-\i\delta\nabla+\boldsymbol{q}-\boldsymbol{A})^{2}+U(\boldsymbol{r})
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+cis basis
+\end_layout
+
+\begin_layout Subsubsection
+1D
+\end_layout
+
+\begin_layout Standard
+We take the Fourier basis 
+\begin_inset Formula $\ket j$
+\end_inset
+
+ 
+\begin_inset Formula 
+\[
+f_{j}(x)\coloneqq\braket xj=\frac{1}{\sqrt{L_{x}}}\e^{\i\frac{2\pi jx}{L_{x}}},\qquad j=-M,\ldots,0,\ldots,M
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph
+
+\family typewriter
+fft_to_matrix
+\end_layout
+
+\begin_layout Standard
+For potentials 
+\begin_inset Formula $H_{ij}(x)$
+\end_inset
+
+ —
+ let's call them generically as 
+\begin_inset Formula $V(x)$
+\end_inset
+
+ —
+ we have
+\begin_inset Formula 
+\begin{align*}
+\bra{j'}V\ket j & =\frac{1}{L_{x}}\int_{0}^{L_{x}}V(x)\e^{\i\frac{j-j'}{N}x}\d x\\
+ & =\frac{1}{L_{x}}\int_{0}^{L_{x}}V(x)\e^{-\i\frac{m}{N}x}\d x\\
+ & \eqqcolon V_{m}=V_{j'-j}
+\end{align*}
+
+\end_inset
+
+The elements 
+\begin_inset Formula $V_{j'j}\coloneqq\bra{j'}V(x)\ket j$
+\end_inset
+
+ are displayed in the matrix form as 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+V_{j'j}=\left(\begin{array}{ccc}
+V_{0} & V_{-1} & V_{-2}\\
+V_{1} & V_{0} & V_{-1}\\
+V_{2} & V_{1} & V_{0}
+\end{array}\right).
+\]
+
+\end_inset
+
+This corresponds to numbering columns and rows in the order from negative 
+\begin_inset Formula $j$
+\end_inset
+
+'s to positive:
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Float table
+placement document
+alignment document
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Tabular
+<lyxtabular version="3" rows="4" columns="4">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $j'\downarrow$
+\end_inset
+
+,
+ 
+\begin_inset Formula $j\to$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $-1$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $1$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $-1$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{0}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{-1}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{2}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $0$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{0}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{-1}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $1$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{2}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{0}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "tab:matrix-layout"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+As we agreed,
+ 
+\begin_inset Formula $j_{x}$
+\end_inset
+
+ runs from 
+\begin_inset Formula $-M$
+\end_inset
+
+ to 
+\begin_inset Formula $M$
+\end_inset
+
+.
+ This means that the differences 
+\begin_inset Formula $j_{x}^{\prime}-j_{x}$
+\end_inset
+
+ will run from 
+\begin_inset Formula $-2M$
+\end_inset
+
+ to 
+\begin_inset Formula $2M$
+\end_inset
+
+.
+ Thus,
+ we need to use 
+\begin_inset Formula $N=4M$
+\end_inset
+
+ points in FFT to obtain harmonics 
+\begin_inset Formula $\pm2M$
+\end_inset
+
+.
+ But it is more convenient to use
+\begin_inset Formula 
+\[
+N=4M+1
+\]
+
+\end_inset
+
+because when the number of points is odd,
+ we have the both the 
+\begin_inset Formula $-2M$
+\end_inset
+
+th and 
+\begin_inset Formula $+2M$
+\end_inset
+
+th harmonics stored in the output array.
+ E.g.
+ if 
+\begin_inset Formula $M=1$
+\end_inset
+
+,
+ for 
+\begin_inset Formula $N=4$
+\end_inset
+
+ we would have
+\begin_inset Formula 
+\[
+\begin{array}{cccc}
+{\tt V}_{0} & {\tt V}_{1} & {\tt V}_{2} & {\tt V}_{3}\\
+V_{0} & V_{1} & V_{2} & V_{-1}
+\end{array}
+\]
+
+\end_inset
+
+and then special care is needed to take the same 
+\begin_inset Formula ${\tt V}_{2}$
+\end_inset
+
+ both for 
+\begin_inset Formula $V_{2}$
+\end_inset
+
+ and 
+\begin_inset Formula $V_{-2}$
+\end_inset
+
+.
+ Here 
+\begin_inset Formula ${\tt V}_{i}$
+\end_inset
+
+ are the 0-based elements of the output of FFT.
+ On the other hand,
+ for 
+\begin_inset Formula $N=4+1$
+\end_inset
+
+ we will conveniently have 
+\begin_inset Formula 
+\[
+\begin{array}{ccccc}
+{\tt V}_{0} & {\tt V}_{1} & {\tt V}_{2} & {\tt V}_{3} & {\tt V}_{4}\\
+V_{0} & V_{1} & V_{2} & V_{-2} & V_{-1}
+\end{array}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+[Note for Julia:
+ After fftshift,
+ a new,
+ 
+\series bold
+1-based array 
+\series default
+is
+\begin_inset Formula 
+\[
+\begin{array}{ccccc}
+\tilde{{\tt V}}_{1} & \tilde{{\tt V}}_{2} & \tilde{{\tt V}}_{3} & \tilde{{\tt V}}_{4} & \tilde{{\tt V}}_{5}\\
+V_{-2} & V_{-1} & V_{0} & V_{1} & V_{2}
+\end{array}
+\]
+
+\end_inset
+
+so that 
+\begin_inset Formula $V_{i}=\tilde{{\tt V}}_{i+2M+1}$
+\end_inset
+
+.]
+\end_layout
+
+\begin_layout Standard
+The 
+\begin_inset Formula ${\tt V}_{j'j}$
+\end_inset
+
+ matrix is then constructed as 
+\begin_inset Formula 
+\[
+{\tt V}_{j'j}=\left(\begin{array}{ccc}
+{\tt V}_{0} & {\tt V}_{4} & {\tt V}_{3}\\
+{\tt V}_{1} & {\tt V}_{0} & {\tt V}_{4}\\
+{\tt V}_{2} & {\tt V}_{1} & {\tt V}_{0}
+\end{array}\right)
+\]
+
+\end_inset
+
+If 
+\begin_inset Formula $V(x)$
+\end_inset
+
+ is real,
+ then 
+\begin_inset Formula $V_{m}=V_{-m}^{*}$
+\end_inset
+
+ so that this matrix will be Hermitian.
+ If,
+ additionally,
+ 
+\begin_inset Formula $V(x)$
+\end_inset
+
+ is even,
+ then the Fourier-components are real,
+ so that 
+\begin_inset Formula $V_{m}=V_{-m}$
+\end_inset
+
+ and the matrix is real-symmetric.
+ 
+\end_layout
+
+\begin_layout Standard
+For real 
+\begin_inset Formula $V(x)$
+\end_inset
+
+,
+ we can use rfft,
+ which yields only positive harmonics.
+ Again,
+ we choose 
+\begin_inset Formula $M=1$
+\end_inset
+
+ and compute FFT for 
+\begin_inset Formula $N=4M+1$
+\end_inset
+
+,
+ but this only yields the values 
+\begin_inset Formula ${\tt V}_{0},{\tt V}_{1},{\tt V}_{2}$
+\end_inset
+
+ and we have
+\begin_inset Formula 
+\[
+\begin{array}{ccccc}
+{\tt V}_{0} & {\tt V}_{1} & {\tt V}_{2} & {\tt V}_{2}^{*} & {\tt V}_{1}^{*}\\
+V_{0} & V_{1} & V_{2} & V_{-2} & V_{-1}
+\end{array}
+\]
+
+\end_inset
+
+and 
+\begin_inset Formula 
+\[
+{\tt V}_{j'j}=\left(\begin{array}{ccc}
+{\tt V}_{0} & {\tt V}_{1}^{*} & {\tt V}_{2}^{*}\\
+{\tt V}_{1} & {\tt V}_{0} & {\tt V}_{1}^{*}\\
+{\tt V}_{2} & {\tt V}_{1} & {\tt V}_{0}
+\end{array}\right)
+\]
+
+\end_inset
+
+Up to now we ignored normalisation factors;
+ they are:
+\begin_inset Formula 
+\begin{equation}
+V_{m}=\frac{\Delta x}{L_{x}}{\tt V}_{m}=\frac{1}{N}{\tt V}_{m}\label{eq:V-normalisation}
+\end{equation}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph
+
+\family typewriter
+fft_to_vector
+\end_layout
+
+\begin_layout Standard
+Consider also converting a function 
+\begin_inset Formula $u(x)$
+\end_inset
+
+ from 
+\begin_inset Formula $x$
+\end_inset
+
+-space to 
+\begin_inset Formula $p$
+\end_inset
+
+-space,
+ which must be performed for the initial condition in the dynamics.
+ This looks simply as
+\begin_inset Formula 
+\[
+\braket ju=u_{j}=\int_{0}^{L_{x}}\d x\:\braket jx\braket xu=\int_{0}^{L_{x}}\d x\:\frac{1}{\sqrt{L_{x}}}\e^{-\i\frac{2\pi jx}{L_{x}}}u(x).
+\]
+
+\end_inset
+
+This amounts to taking FFT,
+ but we also need to remember the normalisation:
+\begin_inset Formula 
+\[
+u_{j}=\frac{\Delta x}{\sqrt{L_{x}}}{\tt u}_{j}.
+\]
+
+\end_inset
+
+This is not the same as when transforming operators,
+ where we have 
+\begin_inset Formula $\frac{\Delta x}{L_{x}}=\frac{1}{N}$
+\end_inset
+
+.
+ But in fact it is easy to normalise vectors manually (using 
+\family typewriter
+normalize
+\family default
+).
+\end_layout
+
+\begin_layout Standard
+Recall that the resulting 
+\begin_inset Formula ${\tt u}_{j}$
+\end_inset
+
+ array will be laid in the order 
+\begin_inset Formula $0,1,\ldots,M,-M,\ldots-1$
+\end_inset
+
+,
+ but when constructing operator matrices we use the order from negative frequencies to positive,
+ see table 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "tab:matrix-layout"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+.
+ Therefore,
+ we need to perform fftshift (since these vectors must agree with the matrices that act on them).
+\end_layout
+
+\begin_layout Standard
+Since 
+\begin_inset Formula $j$
+\end_inset
+
+ runs from 
+\begin_inset Formula $-M$
+\end_inset
+
+ to 
+\begin_inset Formula $M$
+\end_inset
+
+,
+ we need 
+\begin_inset Formula $N=2M+1$
+\end_inset
+
+ points.
+\end_layout
+
+\begin_layout Paragraph
+Wannier states
+\end_layout
+
+\begin_layout Standard
+We want to diagonalise the position operator 
+\begin_inset Formula $\hat{X}=\e^{\i\frac{2\pi}{L_{x}}\hat{x}}$
+\end_inset
+
+ constructed in the eigenbasis 
+\begin_inset Formula $\ket{\phi_{j}}$
+\end_inset
+
+ of 
+\begin_inset Formula $\hat{H}$
+\end_inset
+
+.
+ The required elements are
+\begin_inset Formula 
+\[
+X_{j'j}=\bra{\phi_{j'}}\e^{\i\frac{2\pi}{L_{x}}\hat{x}}\ket{\phi_{j}}.
+\]
+
+\end_inset
+
+Our 
+\begin_inset Formula $\ket{\phi_{j}}$
+\end_inset
+
+'s are in momentum representation,
+ so we need 
+\begin_inset Formula $\e^{\i\frac{2\pi}{L_{x}}\hat{x}}$
+\end_inset
+
+ in momentum representation.
+ Then we can simply construct 
+\begin_inset Formula $\hat{X}=\hat{S}^{\dagger}\e^{\i\frac{2\pi}{L_{x}}\hat{x}}\hat{S}$
+\end_inset
+
+ with 
+\begin_inset Formula $\hat{S}$
+\end_inset
+
+ being the eigenvectors matrix.
+ So we need
+\begin_inset Formula 
+\begin{align*}
+\bra{\psi_{j'}}\e^{\i\frac{2\pi}{L_{x}}\hat{x}}\ket{\psi_{j}} & =\frac{1}{L_{x}}\intop_{0}^{L_{x}}\d x\,\e^{-\i\frac{2\pi j_{x}^{\prime}x}{L_{x}}}\e^{\i\frac{2\pi}{L_{x}}x}\e^{\i\frac{2\pi j_{x}x}{L_{x}}}=\frac{1}{L_{x}}\intop_{0}^{L_{x}}\d x\,\e^{\i\frac{2\pi}{L_{x}}(j-j'+1)}\\
+ & =\delta_{j',j+1}
+\end{align*}
+
+\end_inset
+
+Then we have
+\begin_inset Formula 
+\[
+X_{ij}=(S^{\dagger})_{ik'}\delta_{k',k+1}S_{kj}=(S^{\dagger})_{i,k+1}S_{kj}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Diagonalising this 
+\begin_inset Formula $\hat{X}$
+\end_inset
+
+,
+ we get the Wannier functions as
+\begin_inset Formula 
+\[
+w_{a}(x)=\sum_{i}V_{i}^{(a)}\phi_{i}(x).
+\]
+
+\end_inset
+
+In the code 
+\begin_inset Formula $x$
+\end_inset
+
+ is discrete,
+ and this is 
+\begin_inset Formula 
+\[
+w_{xa}=\sum_{i}V_{ia}\phi_{xi}\implies\hat{{\tt w}}=\hat{\psi}\hat{{\tt V}}.
+\]
+
+\end_inset
+
+Mean energy of state 
+\begin_inset Formula $\ket{w_{a}}$
+\end_inset
+
+ is
+\begin_inset Formula 
+\[
+E_{a}=\bra{w_{a}}\hat{h}\ket{w_{a}}=\sum_{m,m'}V_{m'}^{(a)*}V_{m}^{(a)}\bra{\phi_{m'}}\hat{h}\ket{\phi_{m}}=\sum_{m}|V_{m}^{(a)}|^{2}\varepsilon_{m}
+\]
+
+\end_inset
+
+In the code,
+ this is 
+\begin_inset Formula 
+\[
+E_{a}=\sum_{m}|V_{ma}|^{2}\varepsilon_{m}\implies\vec{{\tt E}}=\vec{\varepsilon}(|\hat{{\tt V}}|{\tt .^{2}})
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+This calculation uses the basis that assumes that 
+\begin_inset Formula $x\in[0,L_{x}]$
+\end_inset
+
+,
+ so the corresponding eigenvalues have to be in the range 
+\begin_inset Formula $[0,2\pi)$
+\end_inset
+
+ to prevent confusion.
+ To this end we use 
+\family typewriter
+mod2pi
+\family default
+.
+ However,
+ in practice we have 
+\begin_inset Formula $x\in[x_{0},x_{0}+L_{x}]$
+\end_inset
+
+.
+ Therefore,
+ we have to add 
+\begin_inset Formula $x_{0}$
+\end_inset
+
+ to the eigenvalues.
+\end_layout
+
+\begin_layout Subsubsection
+2D
+\end_layout
+
+\begin_layout Standard
+To diagonalise,
+ we take the Fourier basis 
+\begin_inset Formula 
+\[
+\psi_{j_{x}j_{y}}(\boldsymbol{r})=\frac{1}{\sqrt{L_{x}L_{y}}}\e^{\i\frac{2\pi(j_{x}x+j_{y}y)}{L_{x}L_{y}}},\qquad j_{x},j_{y}=-M,\ldots,0,\ldots,M
+\]
+
+\end_inset
+
+The total number of values that 
+\begin_inset Formula $j_{x},j_{y}$
+\end_inset
+
+ can attain (= the size of each block in 
+\begin_inset Formula $\bra{j_{x}^{\prime}j_{y}^{\prime}}\hat{H}\ket{j_{x}j_{y}}$
+\end_inset
+
+) is
+\begin_inset Formula 
+\[
+B=2M+1.
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We have
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+\begin_inset Formula 
+\[
+\bra{j_{x}^{\prime}j_{y}^{\prime}}-\i\partial_{x}\ket{j_{x}j_{y}}=\frac{1}{L^{2}}\iintop_{0}^{L}\e^{-\i\frac{2\pi(j_{x}^{\prime}x+j_{y}^{\prime}y)}{L}}\partial_{x}\e^{\i\frac{2\pi(j_{x}x+j_{y}y)}{L}}\d x\d y=-\i\frac{\i2\pi j_{x}}{L}=\frac{2\pi j_{x}}{L}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{align}
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\boldsymbol{q}\ket{j_{x}j_{y}} & =\boldsymbol{q}^{2}\delta_{j_{x}^{\prime},j_{x}}\delta_{j_{y}^{\prime},j_{y}}\nonumber \\
+\bra{j_{x}^{\prime}j_{y}^{\prime}}-\i\delta\partial_{x}\ket{j_{x}j_{y}} & =\frac{2\pi\delta j_{x}}{L_{x}}\delta_{j_{x}^{\prime},j_{x}}\delta_{j_{y}^{\prime},j_{y}}\label{eq:diagonal}\\
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\delta^{2}\Delta\ket{j_{x}j_{y}} & =-\frac{(2\pi\delta)^{2}(j_{x}^{2}+j_{y}^{2})}{L_{x}L_{y}}\delta_{j_{x}^{\prime},j_{x}}\delta_{j_{y}^{\prime},j_{y}}\nonumber 
+\end{align}
+
+\end_inset
+
+Next,
+\begin_inset Formula 
+\begin{align}
+\bra{j_{x}^{\prime}j_{y}^{\prime}}H_{ab}(\boldsymbol{r})\ket{j_{x}j_{y}} & =\frac{1}{L^{2}}\iintop_{0}^{L}H_{ab}(\boldsymbol{r})\e^{\i\frac{2\pi(j_{x}-j_{x}^{\prime})x}{L_{x}}}\e^{\i\frac{2\pi(j_{y}-j_{y}^{\prime})y}{L_{y}}}\d x\d y\nonumber \\
+ & =\frac{1}{L^{2}}\iintop_{0}^{L}H_{ab}(\boldsymbol{r})\e^{-\i\frac{2\pi(j_{x}^{\prime}-j_{x})x}{L_{x}}}\e^{-\i\frac{2\pi(j_{y}^{\prime}-j_{y})y}{L_{y}}}\d x\d y\nonumber \\
+ & =\frac{1}{L^{2}}\tilde{H}_{ab}(j_{x}^{\prime}-j_{x},j_{y}^{\prime}-j_{y})\label{eq:H_ij-FT}
+\end{align}
+
+\end_inset
+
+where 
+\begin_inset Formula $\tilde{H}_{ab}(m_{x},m_{y})$
+\end_inset
+
+ is the 
+\begin_inset Formula $(m_{x},m_{y})$
+\end_inset
+
+th Fourier component of 
+\begin_inset Formula $H_{ab}(\boldsymbol{r})$
+\end_inset
+
+ [see fft.lyx for refresh on the signs].
+ As in the 1D case,
+ the number of Harmonics is
+\begin_inset Formula 
+\[
+N=4M+1
+\]
+
+\end_inset
+
+For 
+\begin_inset Formula $M=1$
+\end_inset
+
+,
+ the output of FFT and the harmonics they represent are 
+\begin_inset Formula 
+\[
+({\tt V}_{ij})=\begin{array}{ccccc}
+{\tt V}_{00} & {\tt V}_{01} & {\tt V}_{02} & {\tt V}_{03} & {\tt V}_{04}\\
+{\tt V}_{10} & {\tt V}_{11} & {\tt V}_{12} & {\tt V}_{13} & {\tt V}_{14}\\
+{\tt V}_{20} & {\tt V}_{21} & {\tt V}_{22} & {\tt V}_{23} & {\tt V}_{24}\\
+{\tt V}_{30} & {\tt V}_{31} & {\tt V}_{32} & {\tt V}_{33} & {\tt V}_{34}\\
+{\tt V}_{40} & {\tt V}_{41} & {\tt V}_{42} & {\tt V}_{43} & {\tt V}_{44}
+\end{array},\qquad(V_{m_{x}m_{y}})=\begin{array}{ccccc}
+V_{00} & V_{01} & V_{02} & V_{0,-2} & V_{0,-1}\\
+V_{10} & V_{11} & V_{12} & V_{1,-2} & V_{1,-1}\\
+V_{20} & V_{21} & V_{22} & V_{2,-2} & V_{2,-1}\\
+V_{-2,0} & V_{-2,1} & V_{-2,2} & V_{-2,-2} & V_{-2,-1}\\
+V_{-1,0} & V_{-1,1} & V_{-1,2} & V_{-1,-2} & V_{-1,-1}
+\end{array}
+\]
+
+\end_inset
+
+And now each row of 
+\begin_inset Formula $({\tt V}_{ij})$
+\end_inset
+
+ turns to a block as was in 1D case,
+ namely:
+\begin_inset Formula 
+\[
+({\tt H}_{ij})=\begin{array}{ccccccccc}
+{\tt V}_{00} & {\tt V}_{04} & {\tt V}_{03} & |{\tt V}_{40} & {\tt V}_{44} & {\tt V}_{43} & |{\tt V}_{30} & {\tt V}_{34} & {\tt V}_{33}\\
+{\tt V}_{01} & {\tt V}_{00} & {\tt V}_{04} & |{\tt V}_{41} & {\tt V}_{40} & {\tt V}_{44} & |{\tt V}_{31} & {\tt V}_{30} & {\tt V}_{34}\\
+{\tt V}_{02} & {\tt V}_{01} & {\tt V}_{00} & |{\tt V}_{42} & {\tt V}_{41} & {\tt V}_{40} & |{\tt V}_{32} & {\tt V}_{31} & {\tt V}_{30}\\
+{\tt V}_{10} & {\tt V}_{14} & {\tt V}_{13} & |{\tt V}_{00} & {\tt V}_{04} & {\tt V}_{03} & |{\tt V}_{40} & {\tt V}_{44} & {\tt V}_{43}\\
+{\tt V}_{11} & {\tt V}_{10} & {\tt V}_{14} & |{\tt V}_{01} & {\tt V}_{00} & {\tt V}_{04} & |{\tt V}_{41} & {\tt V}_{40} & {\tt V}_{44}\\
+{\tt V}_{12} & {\tt V}_{11} & {\tt V}_{10} & |{\tt V}_{02} & {\tt V}_{01} & {\tt V}_{00} & |{\tt V}_{42} & {\tt V}_{41} & {\tt V}_{40}\\
+{\tt V}_{20} & {\tt V}_{24} & {\tt V}_{23} & |{\tt V}_{10} & {\tt V}_{14} & {\tt V}_{13} & |{\tt V}_{00} & {\tt V}_{04} & {\tt V}_{03}\\
+{\tt V}_{21} & {\tt V}_{20} & {\tt V}_{24} & |{\tt V}_{11} & {\tt V}_{10} & {\tt V}_{14} & |{\tt V}_{01} & {\tt V}_{00} & {\tt V}_{04}\\
+{\tt V}_{22} & {\tt V}_{21} & {\tt V}_{20} & |{\tt V}_{12} & {\tt V}_{11} & {\tt V}_{10} & |{\tt V}_{02} & {\tt V}_{01} & {\tt V}_{00}
+\end{array}
+\]
+
+\end_inset
+
+If 
+\begin_inset Formula $V(x,y)$
+\end_inset
+
+ is real,
+ then we can use RFT,
+ which returns 
+\begin_inset Formula 
+\[
+({\tt V}_{ij})=\begin{array}{ccccc}
+{\tt V}_{00} & {\tt V}_{01} & {\tt V}_{02} & {\tt V}_{03} & {\tt V}_{04}\\
+{\tt V}_{10} & {\tt V}_{11} & {\tt V}_{12} & {\tt V}_{13} & {\tt V}_{14}\\
+{\tt V}_{20} & {\tt V}_{21} & {\tt V}_{22} & {\tt V}_{23} & {\tt V}_{24}
+\end{array}
+\]
+
+\end_inset
+
+This should be used to construct the lower triangle of 
+\begin_inset Formula $({\tt H}_{ij})$
+\end_inset
+
+,
+ with the upper following from conjugacy.
+\end_layout
+
+\begin_layout Standard
+Since 
+\begin_inset Formula $\bra{j_{x}^{\prime}j_{y}^{\prime}}U_{D}(\boldsymbol{r})\ket{j_{x}j_{y}}$
+\end_inset
+
+ depends on the differences 
+\begin_inset Formula $m_{x}\coloneqq j_{x}-j_{x}^{\prime}$
+\end_inset
+
+ and 
+\begin_inset Formula $m_{y}\coloneqq j_{y}-j_{y}^{\prime}$
+\end_inset
+
+,
+ it becomes banded.
+ Since it is 2D,
+ it is in fact block-banded (with the bands indexed by 
+\begin_inset Formula $m_{x}$
+\end_inset
+
+,
+ say),
+ with blocks being themselves banded (with these bands indexed by 
+\begin_inset Formula $m_{y}$
+\end_inset
+
+,
+ say).
+ Therefore,
+ when constructing 
+\begin_inset Formula ${\tt H}$
+\end_inset
+
+,
+ we fill the 
+\begin_inset Formula $m_{y}$
+\end_inset
+
+th band of the 
+\begin_inset Formula $m_{x}$
+\end_inset
+
+th block-band with 
+\begin_inset Formula ${\tt U}_{m_{x},m_{y}}$
+\end_inset
+
+,
+ where 
+\begin_inset Formula ${\tt U}$
+\end_inset
+
+ is the fft matrix of 
+\begin_inset Formula $U(\boldsymbol{r})$
+\end_inset
+
+.
+ Due to the symmetry 
+\begin_inset Formula $x\leftrightarrow y$
+\end_inset
+
+,
+ 
+\begin_inset Formula ${\tt U}_{m_{x},m_{y}}$
+\end_inset
+
+ is also symmetric (
+\begin_inset Formula $m_{x}\leftrightarrow m_{y}$
+\end_inset
+
+).
+ Therefore,
+ when populating 
+\begin_inset Formula ${\tt H}$
+\end_inset
+
+ with diagonal terms 
+\begin_inset CommandInset ref
+LatexCommand eqref
+reference "eq:diagonal"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+,
+ it does not matter which index we call 
+\begin_inset Formula $j_{x}$
+\end_inset
+
+ and which 
+\begin_inset Formula $j_{y}$
+\end_inset
+
+.
+ Note,
+ moreover,
+ that 
+\begin_inset Formula $U(\boldsymbol{r})$
+\end_inset
+
+ is real and even (if the origin is adequately chosen),
+ so that 
+\begin_inset Formula ${\tt U}_{m_{x},m_{y}}$
+\end_inset
+
+ is also real and even.
+\end_layout
+
+\begin_layout Standard
+Due to this dependence on the difference,
+ we can use any shifted range for 
+\begin_inset Formula $j_{x},j_{y}$
+\end_inset
+
+.
+ That is,
+ we can use 
+\begin_inset Formula $j_{x},j_{y}=1,\ldots,2M+1$
+\end_inset
+
+ and apply 
+\begin_inset CommandInset ref
+LatexCommand eqref
+reference "eq:H_ij-FT"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+ directly.
+\end_layout
+
+\begin_layout Standard
+Consider diagonalising repeatedly for different 
+\begin_inset Formula $\boldsymbol{q}$
+\end_inset
+
+,
+ which is done in a dedicated 
+\family typewriter
+diagonalize!
+
+\family default
+ method:
+\end_layout
+
+\begin_layout Itemize
+When 
+\begin_inset Formula $\boldsymbol{A}=0$
+\end_inset
+
+,
+ we can make an efficient trick.
+ The constructor of 
+\family typewriter
+DenseHamiltonian
+\family default
+ constructs 
+\begin_inset Formula $\hat{H}_{\boldsymbol{q}}(\boldsymbol{r})$
+\end_inset
+
+ for 
+\begin_inset Formula $\boldsymbol{q}=0$
+\end_inset
+
+.
+ Then,
+ in 
+\family typewriter
+diagonalize!
+
+\family default
+ we iterate over the passed 
+\begin_inset Formula $\boldsymbol{q}$
+\end_inset
+
+'s.
+ We only need to recalculate the diagonal of 
+\begin_inset Formula $\hat{H}_{\boldsymbol{q}}$
+\end_inset
+
+ for each 
+\begin_inset Formula $\boldsymbol{q}$
+\end_inset
+
+.
+ First,
+ we need to extract the diagonal element of 
+\begin_inset Formula $U$
+\end_inset
+
+.
+ We do this by taking the diagonal element of the initial 
+\begin_inset Formula $\hat{H}_{\boldsymbol{q}}$
+\end_inset
+
+ (which is initially constructed for 
+\begin_inset Formula $\boldsymbol{q}=0$
+\end_inset
+
+) for 
+\begin_inset Formula $j_{x}=j_{y}=0$
+\end_inset
+
+ (in the code,
+ this is the middle element of the diagonal of 
+\family typewriter
+H
+\family default
+).
+ Then,
+ we repeatedly (for each 
+\begin_inset Formula $\boldsymbol{q}$
+\end_inset
+
+) update the view of the diagonal of 
+\begin_inset Formula $\hat{H}_{\boldsymbol{q}}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Itemize
+When 
+\begin_inset Formula $\boldsymbol{A}\neq0$
+\end_inset
+
+,
+ no such trick is possible because we have to recalculate the matrix square 
+\begin_inset Formula $(-\i\delta\nabla+\boldsymbol{q}-\boldsymbol{A})^{2}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+Note that usually 
+\begin_inset Formula $V$
+\end_inset
+
+ is real,
+ so we could use rfft,
+ but it is much less convenient to handle (due to the output array being only half of the 
+\begin_inset Quotes bld
+\end_inset
+
+usual
+\begin_inset Quotes brd
+\end_inset
+
+).
+ Consider the actual timings:
+ suppose 
+\begin_inset Formula $M=100$
+\end_inset
+
+.
+ This means that 
+\begin_inset Formula ${\tt V}$
+\end_inset
+
+ is a 
+\begin_inset Formula $(2M+1)^{2}$
+\end_inset
+
+-by-
+\begin_inset Formula $(2M+1)^{2}\approx$
+\end_inset
+
+ 40
+\begin_inset space ~
+\end_inset
+
+000-by-40
+\begin_inset space ~
+\end_inset
+
+000 matrix [for Float64 it takes 
+\begin_inset Formula $(2M+1)^{4}\times8/10^{9}\approx\unit[13]{GB}$
+\end_inset
+
+).
+ Its diagonalisation,
+ even with Arnoldi surely takes more than a minute (maybe tens of minutes).
+ In this case we need to Fourier-transform an 
+\begin_inset Formula $N$
+\end_inset
+
+-by-
+\begin_inset Formula $N$
+\end_inset
+
+ matrix where 
+\begin_inset Formula $N=4M+1$
+\end_inset
+
+.
+ The timings are:
+\end_layout
+
+\begin_layout Itemize
+FFT:
+ 1.5
+\begin_inset space ~
+\end_inset
+
+ms,
+ 5 MiB
+\end_layout
+
+\begin_layout Itemize
+RFFT:
+ 0.5
+\begin_inset space ~
+\end_inset
+
+ms,
+ 1.2 MiB
+\end_layout
+
+\begin_layout Standard
+Compared to diagonalisation time and required memory,
+ the speed-up and memory savings provided by RFFT are totally irrelevant.
+\end_layout
+
+\begin_layout Subsection
+sin basis
+\end_layout
+
+\begin_layout Subsubsection
+1D
+\end_layout
+
+\begin_layout Standard
+We take the sine basis 
+\begin_inset Formula 
+\[
+f_{j}(x)\coloneqq\braket x{j_{x}}=\sqrt{\frac{2}{L_{x}}}\sin\frac{\pi j_{x}x}{L_{x}},\qquad j_{x}=1,2,\ldots,M.
+\]
+
+\end_inset
+
+Note that 
+\begin_inset Formula $j_{x}=0$
+\end_inset
+
+ is not included because it makes no sense to include function 
+\begin_inset Formula $f(x)=0$
+\end_inset
+
+ in the basis.
+\end_layout
+
+\begin_layout Paragraph
+
+\family typewriter
+fft_to_matrix
+\end_layout
+
+\begin_layout Standard
+The Laplace term is
+\begin_inset Formula 
+\[
+\bra{j_{x}^{\prime}}\Delta\ket{j_{x}}=-\left(\frac{\pi j_{x}}{L_{x}}\right)^{2}\delta_{j_{x}^{\prime},j_{x}}
+\]
+
+\end_inset
+
+Next,
+\begin_inset Formula 
+\begin{align*}
+\bra{j_{x}^{\prime}}V\ket{j_{x}} & =\frac{2}{L_{x}}\intop_{0}^{L}\sin\frac{\pi j_{x}^{\prime}x}{L_{x}}V(x)\sin\frac{\pi j_{x}x}{L_{x}}\d x\\
+ & =\frac{1}{L_{x}}\intop_{0}^{L}V(x)\left(\cos\frac{\pi(j_{x}^{\prime}-j_{x})x}{L_{x}}-\cos\frac{\pi(j_{x}^{\prime}+j_{x})x}{L_{x}}\right)\d x\\
+ & =\frac{1}{L_{x}}\intop_{0}^{L}V(x)\cos\frac{\pi(j_{x}^{\prime}-j_{x})x}{L_{x}}\d x\\
+ & -\frac{1}{L_{x}}\intop_{0}^{L}V(x)\cos\frac{\pi(j_{x}^{\prime}+j_{x})x}{L_{x}}\d x
+\end{align*}
+
+\end_inset
+
+The integral 
+\begin_inset Formula 
+\[
+\frac{1}{L_{x}}\intop_{0}^{L}V(\boldsymbol{r})\cos\frac{\pi(j_{x}^{\prime}-j_{x})x}{L_{x}}\d x
+\]
+
+\end_inset
+
+is the cos-transform term 
+\begin_inset Formula $V_{m}$
+\end_inset
+
+ (times 
+\begin_inset Formula $\frac{\d x}{2L_{x}}$
+\end_inset
+
+,
+ with 
+\begin_inset Formula $2$
+\end_inset
+
+ cancelling the one coming from FFTW) with 
+\begin_inset Formula $m_{x}=j_{x}^{\prime}-j_{x}$
+\end_inset
+
+.
+ 
+\series bold
+The value of precisely this integral is stored in 
+\family typewriter
+buff
+\family default
+ (in the 
+\family typewriter
+target_rank=2
+\family default
+ case).
+\end_layout
+
+\begin_layout Standard
+Recall that 
+\begin_inset Formula $j_{x}$
+\end_inset
+
+ runs from 
+\begin_inset Formula $1$
+\end_inset
+
+ to 
+\begin_inset Formula $M$
+\end_inset
+
+.
+ Then,
+ because of the term with sums 
+\begin_inset Formula $j_{x}^{\prime}+j_{x}$
+\end_inset
+
+,
+ we will need to calculate harmonics of 
+\begin_inset Formula $U$
+\end_inset
+
+ up to 
+\begin_inset Formula $2M$
+\end_inset
+
+.
+ But the transform will also include the zeroth harmonic (we don't have 
+\begin_inset Formula $j_{x}=0$
+\end_inset
+
+ in the sin basis,
+ but this is a 
+\emph on
+cosine
+\emph default
+ transform,
+ for which the zeroth harmonic does make sense —
+ like in the cis case,
+ it is the average of the function),
+ so the number of harmonics to calculate (and the number of points to use for discretising space) is 
+\begin_inset Formula 
+\[
+N=2M+1.
+\]
+
+\end_inset
+
+(It is recommended to take transform with the number of points 
+\begin_inset Formula $2^{n}-1$
+\end_inset
+
+ for some 
+\begin_inset Formula $n$
+\end_inset
+
+,
+ leading to 
+\begin_inset Formula $2M+1=2^{n}-1\implies M=2^{n-1}-1$
+\end_inset
+
+.
+ So 
+\begin_inset Formula $M$
+\end_inset
+
+ given by power of two minus one is recommend,
+ but this is not that important because we do not use so many points for the speed of FFT to matter).
+\end_layout
+
+\begin_layout Standard
+Visually,
+ the final matrix is (where 
+\begin_inset Formula $V_{m}$
+\end_inset
+
+ is the output of the cos-transform,
+ and we do not care about factors of 2 and 
+\begin_inset Formula $\frac{\d x}{L_{x}}$
+\end_inset
+
+ here)
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Tabular
+<lyxtabular version="3" rows="4" columns="4">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $j'\downarrow$
+\end_inset
+
+,
+ 
+\begin_inset Formula $j\to$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $1$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $2$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $3$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $1$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{0}-V_{2}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}-V_{3}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{2}-V_{4}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $2$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}-V_{3}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{0}-V_{4}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}-V_{5}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $3$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{2}-V_{4}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}-V_{5}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{0}-V_{6}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Next,
+ note that we have terms with differences 
+\begin_inset Formula $j_{x}^{\prime}-j_{x}$
+\end_inset
+
+ but 
+\begin_inset Formula $\cos(j_{x}^{\prime}-j_{x})=\cos(j_{x}-j_{x}^{\prime})$
+\end_inset
+
+ so we should use 
+\begin_inset Formula $m_{x}=|j_{x}^{\prime}-j_{x}|$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Paragraph
+
+\family typewriter
+fft_to_vector
+\end_layout
+
+\begin_layout Standard
+Consider also converting a function 
+\begin_inset Formula $u(x)$
+\end_inset
+
+ from 
+\begin_inset Formula $x$
+\end_inset
+
+-space to 
+\begin_inset Formula $p$
+\end_inset
+
+-space,
+ which must be performed for the initial condition in the dynamics.
+ This looks simply as
+\begin_inset Formula 
+\[
+\braket ju=u_{j}=\int_{0}^{L_{x}}\d x\:\braket jx\braket xu=\int_{0}^{L_{x}}\d x\:\sqrt{\frac{2}{L_{x}}}\sin\frac{\pi j_{x}x}{L_{x}}u(x).
+\]
+
+\end_inset
+
+The integral 
+\begin_inset Formula 
+\[
+\sqrt{\frac{2}{L_{x}}}\intop_{0}^{L}V(\boldsymbol{r})\cos\frac{\pi j_{x}x}{L_{x}}\d x
+\]
+
+\end_inset
+
+is the sin-transform term 
+\begin_inset Formula $u_{j_{x}}$
+\end_inset
+
+ (times 
+\begin_inset Formula $\frac{\d x}{\sqrt{2L_{x}}}$
+\end_inset
+
+;
+ FFTW yields a factor of 2,
+ so that 
+\begin_inset Formula $2/\sqrt{2}$
+\end_inset
+
+ yields the required 
+\begin_inset Formula $\sqrt{2}$
+\end_inset
+
+ in the above integral).
+ 
+\series bold
+The value of precisely this integral is stored in 
+\family typewriter
+buff
+\family default
+ (in the 
+\family typewriter
+target_rank=1
+\family default
+ case).
+
+\series default
+ For the transform we need 
+\begin_inset Formula $M$
+\end_inset
+
+ points.
+\end_layout
+
+\begin_layout Paragraph
+Wannier states
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\begin{equation}
+\bra{\psi_{m'}}\hat{x}\ket{\psi_{m}}=\sum_{j,j'}\frac{2}{L_{x}}\int_{0}^{L_{x}}\d x\,c_{j'}^{(m')}\sin\left(\frac{\pi j'x}{L_{x}}\right)xc_{j}^{(m)}\sin\left(\frac{\pi jx}{L_{x}}\right)\label{eq:space-periodic-wanniers}
+\end{equation}
+
+\end_inset
+
+We have
+\begin_inset Formula 
+\begin{align*}
+\frac{2}{L_{x}}\int_{0}^{L_{x}}\d x\,\sin\left(\frac{\pi j'x}{L_{x}}\right)x\sin\left(\frac{\pi jx}{L_{x}}\right)= & \frac{4[(-1)^{j+j'}-1]jj'L_{x}}{\pi^{2}(j^{2}-j'^{2})^{2}}+\frac{L_{x}}{2}\delta_{j,j'}=-\frac{8L_{x}}{\pi^{2}}\frac{jj'}{(j^{2}-j'^{2})^{2}}\delta_{(j+j')\bmod2,1}+\frac{L_{x}}{2}\delta_{j,j'}
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+Check:
+ (
+\begin_inset Formula $j,j',s,N\in\mathbb{Z}$
+\end_inset
+
+)
+\begin_inset Formula 
+\[
+I_{j',j}=\frac{2}{N\pi}\intop_{0}^{N\pi}\sin\left(\frac{j'}{N}x\right)x\sin\left(\frac{j}{N}x\right)\d x=\frac{2}{N\pi}\intop_{0}^{N\pi}\frac{1}{2}\left[x\cos\left(\frac{j'-j}{N}x\right)-x\cos\left(\frac{j'+j}{N}x\right)\right]\d x
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{align*}
+A & =\intop_{0}^{N\pi}x\cos\left(\frac{a}{N}x\right)\d x=\frac{N^{2}}{a^{2}}\intop_{0}^{a\pi}y\cos\left(y\right)\d y=\frac{N^{2}}{a^{2}}\left(y\sin y|_{0}^{a\pi}-\intop_{0}^{a\pi}\sin(y)\d y\right)=\frac{N^{2}}{a^{2}}\left(\pi\sin a\pi+\cos a\pi-1\right)\\
+ & =\frac{N^{2}}{a^{2}}[(-1)^{a}-1]
+\end{align*}
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+A=\intop_{0}^{N\pi}x\,\d x=\frac{(N\pi)^{2}}{2}
+\]
+
+\end_inset
+
+so that
+\begin_inset Formula 
+\[
+A=\frac{N^{2}}{a^{2}}[(-1)^{a}-1]+\frac{(N\pi)^{2}}{2}\delta_{a,0}
+\]
+
+\end_inset
+
+and
+\begin_inset Formula 
+\begin{align*}
+I_{j',j} & =\frac{2}{N\pi}\frac{1}{2}\left[\frac{N^{2}}{(j'-j)^{2}}[(-1)^{j'-j}-1]+\frac{(N\pi)^{2}}{2}\delta_{j'-j,0}-\left(\frac{N^{2}}{(j'+j)^{2}}[(-1)^{j'+j}-1]+\frac{(N\pi)^{2}}{2}\delta_{j'+j,0}\right)\right]\\
+ & =\frac{1}{N\pi}\left[\left(\frac{N^{2}}{(j'-j)^{2}}-\frac{N^{2}}{(j'+j)^{2}}\right)[(-1)^{j'-j}-1]+\frac{(N\pi)^{2}}{2}\delta_{j'-j,0}-\frac{(N\pi)^{2}}{2}\delta_{j'+j,0}\right]\\
+ & =\frac{4j'jN[(-1)^{j'-j}-1]}{\pi(j'-j)^{2}(j'+j)^{2}}+\frac{N\pi}{2}\delta_{j'-j,0}-\frac{N\pi}{2}\delta_{j'+j,0}
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+Thus,
+\begin_inset Formula 
+\begin{align*}
+\bra{\psi_{m'}}\hat{x}\ket{\psi_{m}} & =\sum_{j,j'}c_{j'}^{(m')}c_{j}^{(m)}\left(\frac{L_{x}}{2}\delta_{j,j'}-\frac{8L_{x}}{\pi^{2}}\frac{jj'}{(j^{2}-j'^{2})^{2}}\delta_{(j+j')\bmod2,1}\right)\\
+ & =\frac{L_{x}}{2}\delta_{m,m'}-\frac{8L_{x}}{\pi^{2}}\sum_{j=1}^{\infty}c_{j}^{(m)}\sum_{j'\in(\text{odd}(j)?\text{evens}:\text{odds})}c_{j'}^{(m')}\frac{jj'}{(j^{2}-j'^{2})^{2}}
+\end{align*}
+
+\end_inset
+
+where we used 
+\begin_inset Formula $\sum_{j,j'}c_{j'}^{(m')}c_{j}^{(m)}\delta_{j,j'}=\sum_{j}c_{j}^{(m')}c_{j}^{(m)}=\braket{m'}m=\delta_{m,m'}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+This calculation uses the basis that assumes that 
+\begin_inset Formula $x\in[0,L_{x}]$
+\end_inset
+
+,
+ so the eigenvalues will be 
+\begin_inset Formula $\in[0,L_{x}]$
+\end_inset
+
+.
+ However,
+ in practice we have 
+\begin_inset Formula $x\in[x_{0},x_{0}+L_{x}]$
+\end_inset
+
+.
+ Therefore,
+ we have to add 
+\begin_inset Formula $x_{0}$
+\end_inset
+
+ to the eigenvalues.
+ Even more conveniently,
+ we add 
+\begin_inset Formula $x_{0}$
+\end_inset
+
+ to the diagonal of 
+\begin_inset Formula $\hat{x}$
+\end_inset
+
+,
+ therefore using 
+\begin_inset Formula $(\frac{L_{x}}{2}+x_{0})\delta_{m,m'}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+2D
+\end_layout
+
+\begin_layout Standard
+We take the sine basis 
+\begin_inset Formula 
+\[
+\psi_{j_{x}j_{y}}(\boldsymbol{r})=\frac{2}{\sqrt{L_{x}L_{y}}}\sin\frac{\pi j_{x}x}{L_{x}}\sin\frac{\pi j_{y}y}{L_{y}},\qquad j_{x},j_{y}=1,2,\ldots,M.
+\]
+
+\end_inset
+
+Note that 
+\begin_inset Formula $j_{x},j_{y}=0$
+\end_inset
+
+ are not included because it makes no sense to include functions 
+\begin_inset Formula $\psi(\boldsymbol{r})=0$
+\end_inset
+
+ in the basis.
+\end_layout
+
+\begin_layout Standard
+The Laplace term is
+\begin_inset Formula 
+\[
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\Delta\ket{j_{x}j_{y}}=-\pi^{2}\left(\frac{j_{x}^{2}}{L_{x}^{2}}+\frac{j_{y}^{2}}{L_{y}^{2}}\right)\delta_{j_{x}^{\prime},j_{x}}\delta_{j_{y}^{\prime},j_{y}}
+\]
+
+\end_inset
+
+(If we include 
+\begin_inset Formula $j_{x},j_{y}=0$
+\end_inset
+
+,
+ we will be getting numerous nonzero eigenvalues (e.g.
+ 
+\begin_inset Formula $\pi^{2}\frac{j_{y}^{2}}{L_{y}^{2}}$
+\end_inset
+
+ for 
+\begin_inset Formula $j_{y}=1,2,\ldots$
+\end_inset
+
+) which correspond to eigenfunctions that are everywhere zero.
+ We don't want that.)
+\end_layout
+
+\begin_layout Standard
+Next,
+\begin_inset Formula 
+\begin{align*}
+\bra{j_{x}^{\prime}j_{y}^{\prime}}U_{D}(\boldsymbol{r})\ket{j_{x}j_{y}} & =\frac{4}{L_{x}L_{y}}\iintop_{0}^{L}\sin\frac{\pi j_{x}^{\prime}x}{L}\sin\frac{\pi j_{y}^{\prime}y}{L}U(\boldsymbol{r})\sin\frac{\pi j_{x}x}{L}\sin\frac{\pi j_{y}y}{L}\d x\d y\\
+ & =\frac{1}{L_{x}L_{y}}\iintop_{0}^{L}\left(\cos\frac{\pi(j_{x}^{\prime}-j_{x})x}{L}-\cos\frac{\pi(j_{x}^{\prime}+j_{x})x}{L}\right)U(\boldsymbol{r})\left(\cos\frac{\pi(j_{y}^{\prime}-j_{y})y}{L}-\cos\frac{\pi(j_{y}^{\prime}+j_{y})y}{L}\right)\d x\d y\\
+ & =\frac{1}{L_{x}L_{y}}\iintop_{0}^{L}\cos\frac{\pi(j_{x}^{\prime}-j_{x})x}{L}U(\boldsymbol{r})\cos\frac{\pi(j_{y}^{\prime}-j_{y})y}{L}\d x\d y\\
+ & -\frac{1}{L_{x}L_{y}}\iintop_{0}^{L}\cos\frac{\pi(j_{x}^{\prime}-j_{x})x}{L}U(\boldsymbol{r})\cos\frac{\pi(j_{y}^{\prime}+j_{y})y}{L}\d x\d y\\
+ & -\frac{1}{L_{x}L_{y}}\iintop_{0}^{L}\cos\frac{\pi(j_{x}^{\prime}+j_{x})x}{L}U(\boldsymbol{r})\cos\frac{\pi(j_{y}^{\prime}-j_{y})y}{L}\d x\d y\\
+ & +\frac{1}{L_{x}L_{y}}\iintop_{0}^{L}\cos\frac{\pi(j_{x}^{\prime}+j_{x})x}{L}U(\boldsymbol{r})\cos\frac{\pi(j_{y}^{\prime}+j_{y})y}{L}\d x\d y
+\end{align*}
+
+\end_inset
+
+The integral 
+\begin_inset Formula 
+\[
+\frac{1}{L_{x}L_{y}}\iintop_{0}^{L}\cos\frac{\pi(j_{x}^{\prime}-j_{x})x}{L}U(\boldsymbol{r})\cos\frac{\pi(j_{y}^{\prime}-j_{y})y}{L}\d x\d y
+\]
+
+\end_inset
+
+is the transform term 
+\begin_inset Formula $U_{m_{x}m_{y}}$
+\end_inset
+
+(times 
+\begin_inset Formula $\frac{\d x\d y}{4L_{x}L_{y}}$
+\end_inset
+
+,
+ with 4 cancelling the 2 included in FFTW for each dimension) with 
+\begin_inset Formula $m_{x}=j_{x}^{\prime}-j_{x}$
+\end_inset
+
+,
+ 
+\begin_inset Formula $m_{y}=j_{y}^{\prime}-j_{y}$
+\end_inset
+
+.
+ 
+\series bold
+The value of precisely this integral is stored in 
+\family typewriter
+buff
+\family default
+ (in the 
+\family typewriter
+target_rank=2
+\family default
+ case).
+\end_layout
+
+\begin_layout Standard
+Recall that 
+\begin_inset Formula $j_{x},j_{y}$
+\end_inset
+
+ run from 
+\begin_inset Formula $1$
+\end_inset
+
+ to 
+\begin_inset Formula $M$
+\end_inset
+
+.
+ Then,
+ because of the terms with sums 
+\begin_inset Formula $j_{x}^{\prime}+j_{x}$
+\end_inset
+
+,
+ we will need to calculate harmonics of 
+\begin_inset Formula $U$
+\end_inset
+
+ up to 
+\begin_inset Formula $2M$
+\end_inset
+
+.
+ But the transform will also include the zeroth harmonic,
+ so the number of harmonics to calculate (and the number of points to use for discretising space) is 
+\begin_inset Formula 
+\[
+N=2M+1.
+\]
+
+\end_inset
+
+(It is recommended to take transform with the number of points 
+\begin_inset Formula $2^{n}-1$
+\end_inset
+
+ for some 
+\begin_inset Formula $n$
+\end_inset
+
+,
+ leading to 
+\begin_inset Formula $2M+1=2^{n}-1\implies M=2^{n-1}-1$
+\end_inset
+
+.
+ So 
+\begin_inset Formula $M$
+\end_inset
+
+ given by power of two minus one is recommend,
+ but this is not that important because we do not use so many points for the speed of FFT to matter).
+\end_layout
+
+\begin_layout Standard
+Next,
+ note that we have terms with differences 
+\begin_inset Formula $j_{x}^{\prime}-j_{x}$
+\end_inset
+
+ but 
+\begin_inset Formula $\cos(j_{x}^{\prime}-j_{x})=\cos(j_{x}-j_{x}^{\prime})$
+\end_inset
+
+ so we should use 
+\begin_inset Formula $m_{x}=|j_{x}^{\prime}-j_{x}|$
+\end_inset
+
+,
+ 
+\begin_inset Formula $m_{y}=|j_{y}^{\prime}-j_{y}|$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+The derivative term is
+\begin_inset Formula 
+\begin{align*}
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\partial_{x}\ket{j_{x}j_{y}} & =\frac{4}{L_{x}L_{y}}\iintop_{0}^{L}\sin\frac{\pi j_{x}^{\prime}x}{L_{x}}\sin\frac{\pi j_{y}^{\prime}y}{L_{y}}\partial_{x}\sin\frac{\pi j_{x}x}{L_{x}}\sin\frac{\pi j_{y}y}{L_{y}}\d x\d y\\
+ & =\frac{2}{L_{x}}\delta_{j_{y}^{\prime},j_{y}}\frac{\pi j_{x}}{L_{x}}\intop_{0}^{L_{x}}\sin\frac{\pi j_{x}^{\prime}x}{L_{x}}\cos\frac{\pi j_{x}x}{L_{x}}\d x\\
+ & =\frac{2}{L_{x}}\delta_{j_{y}^{\prime},j_{y}}\frac{\pi j_{x}}{L_{x}}\intop_{0}^{L_{x}}\frac{1}{2}\left(\sin\frac{\pi(j_{x}^{\prime}+j_{x})x}{L_{x}}+\sin\frac{\pi(j_{x}^{\prime}-j_{x})x}{L_{x}}\right)\d x\\
+ & =\delta_{j_{y}^{\prime},j_{y}}\frac{\pi j_{x}}{L_{x}^{2}}\left(\frac{L_{x}}{\pi(j_{x}^{\prime}+j_{x})}2\delta_{j_{x}^{\prime}+j_{x},{\rm odd}}+\frac{L_{x}}{\pi(j_{x}^{\prime}-j_{x})}2\delta_{j_{x}^{\prime}-j_{x},{\rm odd}}\right)\\
+ & =\delta_{j_{y}^{\prime},j_{y}}\delta_{j_{x}^{\prime}-j_{x},{\rm odd}}\frac{2j_{x}}{L_{x}}\left(\frac{1}{j_{x}^{\prime}+j_{x}}+\frac{1}{j_{x}^{\prime}-j_{x}}\right)\\
+ & =\delta_{j_{y}^{\prime},j_{y}}\delta_{j_{x}^{\prime}-j_{x},{\rm odd}}\frac{4}{L_{x}}\frac{j_{x}^{\prime}j_{x}}{j_{x}^{\prime2}-j_{x}^{2}}
+\end{align*}
+
+\end_inset
+
+
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+\begin_inset Formula 
+\[
+\intop_{0}^{L_{x}}\sin\frac{\pi(j_{x}^{\prime}+j_{x})x}{L_{x}}\d x=-\frac{L_{x}}{\pi(j_{x}^{\prime}+j_{x})}[\cos\pi(j_{x}^{\prime}+j_{x})-1]
+\]
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+The second term in brackets has to be included only for 
+\begin_inset Formula $j_{x}^{\prime}-j_{x}\neq0$
+\end_inset
+
+ (otherwise sin is zero in the first place).
+ However,
+ the condition that 
+\begin_inset Formula $j_{x}^{\prime}-j_{x}$
+\end_inset
+
+ is odd automatically means that 
+\begin_inset Formula $j_{x}^{\prime}-j_{x}\neq0$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+Note that the first derivative matrix squared does not give the correct Laplace.
+ Even in 1D,
+ 
+\begin_inset Formula $\bra{j_{x}^{\prime}}\partial_{x}\ket{j_{x}}$
+\end_inset
+
+ squared does not coincide with 
+\begin_inset Formula $\bra{j_{x}^{\prime}j_{y}^{\prime}}\partial_{x}^{2}\ket{j_{x}j_{y}}$
+\end_inset
+
+;
+ this is already seen from the fact that Laplace features 
+\begin_inset Formula $\pi^{2}$
+\end_inset
+
+ while 
+\begin_inset Formula $\partial_{x}$
+\end_inset
+
+ does not feature 
+\begin_inset Formula $\pi$
+\end_inset
+
+.
+ The matrix 
+\begin_inset Formula $\bra{j_{x}^{\prime}}\partial_{x}\ket{j_{x}}$
+\end_inset
+
+ squared is is not diagonal.
+ For this reason,
+ numerical calculation according to 
+\begin_inset Formula $(-\i\delta\nabla-\boldsymbol{A})^{2}$
+\end_inset
+
+ is not as accurate (in fact,
+ turns out to be much less accurate) than the expanded form 
+\begin_inset Formula 
+\[
+-\Delta+\i(A_{x}\partial_{x}+A_{y}\partial_{y}+\partial_{x}A_{x}+\partial_{y}A_{y})+A_{x}^{2}+A_{y}^{2}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+In all of the above,
+ we assumed that the interval of interest is 
+\begin_inset Formula $x\in[0,L_{x}]$
+\end_inset
+
+,
+ 
+\begin_inset Formula $y\in[0,L_{y}]$
+\end_inset
+
+,
+ with the wf indeed being zero at the edges.
+ In general,
+ the interval of interest is some 
+\begin_inset Formula $x\in[x_{0},x_{0}+L_{x}]$
+\end_inset
+
+,
+ 
+\begin_inset Formula $y\in[y_{0},y_{0}+L_{y}]$
+\end_inset
+
+.
+ The basis functions are then
+\begin_inset Formula 
+\begin{align*}
+\psi_{j_{x}j_{y}}(\boldsymbol{r}) & =\frac{2}{\sqrt{L_{x}L_{y}}}\sin\frac{\pi j_{x}(x-x_{0})}{L_{x}}\sin\frac{\pi j_{y}(y-y_{0})}{L_{y}},\qquad j_{x},j_{y}=1,2,\ldots,M,\\
+ & x\in[x_{0},x_{0}+L_{x}],y\in[y_{0},y_{0}+L_{x}]
+\end{align*}
+
+\end_inset
+
+Thus,
+ in 
+\family typewriter
+make_eigenfunction
+\family default
+,
+ 
+\begin_inset Formula $x$
+\end_inset
+
+ runs over 
+\begin_inset Formula $[x_{0},x_{0}+L_{x}]$
+\end_inset
+
+,
+ meaning the argument of sin,
+ 
+\begin_inset Formula $x-x_{0}$
+\end_inset
+
+,
+ runs over 
+\begin_inset Formula $[0,L_{x}]$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+\begin_inset Formula 
+\[
+\intop_{0}^{L_{x}}\sin\frac{\pi(j_{x}^{\prime}+j_{x})x}{L_{x}}\d x=-\frac{L_{x}}{\pi(j_{x}^{\prime}+j_{x})}[\cos\pi(j_{x}^{\prime}+j_{x})-1]=\frac{L_{x}}{\pi(j_{x}^{\prime}+j_{x})}2\delta_{j_{x}^{\prime}+j_{x}\,{\rm odd}}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+cos basis
+\end_layout
+
+\begin_layout Subsubsection
+1D
+\end_layout
+
+\begin_layout Standard
+We take the cosine basis 
+\begin_inset Formula 
+\[
+f_{j}(x)\coloneqq\braket x{j_{x}}=\sqrt{\frac{2}{\zeta_{j_{x}}L_{x}}}\cos\frac{\pi j_{x}x}{L_{x}},\qquad j_{x}=0,1,2,\ldots,M.
+\]
+
+\end_inset
+
+Note that the functions for 
+\begin_inset Formula $j_{x}=0$
+\end_inset
+
+ and 
+\begin_inset Formula $j_{x}=M$
+\end_inset
+
+ are different and nonzero,
+ so both are included in the basis.
+ Also,
+ for 
+\begin_inset Formula $j_{x}=0$
+\end_inset
+
+ the normalisation factor is 
+\begin_inset Formula $\frac{1}{\sqrt{L_{x}}}$
+\end_inset
+
+,
+ so we include a factor
+\begin_inset Formula 
+\[
+\zeta_{j_{x}}=\begin{cases}
+2, & j_{x}=0\\
+1, & \text{otherwise}
+\end{cases}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph
+
+\family typewriter
+fft_to_matrix
+\end_layout
+
+\begin_layout Standard
+The Laplace term is
+\begin_inset Formula 
+\[
+\bra{j_{x}^{\prime}}\Delta\ket{j_{x}}=-\left(\frac{\pi j_{x}}{L_{x}}\right)^{2}\delta_{j_{x}^{\prime},j_{x}}
+\]
+
+\end_inset
+
+Next,
+\begin_inset Formula 
+\begin{align*}
+\bra{j_{x}^{\prime}}V\ket{j_{x}} & =\frac{2}{\sqrt{\zeta_{j_{x}^{\prime}}\zeta_{j_{x}}}L_{x}}\intop_{0}^{L}\cos\frac{\pi j_{x}^{\prime}x}{L_{x}}V(x)\cos\frac{\pi j_{x}x}{L_{x}}\d x\\
+ & =\frac{1}{\sqrt{\zeta_{j_{x}^{\prime}}\zeta_{j_{x}}}L_{x}}\intop_{0}^{L}V(x)\left(\cos\frac{\pi(j_{x}^{\prime}-j_{x})x}{L_{x}}+\cos\frac{\pi(j_{x}^{\prime}+j_{x})x}{L_{x}}\right)\d x\\
+ & =\frac{1}{\sqrt{\zeta_{j_{x}^{\prime}}\zeta_{j_{x}}}L_{x}}\intop_{0}^{L}V(x)\cos\frac{\pi(j_{x}^{\prime}-j_{x})x}{L_{x}}\d x\\
+ & +\frac{1}{\sqrt{\zeta_{j_{x}^{\prime}}\zeta_{j_{x}}}L_{x}}\intop_{0}^{L}V(x)\cos\frac{\pi(j_{x}^{\prime}+j_{x})x}{L_{x}}\d x
+\end{align*}
+
+\end_inset
+
+This differs from the sin case only in the sign of the second integral (and the factor 
+\begin_inset Formula $\zeta_{j_{x}^{\prime}}\zeta_{j_{x}}$
+\end_inset
+
+).
+ So again
+\begin_inset Formula 
+\[
+\frac{1}{L_{x}}\intop_{0}^{L}V(\boldsymbol{r})\cos\frac{\pi(j_{x}^{\prime}-j_{x})x}{L_{x}}\d x
+\]
+
+\end_inset
+
+is the cos-transform term 
+\begin_inset Formula $V_{m}$
+\end_inset
+
+ (times 
+\begin_inset Formula $\frac{\d x}{2L_{x}}$
+\end_inset
+
+,
+ with 
+\begin_inset Formula $2$
+\end_inset
+
+ cancelling the one in FFTW) with 
+\begin_inset Formula $m_{x}=j_{x}^{\prime}-j_{x}$
+\end_inset
+
+.
+ 
+\series bold
+The value of precisely this integral is stored in 
+\family typewriter
+buff
+\family default
+ (in the 
+\family typewriter
+target_rank=2
+\family default
+ case).
+ 
+\series default
+Note:
+\end_layout
+
+\begin_layout Itemize
+FFTW yields the correct value even for 
+\begin_inset Formula $j_{x}^{\prime}-j_{x}=0$
+\end_inset
+
+ (i.e.
+ there is no division by 2 for the zeroth harmonic or anything like that in FFTW)
+\end_layout
+
+\begin_layout Itemize
+This integral does not include the factor 
+\begin_inset Formula $\frac{1}{\sqrt{\zeta_{j_{x}^{\prime}}\zeta_{j_{x}}}}$
+\end_inset
+
+ because FFTW yields some 
+\begin_inset Formula $V_{m}$
+\end_inset
+
+ with 
+\begin_inset Formula $m=j_{x}^{\prime}-j_{x}$
+\end_inset
+
+;
+ the value of 
+\begin_inset Formula $m$
+\end_inset
+
+ alone does not determine both 
+\begin_inset Formula $j$
+\end_inset
+
+'s.
+ Therefore,
+ the factor 
+\begin_inset Formula $\frac{1}{\sqrt{\zeta_{j_{x}^{\prime}}\zeta_{j_{x}}}}$
+\end_inset
+
+ can only be included when constructing the matrix.
+\end_layout
+
+\begin_layout Standard
+However,
+ now 
+\begin_inset Formula $j_{x}$
+\end_inset
+
+ runs from 
+\begin_inset Formula $0$
+\end_inset
+
+ to 
+\begin_inset Formula $M$
+\end_inset
+
+.
+ Because of the term with sums 
+\begin_inset Formula $j_{x}^{\prime}+j_{x}$
+\end_inset
+
+,
+ we will need to calculate harmonics of 
+\begin_inset Formula $U$
+\end_inset
+
+ up to 
+\begin_inset Formula $2M$
+\end_inset
+
+.
+ But the transform will also include the zeroth harmonic,
+ so the number of harmonics to calculate (and the number of points to use for discretising space) is again
+\begin_inset Formula 
+\[
+N=2M+1.
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Next,
+ note that we have terms with differences 
+\begin_inset Formula $j_{x}^{\prime}-j_{x}$
+\end_inset
+
+ but 
+\begin_inset Formula $\cos(j_{x}^{\prime}-j_{x})=\cos(j_{x}-j_{x}^{\prime})$
+\end_inset
+
+ so we should use 
+\begin_inset Formula $m_{x}=|j_{x}^{\prime}-j_{x}|$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+Visually,
+ the final matrix is (where 
+\begin_inset Formula $V_{m}$
+\end_inset
+
+ is the output of the cos-transform,
+ and we do not care about factors of 2,
+ 
+\begin_inset Formula $\frac{\d x}{L_{x}}$
+\end_inset
+
+,
+ and 
+\begin_inset Formula $\zeta_{j_{x}^{\prime}}\zeta_{j_{x}}$
+\end_inset
+
+ here)
+\end_layout
+
+\begin_layout Standard
+\align center
+\begin_inset Tabular
+<lyxtabular version="3" rows="5" columns="5">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $j'\downarrow$
+\end_inset
+
+,
+ 
+\begin_inset Formula $j\to$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $1$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $2$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $3$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+0
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{0}+V_{0}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}+V_{1}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{2}+V_{2}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{3}+V_{3}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $1$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}+V_{1}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{0}+V_{2}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}+V_{3}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{2}+V_{4}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $2$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{2}+V_{2}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}+V_{3}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{0}+V_{4}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}+V_{5}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $3$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{3}+V_{3}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{2}+V_{4}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{1}+V_{5}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $V_{0}+V_{6}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph
+
+\family typewriter
+fft_to_vector
+\end_layout
+
+\begin_layout Standard
+Consider also converting a function 
+\begin_inset Formula $u(x)$
+\end_inset
+
+ from 
+\begin_inset Formula $x$
+\end_inset
+
+-space to 
+\begin_inset Formula $p$
+\end_inset
+
+-space,
+ which must be performed for the initial condition in the dynamics.
+ This looks simply as
+\begin_inset Formula 
+\[
+\braket ju=u_{j}=\int_{0}^{L_{x}}\d x\:\braket jx\braket xu=\int_{0}^{L_{x}}\d x\:\sqrt{\frac{2}{\zeta_{j_{x}}L_{x}}}\cos\frac{\pi j_{x}x}{L_{x}}u(x).
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The integral 
+\begin_inset Formula 
+\[
+\sqrt{\frac{2}{L_{x}}}\intop_{0}^{L}V(\boldsymbol{r})\cos\frac{\pi j_{x}x}{L_{x}}\d x
+\]
+
+\end_inset
+
+is the cos-transform term 
+\begin_inset Formula $V_{j_{x}}$
+\end_inset
+
+ (times 
+\begin_inset Formula $\frac{\d x}{\sqrt{2L_{x}}}$
+\end_inset
+
+;
+ FFTW yields a factor of 2,
+ so that 
+\begin_inset Formula $2/\sqrt{2}$
+\end_inset
+
+ yields the required 
+\begin_inset Formula $\sqrt{2}$
+\end_inset
+
+ in the above integral).
+ 
+\series bold
+The value of precisely this integral is stored in 
+\family typewriter
+buff
+\family default
+ (in the 
+\family typewriter
+target_rank=1
+\family default
+ case).
+ 
+\series default
+As in the 2D case,
+ we do not include the factor of 
+\begin_inset Formula $\sqrt{1/\zeta_{j_{x}}}$
+\end_inset
+
+ here (although in this 1D case we could),
+ but take it into account when constructing the vector in 
+\family typewriter
+fft_to_vector!
+\family default
+.
+\end_layout
+
+\begin_layout Standard
+For the transform we need 
+\begin_inset Formula $M+1$
+\end_inset
+
+ points.
+\end_layout
+
+\begin_layout Standard
+To get transform back,
+ we write
+\begin_inset Formula 
+\[
+u(x)=\sqrt{\frac{2}{\zeta_{j_{x}}L_{x}}}\sum_{j=0}^{M}\cos\frac{\pi jx}{L_{x}}u_{j}=\sqrt{\frac{1}{L_{x}}}u_{j}+\sqrt{\frac{2}{L_{x}}}\sum_{j=1}^{M}\cos\frac{\pi jx}{L_{x}}u_{j}.
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+When is 
+\family typewriter
+H
+\family default
+ real?
+\end_layout
+
+\begin_layout Standard
+In all cases,
+ for 
+\family typewriter
+H
+\family default
+ to be real,
+ the basic necessary condition is that 
+\begin_inset Formula $\hat{H}$
+\end_inset
+
+ be real.
+ In particular,
+ this means that there is no 
+\begin_inset Formula $\boldsymbol{A}$
+\end_inset
+
+ and no 
+\begin_inset Formula $\Gamma$
+\end_inset
+
+.
+ The diagonal potentials 
+\begin_inset Formula $H_{ii}(\boldsymbol{r})$
+\end_inset
+
+ are basically always real (unless you consider some exotic non-hermitian case),
+ but the off-diagonal couplings 
+\begin_inset Formula $H_{ij}(\boldsymbol{r})$
+\end_inset
+
+ may be complex in a large number of problems.
+\end_layout
+
+\begin_layout Standard
+Assuming 
+\begin_inset Formula $H_{ii}(\boldsymbol{r})$
+\end_inset
+
+ are real,
+ we have:
+\end_layout
+
+\begin_layout Itemize
+1D:
+ if 
+\begin_inset Formula $H_{ii}(\boldsymbol{r})$
+\end_inset
+
+ are even,
+ then Fourier transform is real (and even),
+ so the constructed 
+\family typewriter
+H
+\family default
+ is real.
+ However,
+ the eigenfunctions might be complex.
+ In fact,
+ they can be chosen real,
+ and in fact the numerical calculation yields functions that are either purely real or purely imaginary.
+ But in case of degeneracies,
+ the code yields complex functions.
+ So the eigenfunctions have to be stored as complex.
+\end_layout
+
+\begin_layout Itemize
+2D:
+ 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Periodic case:
+ if 
+\begin_inset Formula $H_{ii}(\boldsymbol{r})$
+\end_inset
+
+ are even,
+ then 
+\family typewriter
+H
+\family default
+ is real.
+ But eigenfunctions are stored as complex,
+ as in the 1D case.
+\end_layout
+
+\begin_layout Itemize
+Non-periodic case:
+ 
+\family typewriter
+H
+\family default
+ is real (because cos-transform of 
+\begin_inset Formula $U$
+\end_inset
+
+ is always real).
+ The eigenfunctions are real (since 
+\family typewriter
+H
+\family default
+ is real,
+ 
+\family typewriter
+eigen
+\family default
+ returns a real eigenfunction matrix 
+\family typewriter
+V
+\family default
+,
+ and the basis is also real)
+\end_layout
+
+\end_deeper
+\begin_layout Subsection
+Examples
+\end_layout
+
+\begin_layout Subsubsection
+2D Lambda
+\end_layout
+
+\begin_layout Standard
+We consider
+\begin_inset Formula 
+\[
+\hat{H}=\hat{\boldsymbol{p}}^{2}+\hat{V}(\boldsymbol{r}),\qquad\hat{V}(\boldsymbol{r})=(-\Delta-\i\frac{\Gamma}{2})\ketbra ee+\sum_{j=1}^{2}\left(\Omega_{j}(\boldsymbol{r})\ketbra ej+{\rm H.c.}\right)
+\]
+
+\end_inset
+
+or
+\begin_inset Formula 
+\[
+\hat{H}=\begin{pmatrix}\hat{\boldsymbol{p}}^{2} & 0 & \Omega_{1}^{*}(\boldsymbol{r})\\
+0 & \hat{\boldsymbol{p}}^{2} & \Omega_{2}^{*}(\boldsymbol{r})\\
+\Omega_{1}(\boldsymbol{r}) & \Omega_{2}(\boldsymbol{r}) & \hat{\boldsymbol{p}}^{2}-\Delta-\i\frac{\Gamma}{2}
+\end{pmatrix}
+\]
+
+\end_inset
+
+with (we do some renaming compared to the paper)
+\begin_inset Formula 
+\begin{align*}
+\Omega_{1}(\boldsymbol{r}) & =\frac{1}{2}\Omega_{10}\\
+\Omega_{2}(\boldsymbol{r}) & =\frac{1}{2}[-\Omega_{-}\e^{\i\frac{\chi}{2}}\cos(x-y)+\Omega_{+}\e^{-\i\frac{\chi}{2}}\cos(x+y)]
+\end{align*}
+
+\end_inset
+
+Using
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\epsilon=\frac{\Omega_{10}}{\sqrt{\Omega_{+}^{2}+\Omega_{-}^{2}}},\qquad\epsilon_{{\rm c}}=\frac{\Omega_{-}}{\Omega_{+}}
+\]
+
+\end_inset
+
+we express 
+\begin_inset Formula $\Omega_{-}$
+\end_inset
+
+ in terms of 
+\begin_inset Formula $\Omega_{{\rm p}}$
+\end_inset
+
+:
+\begin_inset Formula 
+\[
+\epsilon=\frac{\Omega_{10}}{\Omega_{+}\sqrt{1+\epsilon_{{\rm c}}^{2}}}\implies\Omega_{+}=\frac{\Omega_{10}}{\epsilon\sqrt{1+\epsilon_{{\rm c}}^{2}}},\quad\Omega_{-}=\frac{\epsilon_{{\rm c}}\Omega_{10}}{\epsilon\sqrt{1+\epsilon_{{\rm c}}^{2}}}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Periodicity of the Hamiltonian due to 
+\begin_inset Formula $\Omega_{2}$
+\end_inset
+
+ is 
+\begin_inset Formula $L\coloneqq2\pi$
+\end_inset
+
+.
+ Next,
+ we transform 
+\begin_inset Formula $\hat{H}_{\boldsymbol{q}}(\boldsymbol{r})\to\e^{\i\boldsymbol{q}\boldsymbol{r}}\hat{H}(\boldsymbol{r})$
+\end_inset
+
+,
+ where the BZ may be chosen as 
+\begin_inset Formula $q_{x}\in[0;\frac{2\pi}{L}]=[0;1]$
+\end_inset
+
+.
+ We take the Fourier basis 
+\begin_inset Formula 
+\[
+\psi_{n_{x}n_{y}}(\boldsymbol{r})=\frac{1}{\sqrt{L}}\e^{\i\frac{2\pi(j_{x}x+j_{y}y)}{L}}
+\]
+
+\end_inset
+
+Using 
+\begin_inset Formula $\Omega_{2}(\boldsymbol{r})=\frac{1}{2}[-\Omega_{-}\e^{\i\frac{\chi}{2}}\frac{1}{2}(\e^{\i x}\e^{-\i y}+\e^{-\i x}\e^{\i y})+\Omega_{+}\e^{-\i\frac{\chi}{2}}\frac{1}{2}(\e^{\i x}\e^{\i y}+\e^{-\i x}\e^{-\i y})$
+\end_inset
+
+,
+ we easily write down the Fourier images:
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+Including a shift 
+\begin_inset Formula $\delta$
+\end_inset
+
+:
+\begin_inset Formula 
+\begin{align*}
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\cos(x+\delta_{x}-(y+\delta_{y}))\ket{j_{x}j_{y}} & =\frac{1}{(2\pi)^{2}}\iintop_{0}^{2\pi}\frac{\e^{\i\delta_{x}}\e^{-\i\delta_{y}}\e^{\i(x-y)}+\e^{-\i\delta_{x}}\e^{\i\delta_{y}}\e^{-\i(x-y)}}{2}\e^{\i((j_{x}-j_{x}^{\prime})x+(j_{y}-j_{y}^{\prime})y)}\d x\d y\\
+ & =\frac{1}{(2\pi)^{2}}\iintop_{0}^{2\pi}\frac{\e^{\i\delta_{x}}\e^{-\i\delta_{y}}\e^{\i((j_{x}-j_{x}^{\prime}+1)x+(j_{y}-j_{y}^{\prime}-1)y)}+\e^{-\i\delta_{x}}\e^{\i\delta_{y}}\e^{\i((j_{x}-j_{x}^{\prime}-1)x+(j_{y}-j_{y}^{\prime}+1)y)}}{2}\d x\d y\\
+ & =\frac{\e^{\i\delta_{x}}\e^{-\i\delta_{y}}\delta_{j_{x}-j_{x}^{\prime}+1,0}\delta_{j_{y}-j_{y}^{\prime}-1,0}+\e^{-\i\delta_{x}}\e^{\i\delta_{y}}\delta_{j_{x}-j_{x}^{\prime}-1,0}\delta_{j_{y}-j_{y}^{\prime}+1,0}}{2}\\
+ & =\frac{\e^{\i\delta_{x}}\e^{-\i\delta_{y}}\delta_{j_{x}+1,j_{x}^{\prime}}\delta_{j_{y}-1,j_{y}^{\prime}}+\e^{-\i\delta_{x}}\e^{\i\delta_{y}}\delta_{j_{x}-1,j_{x}^{\prime}}\delta_{j_{y}+1,j_{y}^{\prime}}}{2}
+\end{align*}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{align*}
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\cos(x+\delta_{x}+y+\delta_{y})\ket{j_{x}j_{y}} & =\frac{1}{(2\pi)^{2}}\iintop_{0}^{2\pi}\frac{\e^{\i\delta_{x}}\e^{\i\delta_{y}}\e^{\i(x+y)}+\e^{-\i\delta_{x}}\e^{-\i\delta_{y}}\e^{-\i(x+y)}}{2}\e^{\i((j_{x}-j_{x}^{\prime})x+(j_{y}-j_{y}^{\prime})y)}\d x\d y\\
+ & =\frac{1}{(2\pi)^{2}}\iintop_{0}^{2\pi}\frac{\e^{\i\delta_{x}}\e^{\i\delta_{y}}\e^{\i((j_{x}-j_{x}^{\prime}+1)x+(j_{y}-j_{y}^{\prime}+1)y)}+\e^{-\i\delta_{x}}\e^{-\i\delta_{y}}\e^{\i((j_{x}-j_{x}^{\prime}-1)x+(j_{y}-j_{y}^{\prime}-1)y)}}{2}\d x\d y\\
+ & =\frac{\e^{\i\delta_{x}}\e^{\i\delta_{y}}\delta_{j_{x}-j_{x}^{\prime}+1,0}\delta_{j_{y}-j_{y}^{\prime}+1,0}+\e^{-\i\delta_{x}}\e^{-\i\delta_{y}}\delta_{j_{x}-j_{x}^{\prime}-1,0}\delta_{j_{y}-j_{y}^{\prime}-1,0}}{2}\\
+ & =\frac{\e^{\i\delta_{x}}\e^{\i\delta_{y}}\delta_{j_{x}+1,j_{x}^{\prime}}\delta_{j_{y}+1,j_{y}^{\prime}}+\e^{-\i\delta_{x}}\e^{-\i\delta_{y}}\delta_{j_{x}-1,j_{x}^{\prime}}\delta_{j_{y}-1,j_{y}^{\prime}}}{2}
+\end{align*}
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{align*}
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\Omega_{1}(\boldsymbol{r})\ket{j_{x}j_{y}} & =\frac{1}{2}\Omega_{{\rm p}}\delta_{j_{x}^{\prime},j_{x}}\delta_{j_{y}^{\prime},j_{y}}\\
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\Omega_{2}(\boldsymbol{r})\ket{j_{x}j_{y}} & =\frac{\Omega_{{\rm p}}}{2\epsilon\sqrt{1+\epsilon_{{\rm c}}^{2}}}\left[-\e^{\i\frac{\chi}{2}}(\e^{\i\delta_{x}}\e^{-\i\delta_{y}}\delta_{j_{x}+1,j_{x}^{\prime}}\delta_{j_{y}-1,j_{y}^{\prime}}+\e^{-\i\delta_{x}}\e^{\i\delta_{y}}\delta_{j_{x}-1,j_{x}^{\prime}}\delta_{j_{y}+1,j_{y}^{\prime}})+\epsilon_{{\rm c}}\e^{-\i\frac{\chi}{2}}(\e^{\i\delta_{x}}\e^{\i\delta_{y}}\delta_{j_{x}+1,j_{x}^{\prime}}\delta_{j_{y}+1,j_{y}^{\prime}}+\e^{-\i\delta_{x}}\e^{-\i\delta_{y}}\delta_{j_{x}-1,j_{x}^{\prime}}\delta_{j_{y}-1,j_{y}^{\prime}})\right]
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{align*}
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\Omega_{1}(\boldsymbol{r})\ket{j_{x}j_{y}} & =\frac{1}{2}\Omega_{10}\delta_{j_{x}^{\prime},j_{x}}\delta_{j_{y}^{\prime},j_{y}}\\
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\Omega_{2}(\boldsymbol{r})\ket{j_{x}j_{y}} & =\frac{\Omega_{+}}{4}\left[-\e^{\i\frac{\chi}{2}}(\delta_{j_{x}+1,j_{x}^{\prime}}\delta_{j_{y}-1,j_{y}^{\prime}}+\delta_{j_{x}-1,j_{x}^{\prime}}\delta_{j_{y}+1,j_{y}^{\prime}})+\epsilon_{{\rm c}}\e^{-\i\frac{\chi}{2}}(\delta_{j_{x}+1,j_{x}^{\prime}}\delta_{j_{y}+1,j_{y}^{\prime}}+\delta_{j_{x}-1,j_{x}^{\prime}}\delta_{j_{y}-1,j_{y}^{\prime}})\right]
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+2D Lambda Topological
+\end_layout
+
+\begin_layout Standard
+Ignoring 
+\begin_inset Formula $k$
+\end_inset
+
+ we have
+\begin_inset Formula 
+\begin{align*}
+\Omega_{1}(\boldsymbol{r}) & =\Omega_{0}(\sin(x+y)-\i\sin(x-y)]\\
+\Omega_{2}(\boldsymbol{r}) & =\epsilon\Omega_{0}\left[1+\frac{\nu}{2}\cos(2x)+\frac{\nu}{2}\cos(2y)\right]
+\end{align*}
+
+\end_inset
+
+The common period is 
+\begin_inset Formula $L\coloneqq2\pi$
+\end_inset
+
+.
+ So we have
+\begin_inset Formula 
+\begin{align*}
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\Omega_{1}(\boldsymbol{r})\ket{j_{x}j_{y}} & =\frac{\Omega_{0}}{2}\left[-\i(\delta_{j_{x}+1,j_{x}^{\prime}}\delta_{j_{y}+1,j_{y}^{\prime}}-\delta_{j_{x}-1,j_{x}^{\prime}}\delta_{j_{y}-1,j_{y}^{\prime}})-(\delta_{j_{x}+1,j_{x}^{\prime}}\delta_{j_{y}-1,j_{y}^{\prime}}-\delta_{j_{x}-1,j_{x}^{\prime}}\delta_{j_{y}+1,j_{y}^{\prime}})\right]\\
+\bra{j_{x}^{\prime}j_{y}^{\prime}}\Omega_{2}(\boldsymbol{r})\ket{j_{x}j_{y}} & =\epsilon\Omega_{0}\left[1+\frac{\nu}{4}(\delta_{j_{x}+2,j_{x}^{\prime}}\delta_{j_{y},j_{y}^{\prime}}+\delta_{j_{x}-2,j_{x}^{\prime}}\delta_{j_{y},j_{y}^{\prime}})+\frac{\nu}{4}(\delta_{j_{x},j_{x}^{\prime}}\delta_{j_{y},j_{y}^{\prime}+2}+\delta_{j_{x},j_{x}^{\prime}}\delta_{j_{y}-2,j_{y}^{\prime}})\right]
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Evolution
+\end_layout
+
+\begin_layout Standard
+Now consider the evolution
+\begin_inset Formula 
+\[
+\i\psi'=\hat{H}\psi+g|\psi|^{2}\psi
+\]
+
+\end_inset
+
+or
+\begin_inset Formula 
+\[
+\psi'=-\i\hat{H}\psi-\i g|\psi|^{2}\psi
+\]
+
+\end_inset
+
+ which can also be written as
+\begin_inset Formula 
+\[
+\psi'=\hat{A}(\psi)\psi,\qquad\hat{A}(\psi)\coloneqq-\i\hat{H}-\i g|\psi|^{2}
+\]
+
+\end_inset
+
+When we switch to 
+\begin_inset Formula $p$
+\end_inset
+
+-space,
+ 
+\begin_inset Formula $\hat{H}$
+\end_inset
+
+ becomes a matrix,
+ 
+\begin_inset Formula $\psi$
+\end_inset
+
+ becomes a vector (with elements showing Fourier coefficients).
+ Then,
+ 
+\begin_inset Formula $|\psi|^{2}$
+\end_inset
+
+ means element-wise abs2,
+ and 
+\begin_inset Formula $g|\psi|^{2}\psi$
+\end_inset
+
+ also means element-wise product between 
+\begin_inset Formula $g|\psi|^{2}$
+\end_inset
+
+ and 
+\begin_inset Formula $\psi$
+\end_inset
+
+.
+ Clearly,
+ this product can be written as 
+\begin_inset Formula $g\hat{\Psi}\psi$
+\end_inset
+
+,
+ where the diagonal of 
+\begin_inset Formula $\hat{\Psi}$
+\end_inset
+
+ contains 
+\begin_inset Formula $|\psi|^{2}$
+\end_inset
+
+.
+ Thus,
+ 
+\begin_inset Formula $\hat{A}$
+\end_inset
+
+ should be constructed in momentum space as
+\begin_inset Formula 
+\[
+\hat{A}=-\i\hat{H}-\i g\hat{I}|\psi|^{2}.
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+In multi-component case,
+ we can have
+\begin_inset Formula 
+\begin{align*}
+\i\psi_{1}^{\prime} & =(\hat{H}_{11}+g_{11}|\psi_{1}|^{2}+g_{12}|\psi_{2}|^{2})\psi_{1}+\hat{H}_{12}\psi_{2}\\
+\i\psi_{2}^{\prime} & =(\hat{H}_{22}+g_{21}|\psi_{1}|^{2}+g_{22}|\psi_{2}|^{2})\psi_{2}+\hat{H}_{21}\psi_{2}
+\end{align*}
+
+\end_inset
+
+where 
+\begin_inset Formula $\hat{H}_{ij}$
+\end_inset
+
+ are the blocks of the components.
+ So here we have to separately update the diagonals of each diagonal block (
+\begin_inset Formula $\hat{H}_{11}$
+\end_inset
+
+ and 
+\begin_inset Formula $\hat{H}_{22}$
+\end_inset
+
+).
+ Again we explicitly show the signs:
+\begin_inset Formula 
+\begin{align*}
+\psi_{1}^{\prime} & =(-\i\hat{H}_{11}-\i g_{11}|\psi_{1}|^{2}-\i g_{12}|\psi_{2}|^{2})\psi_{1}-\i\hat{H}_{12}\psi_{2}\\
+\psi_{2}^{\prime} & =(-\i\hat{H}_{22}-\i g_{21}|\psi_{1}|^{2}-\i g_{22}|\psi_{2}|^{2})\psi_{2}-\i\hat{H}_{21}\psi_{2}
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+When we do imaginary time,
+ we replace 
+\begin_inset Formula $\i\partial_{t}\to-\partial_{t}$
+\end_inset
+
+ and the equation becomes
+\begin_inset Formula 
+\[
+\psi'=-\hat{H}\psi-g|\psi|^{2}\psi.
+\]
+
+\end_inset
+
+Note the minuses.
+ Then 
+\begin_inset Formula $\hat{A}(\psi)\coloneqq-\hat{H}-g|\psi|^{2}$
+\end_inset
+
+ and before solving starts we save the diagonal of 
+\begin_inset Formula $\hat{A}$
+\end_inset
+
+ with 
+\begin_inset Formula $g=0$
+\end_inset
+
+,
+ i.e.
+ the diagonal of 
+\begin_inset Formula $-\hat{H}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Subsubsection
+Chemical potential
+\end_layout
+
+\begin_layout Standard
+To get chemical potential,
+ we need to integrate 
+\begin_inset Formula $\int|\psi(x)|^{4}\d x$
+\end_inset
+
+.
+ We must be careful with normalisation factors.
+ First,
+ we prove that 
+\begin_inset Formula $\int\psi^{*}(x)\psi(x)\d x$
+\end_inset
+
+ is just the dot product of 
+\begin_inset Formula $p$
+\end_inset
+
+-space vectors:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\int\psi^{*}(x)\psi(x)\d x=\int\braket{\psi}x\braket x{\psi}\d x=\sum_{p'p}\int\braket{\psi}{p'}\braket{p'}x\braket xp\braket p{\psi}\d x=\sum_{p'p}\int\braket{\psi}{p'}\frac{1}{\sqrt{L}}\e^{-\i p'x}\frac{1}{\sqrt{L}}\e^{\i px}\braket p{\psi}\d x=\sum_{p}\int\braket{\psi}p\frac{1}{L}\braket p{\psi}\d x=\sum_{p}\braket{\psi}p\braket p{\psi}
+\]
+
+\end_inset
+
+Now consider the integrand squared:
+\begin_inset Formula 
+\begin{align*}
+\int[\psi^{*}(x)\psi(x)]^{2}\d x & =\int\left(\sum_{p'p}\braket{\psi}{p'}\frac{1}{\sqrt{L}}\e^{-\i p'x}\frac{1}{\sqrt{L}}\e^{\i px}\braket p{\psi}\right)^{2}\d x\\
+ & =\sum_{p'p}\sum_{k'k}\frac{1}{L^{2}}\int\braket{\psi}{p'}\braket p{\psi}\braket{\psi}{k'}\braket k{\psi}\e^{\i(p-p'+k-k')x}\d x\\
+ & =\frac{1}{L}\sum_{p'pk}\braket{\psi}{p'}\braket p{\psi}\braket{\psi}{k+p-p'}\braket k{\psi}\\
+ & =\frac{1}{L}\sum_{p'pk}\psi_{p'}^{*}\psi_{p}\psi_{k+p-p'}^{*}\psi_{k}
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+Nonlinear term in 
+\begin_inset Formula $p$
+\end_inset
+
+-space
+\end_layout
+
+\begin_layout Standard
+Next we must figure out how the nonlinear term looks in momentum space.
+ In coordinate space we have
+\begin_inset Formula 
+\[
+\i\psi'(x)=\hat{H}(x)\psi(x)+g|\psi(x)|^{2}\psi(x)
+\]
+
+\end_inset
+
+We can write this in more suggestive form assuming that coordinate is discrete:
+ 
+\begin_inset Formula 
+\[
+\i\psi_{x}^{\prime}=\sum_{x'}H_{xx'}\psi_{x'}+g|\psi_{x}|^{2}\psi_{x}
+\]
+
+\end_inset
+
+
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+\begin_inset Formula 
+\[
+\sum_{x'}H_{xx'}\psi_{x'}=\sum_{x'}H_{xx'}\delta_{x'x'}\psi_{x'}=\sum_{x'}H_{xx'}(U^{\dagger})_{x'p}U_{px'}\psi_{x'}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+Then we can introduce wf in momentum space according to 
+\begin_inset Formula $\psi_{p}=(\hat{U}^{\dagger})_{px}\psi_{x}$
+\end_inset
+
+.
+ Specifically,
+ we write (using 
+\begin_inset Formula $\hat{I}=\hat{U}^{\dagger}\hat{U}$
+\end_inset
+
+ or 
+\begin_inset Formula $\delta_{ij}=(\hat{U}^{\dagger})_{ik}(\hat{U})_{kj}$
+\end_inset
+
+) 
+\begin_inset Formula 
+\[
+\i\sum_{x}(\hat{U}^{\dagger})_{px}\psi'_{x}=\sum_{x,x',p'}(\hat{U}^{\dagger})_{px}H_{xx'}U_{x'p'}(\hat{U}^{\dagger})_{p'x'}\psi_{x'}+g\sum_{x}(\hat{U}^{\dagger})_{px}|\psi_{x}|^{2}\psi_{x}
+\]
+
+\end_inset
+
+or
+\begin_inset Formula 
+\[
+\i\psi'_{p}=\sum_{p'}\hat{H}_{pp'}\psi_{p'}+g\sum_{x}(\hat{U}^{\dagger})_{px}|\psi_{x}|^{2}\psi_{x}.
+\]
+
+\end_inset
+
+
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+The nonlinear term is not obvious.
+ So we write
+\begin_inset Formula 
+\[
+\sum_{x}U_{px}|\psi_{x}|^{2}\psi_{x}=\sum_{x}U_{px}|\psi_{x}|^{2}(\hat{U}^{\dagger})_{xp'}U_{p'x}\psi_{x}
+\]
+
+\end_inset
+
+Let us use the inverse transformation 
+\begin_inset Formula $(\hat{U}^{\dagger})_{xp}\psi_{p}=\psi_{x}$
+\end_inset
+
+ to write
+\begin_inset Formula 
+\[
+\sum_{x}U_{px}|\psi_{x}|^{2}\psi_{x}=\sum_{x,p}U_{px}|(\hat{U}^{\dagger})_{xp}\psi_{p}|^{2}(\hat{U}^{\dagger})_{xp}\psi_{p}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+To treat 
+\begin_inset Formula $\sum_{x}(\hat{U}^{\dagger})_{px}|\psi_{x}|^{2}\psi_{x}$
+\end_inset
+
+ we write down everything we now:
+\begin_inset Formula 
+\[
+\psi_{x}=\sum_{p}\frac{\e^{\i2\pi p\frac{x}{L}}}{\sqrt{L}}\psi_{p}\Longleftrightarrow\psi_{x}=\sum_{p}U_{xp}\psi_{p}\Longleftrightarrow\braket x{\psi}=\sum_{p}\braket xp\braket p{\psi}
+\]
+
+\end_inset
+
+and
+\begin_inset Formula 
+\[
+\psi_{p}=\sum_{x}\frac{\e^{-\i2\pi p\frac{x}{L}}}{\sqrt{L}}\psi_{x}\Longleftrightarrow\psi_{p}=\sum_{x}(U_{xp})^{*}\psi_{x}=\sum_{x}(\hat{U}^{\dagger})_{px}\psi_{x}\Longleftrightarrow\braket p{\psi}=\sum_{x}\braket px\braket x{\psi}.
+\]
+
+\end_inset
+
+Here we assumed that the upper expression 
+\emph on
+defines
+\emph default
+ 
+\begin_inset Formula $U_{xp}\coloneqq\frac{\e^{\i2\pi p\frac{x}{L}}}{\sqrt{L}}$
+\end_inset
+
+,
+ and then we can use 
+\begin_inset Formula $(U_{xp})^{*}$
+\end_inset
+
+ in the lower expression.
+\end_layout
+
+\begin_layout Standard
+Anyway,
+ we now write (this is in fact obvious because we are just taking Fourier transform of the equation;
+ one can say that 
+\begin_inset Formula $\sum_{x}(\hat{U}^{\dagger})_{px}$
+\end_inset
+
+ is the Fourier-transform operator 
+\begin_inset Formula $\intop\d x\,\frac{\e^{-\i2\pi p\frac{x}{L}}}{\sqrt{L}}$
+\end_inset
+
+)
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\begin{align*}
+\sum_{x}(\hat{U}^{\dagger})_{px}|\psi_{x}|^{2}\psi_{x} & =\intop\d x\,\frac{\e^{-\i2\pi p\frac{x}{L}}}{\sqrt{L}}|\psi(x)|^{2}\psi(x)=\intop\d x\,\frac{\e^{-\i2\pi p\frac{x}{L}}}{\sqrt{L}}|\braket x{\psi}|^{2}\braket x{\psi}=\intop\d x\,\frac{\e^{-\i2\pi p\frac{x}{L}}}{\sqrt{L}}|\sum_{k'}\braket x{k'}\braket{k'}{\psi}|^{2}\sum_{k}\braket xk\braket k{\psi}\\
+ & =\intop\d x\,\frac{\e^{-\i2\pi p\frac{x}{L}}}{\sqrt{L}}|\sum_{k'}\frac{\e^{\i2\pi k'\frac{x}{L}}}{\sqrt{L}}\braket{k'}{\psi}|^{2}\sum_{k}\frac{\e^{\i2\pi k\frac{x}{L}}}{\sqrt{L}}\braket k{\psi}\\
+ & =\frac{1}{L^{2}}\sum_{k}\intop\d x\,\e^{\i2\pi(k-p)\frac{x}{L}}\braket k{\psi}|\sum_{k'}\e^{\i2\pi k'\frac{x}{L}}\braket{k'}{\psi}|^{2}\\
+ & =\frac{1}{L^{2}}\sum_{k}\intop\d x\,\e^{\i2\pi(k-p)\frac{x}{L}}\braket k{\psi}\sum_{k'k''}\e^{\i2\pi k'\frac{x}{L}}\braket{k'}{\psi}\e^{-\i2\pi k''\frac{x}{L}}\braket{\psi}{k''}\\
+ & =\frac{1}{L^{2}}\sum_{k,k',k''}\intop\d x\,\e^{\i2\pi(k-p+k'-k'')\frac{x}{L}}\braket k{\psi}\braket{k'}{\psi}\braket{\psi}{k''}\\
+ & =\frac{1}{L}\sum_{k,k'}\braket k{\psi}\braket{k'}{\psi}\braket{\psi}{k-p+k'}
+\end{align*}
+
+\end_inset
+
+The equation is thus
+\begin_inset Formula 
+\[
+\i\psi_{p}^{\prime}=\sum_{p'}\hat{H}_{pp'}\psi_{p'}+\frac{g}{L}\sum_{k,k'}\psi_{k}\psi_{k'}\psi_{k+k'-p}^{*}.
+\]
+
+\end_inset
+
+or
+\begin_inset Formula 
+\[
+\psi_{p}^{\prime}=-\i\sum_{p'}\hat{H}_{pp'}\psi_{p'}-\i\frac{g}{L}\sum_{k,k'}\psi_{k}\psi_{k'}\psi_{k+k'-p}^{*}.
+\]
+
+\end_inset
+
+Strictly speaking,
+ the indices 
+\begin_inset Formula $k,k',p$
+\end_inset
+
+ run from 
+\begin_inset Formula $-M$
+\end_inset
+
+ to 
+\begin_inset Formula $M$
+\end_inset
+
+,
+ but there is no difference if we assume they run from 
+\begin_inset Formula $1$
+\end_inset
+
+ to 
+\begin_inset Formula $B=2M+1$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+In the code,
+ we use
+\begin_inset Formula 
+\[
+\sum_{k,k'}\psi_{k}\psi_{k'}\psi_{k'+k-p}^{*}=\sum_{k=1}^{B}\psi_{k}\sum_{k'=1}^{B}\psi_{k'}\psi_{k'+k-p}^{*}
+\]
+
+\end_inset
+
+Bounds:
+\end_layout
+
+\begin_layout Itemize
+From 
+\begin_inset Formula $\psi_{k}\psi_{k'}\psi_{k'+k-p}^{*}$
+\end_inset
+
+ we see that 
+\begin_inset Formula $k+k'-p$
+\end_inset
+
+ must be at least 
+\begin_inset Formula $1$
+\end_inset
+
+.
+ Thus,
+ for a given 
+\begin_inset Formula $k$
+\end_inset
+
+,
+ index 
+\begin_inset Formula $k'$
+\end_inset
+
+ must be at least 
+\begin_inset Formula $p+1-k$
+\end_inset
+
+.
+ But also 
+\begin_inset Formula $k'$
+\end_inset
+
+ must be at least 1.
+\end_layout
+
+\begin_layout Itemize
+Thee index 
+\begin_inset Formula $k+k'-p$
+\end_inset
+
+ must be at most 
+\begin_inset Formula $B$
+\end_inset
+
+.
+ Thus,
+ for a given 
+\begin_inset Formula $k$
+\end_inset
+
+,
+ index 
+\begin_inset Formula $k'$
+\end_inset
+
+ must be at most 
+\begin_inset Formula $p+B-k$
+\end_inset
+
+.
+ But also 
+\begin_inset Formula $k'$
+\end_inset
+
+ must be at most 
+\begin_inset Formula $B$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+So we actually have
+\begin_inset Formula 
+\begin{equation}
+\sum_{k=1}^{B}\psi_{k}\sum_{k'=\max(1,1+p-k)}^{\min(B,B+p-k)}\psi_{k'}\psi_{k'+k-p}^{*}\label{eq:p-space-nln}
+\end{equation}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph
+Using fft
+\end_layout
+
+\begin_layout Standard
+Rather than using expression 
+\begin_inset CommandInset ref
+LatexCommand eqref
+reference "eq:p-space-nln"
+plural "false"
+caps "false"
+noprefix "false"
+nolink "false"
+
+\end_inset
+
+,
+ it is much faster to transform from 
+\begin_inset Formula $\psi_{p}$
+\end_inset
+
+ to 
+\begin_inset Formula $\psi_{x}$
+\end_inset
+
+,
+ calculate 
+\begin_inset Formula $|\psi_{x}|^{2}\psi_{x}$
+\end_inset
+
+ and transform the result back to 
+\begin_inset Formula $p$
+\end_inset
+
+-space.
+ There is a subtlety regarding the order of frequencies.
+ When construct matrices,
+ we assume the order 
+\family typewriter
+-M:M
+\family default
+,
+ and hence when constructing vectors 
+\begin_inset Formula $\psi_{p}$
+\end_inset
+
+,
+ we do 
+\family typewriter
+fft
+\family default
+ on 
+\begin_inset Formula $\psi_{x}$
+\end_inset
+
+ and then 
+\family typewriter
+fftshift
+\family default
+.
+ Thus,
+ to get properly back from 
+\begin_inset Formula $\psi_{p}$
+\end_inset
+
+ to 
+\begin_inset Formula $\psi_{x}$
+\end_inset
+
+,
+ we should first do 
+\family typewriter
+ifftshift
+\family default
+ and only then 
+\family typewriter
+ifft
+\family default
+.
+ Then,
+ we should calculate 
+\begin_inset Formula $|\psi_{x}|^{2}\psi_{x}$
+\end_inset
+
+,
+ do 
+\family typewriter
+fft
+\family default
+,
+ and the final 
+\family typewriter
+fftshift
+\family default
+.
+\end_layout
+
+\begin_layout Standard
+However,
+ these two shiftings cancel each other and are not needed.
+ Suppose we have our 
+\begin_inset Formula $\psi_{p}$
+\end_inset
+
+'s such that 
+\begin_inset Formula 
+\[
+\psi_{x}=\sum_{p=-M}^{M}\e^{\i\frac{2\pi px}{L}}\psi_{p},
+\]
+
+\end_inset
+
+The correspondence between the exponents and the coefficients is this:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="2" columns="6">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\e^{\i\frac{2\pi(-M)x}{L}}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\e^{\i\frac{2\pi0x}{L}}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\e^{\i\frac{2\pi Mx}{L}}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\psi_{-M}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\psi_{0}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\psi_{M}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+If we do fftshift of 
+\begin_inset Formula $\psi_{p}$
+\end_inset
+
+,
+ then we get
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="2" columns="6">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<column alignment="center" valignment="top">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\e^{\i\frac{2\pi(-M)x}{L}}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\e^{\i\frac{2\pi0x}{L}}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\e^{\i\frac{2\pi1x}{L}}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\psi_{0}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\psi_{M}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\psi_{-M}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We have 3 coordinate points,
+ 
+\begin_inset Formula $x_{1}$
+\end_inset
+
+,
+ 
+\begin_inset Formula $x_{2}$
+\end_inset
+
+,
+ 
+\begin_inset Formula $x_{3}$
+\end_inset
+
+;
+ and function values at these points 
+\begin_inset Formula $X_{i}$
+\end_inset
+
+.
+ Fourier series means that
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\begin{align*}
+X_{1}=\e^{-\i\frac{2\pi p_{-1}x_{1}}{L}}P_{-1}+\e^{-\i\frac{2\pi p_{0}x_{1}}{L}}P_{0}+\e^{-\i\frac{2\pi p_{1}x_{1}}{L}}P_{1},\\
+X_{2}=\e^{-\i\frac{2\pi p_{-1}x_{2}}{L}}P_{-1}+\e^{-\i\frac{2\pi p_{0}x_{2}}{L}}P_{0}+\e^{-\i\frac{2\pi p_{1}x_{2}}{L}}P_{1},\\
+X_{3}=\e^{-\i\frac{2\pi p_{-1}x_{3}}{L}}P_{-1}+\e^{-\i\frac{2\pi p_{0}x_{3}}{L}}P_{0}+\e^{-\i\frac{2\pi p_{1}x_{3}}{L}}P_{1},
+\end{align*}
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+\psi_{x}=U_{xp}\psi_{p}
+\]
+
+\end_inset
+
+Now we take 
+\begin_inset Formula $Y_{i}=\sin X_{i}$
+\end_inset
+
+ and again transform.
+ E.g.
+\begin_inset Formula 
+\begin{align*}
+Y_{1}=\e^{-\i\frac{2\pi p_{-1}x_{1}}{L}}Q_{-1}+\e^{-\i\frac{2\pi p_{0}x_{1}}{L}}Q_{0}+\e^{-\i\frac{2\pi p_{1}x_{1}}{L}}Q_{1},
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Y=\sin X=\e^{-\i\frac{2\pi x}{L}}P_{-1}+P_{0}+\e^{\i\frac{2\pi x}{L}}P_{1},
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+\tilde{X}=\e^{-\i\frac{2\pi x}{L}}P_{0}+P_{1}+\e^{\i\frac{2\pi x}{L}}P_{-1},
+\]
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+\tilde{X}=\e^{-\i\frac{2\pi x}{L}}P_{0}+P_{1}+\e^{\i\frac{2\pi x}{L}}P_{-1},
+\]
+
+\end_inset
+
+ 
+\end_layout
+
+\begin_layout Subsubsection
+sin-basis
+\end_layout
+
+\begin_layout Standard
+Now consider the sin basis:
+\begin_inset Formula 
+\begin{align*}
+\sum_{x}(\hat{U}^{\dagger})_{px}|\psi_{x}|^{2}\psi_{x} & =\frac{4}{L^{2}}\sum_{k,k',k''}\intop\d x\,\sin\frac{\pi px}{L}\sin\frac{\pi kx}{L}\sin\frac{\pi k'x}{L}\sin\frac{\pi k''x}{L}\braket k{\psi}\braket{\psi}{k'}\braket{k''}{\psi}
+\end{align*}
+
+\end_inset
+
+where 
+\begin_inset Formula $k,k'',p,p''$
+\end_inset
+
+ run from 
+\begin_inset Formula $1$
+\end_inset
+
+ to 
+\begin_inset Formula $M$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+We know that
+\begin_inset Formula 
+\begin{align*}
+\frac{4}{L^{2}}\intop\d x\,\sin\frac{\pi kx}{L}\sin\frac{\pi px}{L}\sin\frac{\pi k'x}{L}\sin\frac{\pi k''x}{L} & =\frac{1}{L^{2}}\intop_{0}^{L}\cos\frac{\pi(k-p)x}{L}\cos\frac{\pi(k'-k'')x}{L}\d x\\
+ & -\frac{1}{L^{2}}\intop_{0}^{L}\cos\frac{\pi(k-p)x}{L}\cos\frac{\pi(k'+k'')x}{L}\d x\\
+ & -\frac{1}{L^{2}}\intop_{0}^{L}\cos\frac{\pi(k+p)x}{L}\cos\frac{\pi(k'-k'')x}{L}\d x\\
+ & +\frac{1}{L^{2}}\intop_{0}^{L}\cos\frac{\pi(k+p)x}{L}\cos\frac{\pi(k'+k'')x}{L}\d x
+\end{align*}
+
+\end_inset
+
+Using the formula
+\begin_inset Formula 
+\[
+\intop_{0}^{L}\cos\frac{\pi mx}{L}\cos\frac{\pi nx}{L}\d x=\frac{L}{2}(\delta_{m,n}+\delta_{m,-n})
+\]
+
+\end_inset
+
+we find
+\begin_inset Formula 
+\begin{align*}
+= & \frac{1}{2L}(\delta_{k-p,k'-k''}+\delta_{k-p,k''-k'}-\delta_{k-p,k'+k''}-\delta_{k-p,-k'-k''}-\delta_{k+p,k'-k''}-\delta_{k+p,k''-k'}+\delta_{k+p,k'+k''}+\cancel{\delta_{k+p,-k'-k''}}).\\
+= & \frac{1}{2L}(\delta_{-k+p+k',k''}+\delta_{k-p+k',k''}-\delta_{k-p-k',k''}-\delta_{-k+p-k',k''}-\delta_{-k-p+k',k''}-\delta_{k+p+k',k''}+\delta_{k+p-k',k''}).
+\end{align*}
+
+\end_inset
+
+The stroked out last cannot be satisfied because 
+\begin_inset Formula $k+p$
+\end_inset
+
+ is positive.
+ Then we have
+\begin_inset Formula 
+\begin{align*}
+\sum_{x}(\hat{U}^{\dagger})_{px}|\psi_{x}|^{2}\psi_{x} & =\frac{1}{2L}\sum_{k,k',k''}(\delta_{-k+p+k',k''}+\delta_{k-p+k',k''}-\delta_{k-p-k',k''}-\delta_{-k+p-k',k''}-\delta_{-k-p+k',k''}-\delta_{k+p+k',k''}+\delta_{k+p-k',k''})\braket k{\psi}\braket{\psi}{k'}\braket{k''}{\psi}\\
+ & =\frac{1}{2L}\sum_{k,k'}(\braket{-k+p+k'}{\psi}+\braket{k-p+k'}{\psi}-\braket{k-p-k'}{\psi}-\braket{-k+p-k'}{\psi}-\braket{-k-p+k'}{\psi}-\braket{k+p+k'}{\psi}+\braket{k+p-k'}{\psi})\braket k{\psi}\braket{\psi}{k'}\\
+ & =\frac{1}{2L}\sum_{k,k'}\psi_{k}\psi_{k'}^{*}(\psi_{-k+p+k'}+\psi_{k-p+k'}-\psi_{k-p-k'}-\psi_{-k+p-k'}-\psi_{-k-p+k'}-\psi_{k+p+k'}+\psi_{k+p-k'})
+\end{align*}
+
+\end_inset
+
+
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+In the code,
+ the sum is
+\begin_inset Formula 
+\[
+\sum_{k=1}^{B}\psi_{k}\left(\sum_{k'=\max(1,1+k-p)}^{\min(B,B+k-p)}\psi_{k'}\psi_{k'-k+p}-\sum_{k'=\max(1,-1+k-p)}^{\min(B,B+p-k)}\psi_{k'}\psi_{-k'+k-p}-\sum_{k'=\max(1,1+p+k)}^{\min(B,B+p-k)}\psi_{k'}\psi_{k'-k-p}+\sum_{k'=\max(1,-1+k+p)}^{\min(B,B+p-k)}\psi_{k'}\psi_{-k'+k+p}\right)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+The full equation is
+\begin_inset Formula 
+\[
+\psi_{p}^{\prime}=-\i\sum_{p'}\hat{H}_{pp'}\psi_{p'}-\i\frac{g}{2L}\sum_{k,k'}\psi_{k}\psi_{k'}^{*}(\psi_{-k+p+k'}+\psi_{k-p+k'}-\psi_{k-p-k'}-\psi_{-k+p-k'}-\psi_{-k-p+k'}-\psi_{k+p+k'}+\psi_{k+p-k'}).
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Paragraph
+Chemical potential
+\end_layout
+
+\begin_layout Standard
+To get the expression for the chemical potential,
+ we use the four-sine result from above with 
+\begin_inset Formula $k''\to p'$
+\end_inset
+
+:
+\begin_inset Formula 
+\begin{align*}
+\int[\psi^{*}(x)\psi(x)]^{2}\d x & =\int\left(\sum_{p'p}\braket{\psi}{p'}\sqrt{\frac{2}{L}}\sin\frac{\pi p'x}{L}\sqrt{\frac{2}{L}}\sin\frac{\pi px}{L}\braket p{\psi}\right)^{2}\d x\\
+ & =\sum_{p'p}\sum_{k'k}\frac{4}{L^{2}}\int\braket{\psi}p\braket{p'}{\psi}\braket{\psi}{k'}\braket k{\psi}\sin\frac{\pi p'x}{L}\sin\frac{\pi px}{L}\sin\frac{\pi k'x}{L}\sin\frac{\pi kx}{L}\d x\\
+ & =\frac{1}{2L}\sum_{p'p}\sum_{k'k}\braket{\psi}p\braket{p'}{\psi}\braket{\psi}{k'}\braket k{\psi}(\delta_{k,p}\delta_{k',p'}+\delta_{-k+p+k',p'}-\delta_{k-p-k',p'}-\delta_{-k-p+k',p'}+\delta_{k+p-k',p'})\\
+ & =\frac{1}{2L}\sum_{pkk'}\psi_{p}^{*}\psi_{k}\psi_{k'}^{*}(\psi_{-k+p+k'}+\psi_{k-p+k'}-\psi_{k-p-k'}-\psi_{-k+p-k'}-\psi_{-k-p+k'}-\psi_{k+p+k'}+\psi_{k+p-k'})
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+cos-basis
+\end_layout
+
+\begin_layout Standard
+Cos basis is very much like sin.
+ The starting point is
+\begin_inset Formula 
+\[
+\sum_{x}(\hat{U}^{\dagger})_{px}|\psi_{x}|^{2}\psi_{x}=\frac{4}{L^{2}}\sum_{k,k',k''}\intop\d x\,\cos\frac{\pi px}{L}\cos\frac{\pi kx}{L}\cos\frac{\pi k'x}{L}\cos\frac{\pi k''x}{L}\braket k{\psi}\braket{\psi}{k'}\braket{k''}{\psi}.
+\]
+
+\end_inset
+
+However,
+ it is important to note that 
+\begin_inset Formula $k,k',k'',p$
+\end_inset
+
+ run from 
+\begin_inset Formula $0$
+\end_inset
+
+ to 
+\begin_inset Formula $M$
+\end_inset
+
+.
+ For example,
+ all can be 0 and this gives nonzero contribution!
+ Except this case,
+ can we assume they run from 
+\begin_inset Formula $1$
+\end_inset
+
+ to 
+\begin_inset Formula $M+1$
+\end_inset
+
+?
+\end_layout
+
+\begin_layout Section
+Polar without angular dependence
+\end_layout
+
+\begin_layout Standard
+If 
+\begin_inset Formula $H_{ij}(\boldsymbol{r})$
+\end_inset
+
+ do not depend on the polar angle 
+\begin_inset Formula $\varphi$
+\end_inset
+
+,
+ we can reduce the problem to 1D.
+ But we consider a more general case:
+ let 
+\begin_inset Formula $H_{ij}(\boldsymbol{r})=h(\rho)\e^{\i\ell_{ij}\varphi}$
+\end_inset
+
+.
+ Then,
+ we can search for solutions of the form 
+\begin_inset Formula $\Psi_{i}^{\lambda}(\rho,\varphi)=f_{i}^{\lambda}(\rho)\e^{\i l_{i}\varphi}$
+\end_inset
+
+.
+ Let additionally,
+ it be possible to find conditions for 
+\begin_inset Formula $l_{i}$
+\end_inset
+
+'s and 
+\begin_inset Formula $\ell_{ij}$
+\end_inset
+
+ such that all exponents 
+\begin_inset Formula $\e^{\i l_{i}\varphi}$
+\end_inset
+
+ and 
+\begin_inset Formula $\e^{\i\ell_{ij}\varphi}$
+\end_inset
+
+ cancel.
+ Then,
+ the Hamiltonian becomes
+\begin_inset Formula 
+\[
+\hat{H}(\rho,\varphi)=\begin{pmatrix}(-\i\nabla-\boldsymbol{A}(\rho))^{2}+h_{11}(\rho)-\i\Gamma_{1} & h_{12}(\rho)\e^{\i l_{12}\varphi} & \cdots\\
+h_{12}(\rho)\e^{-\i l_{12}\varphi} & (-\i\nabla-\boldsymbol{A}(\rho))^{2}+h_{22}(\rho)-\i\Gamma_{2} & \cdots\\
+\vdots & \vdots & \ddots
+\end{pmatrix}.
+\]
+
+\end_inset
+
+Consider two-component case first for simplicity.
+ The equation for the first component is:
+\begin_inset Formula 
+\begin{align*}
+\varepsilon_{1}^{\lambda}\Psi_{1}^{\lambda}(\rho,\varphi) & =\{[-\i\nabla-\boldsymbol{A}]^{2}+h_{11}-\i\Gamma_{1}\}\Psi_{1}^{\lambda}+h_{12}(\rho)\e^{\i\ell_{12}\varphi}\Psi_{2}^{\lambda}\\
+ & =-\Delta\Psi_{1}^{\lambda}+(\boldsymbol{A}^{2}+\i\nabla\boldsymbol{A}+h_{11}-\i\Gamma_{1})\Psi_{1}^{\lambda}+2\i\boldsymbol{A}\nabla\Psi_{1}^{\lambda}+h_{12}(\rho)\e^{\i\ell_{12}\varphi}\Psi_{2}^{\lambda}\\
+ & =-\Delta\Psi_{1}^{\lambda}+(\boldsymbol{A}^{2}+\i\nabla_{\rho}A_{\rho}+h_{11}-\i\Gamma_{1})\Psi_{1}^{\lambda}+2\i\boldsymbol{A}\nabla\Psi_{1}^{\lambda}+h_{12}(\rho)\e^{\i\ell_{12}\varphi}
+\end{align*}
+
+\end_inset
+
+Next,
+ let 
+\begin_inset Formula $\Psi_{i}^{\lambda}(\rho,\varphi)=f_{i}^{\lambda}(\rho)\e^{\i l_{i}\varphi}$
+\end_inset
+
+.
+ We find:
+\begin_inset Formula 
+\begin{align*}
+\Delta\Psi_{1}^{\lambda} & =\left(\Delta_{\rho}+\frac{1}{\rho^{2}}\frac{\partial^{2}}{\partial\varphi^{2}}\right)\Psi_{1}^{\lambda}=\left(\Delta_{\rho}-\frac{l_{1}^{2}}{\rho^{2}}\right)f_{1}^{\lambda}\e^{\i l_{1}\varphi}\\
+\boldsymbol{A}\nabla\Psi_{1}^{\lambda} & =\left(A_{\rho}\nabla_{\rho}+A_{\varphi}\frac{1}{\rho}\frac{\partial}{\partial\varphi}\right)\Psi_{1}^{\lambda}=\left(A_{\rho}\nabla_{\rho}+\i A_{\varphi}\frac{l_{1}}{\rho}\right)f_{1}^{\lambda}\e^{\i l_{1}\varphi}
+\end{align*}
+
+\end_inset
+
+Dividing the preceding by 
+\begin_inset Formula $\e^{\i l_{1}\varphi}$
+\end_inset
+
+,
+ we thus get
+\begin_inset Formula 
+\[
+\varepsilon_{1}^{\lambda}f_{1}^{\lambda}(\rho)=-\Delta_{\rho}f_{1}^{\lambda}+(\boldsymbol{A}^{2}+\i\nabla_{\rho}A_{\rho}+\frac{l_{1}^{2}}{\rho^{2}}-2A_{\varphi}\frac{l_{1}}{\rho}+h_{11}-\i\Gamma_{1})f_{1}^{\lambda}+2\i A_{\rho}\nabla_{\rho}f_{1}^{\lambda}+h_{12}f_{2}^{\lambda}\e^{\i(\ell_{12}+l_{2}-l_{1})\varphi}
+\]
+
+\end_inset
+
+Thus,
+ if 
+\begin_inset Formula $\ell_{12}+l_{2}-l_{1}=0$
+\end_inset
+
+,
+ then a solution whereby 
+\begin_inset Formula $f_{1}^{\lambda}$
+\end_inset
+
+ indeed does not depend on the angle might exist.
+ In the general case with more components,
+ there will be a system of conditions for 
+\begin_inset Formula $\ell_{ij}$
+\end_inset
+
+ and 
+\begin_inset Formula $l_{i}$
+\end_inset
+
+ that can be simultaneously satisfied.
+ The Hamiltonian is then
+\begin_inset Formula 
+\[
+\hat{H}(\rho)=\begin{pmatrix}-\Delta_{\rho}+\boldsymbol{A}^{2}+\i\nabla_{\rho}A_{\rho}+\frac{l_{1}^{2}}{\rho^{2}}-2A_{\varphi}\frac{l_{1}}{\rho}+h_{11}+2\i A_{\rho}\nabla_{\rho}-\i\Gamma_{1} & h_{12} & \cdots\\
+h_{12} & -\Delta_{\rho}+\boldsymbol{A}^{2}+\i\nabla_{\rho}A_{\rho}+\frac{l_{2}^{2}}{\rho^{2}}-2A_{\varphi}\frac{l_{2}}{\rho}+h_{22}+2\i A_{\rho}\nabla_{\rho}-\i\Gamma_{2} & \cdots\\
+\vdots & \vdots & \ddots
+\end{pmatrix}.
+\]
+
+\end_inset
+
+
+\end_layout
+
+\end_body
+\end_document

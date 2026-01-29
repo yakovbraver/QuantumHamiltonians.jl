@@ -39,8 +39,8 @@ plot(xs, 𝑈)
 @time diagonalize!(xh, nev=5);
 xh.ε
 
-stateno = 3
-xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=N)
+stateno = 1
+xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=100)
 plot(xs, real(ψ[:, 1, 1]))
 plot(xs, imag(ψ[:, 1, 1]))
 plot(xs, abs2.(ψ[:, 1, 1]))
@@ -67,19 +67,18 @@ plot(xs, real(ψ[:, 1]))
 ######## Free system ########
 
 M = 128 # maximum harmonic number. Good choices: cis -- 62 (125-point fft); sin -- 127 (127-point dst); cos -- 128 (129-point dct)
-N = 2M + 1
 R = 5
 xlimits = (-R, R) .|> Float
 
 # diagonalise to get exact eigenstates
 δ = √0.5 |> Float
-@time xh = XSpaceHamiltonian{:dense}([xlimits], nothing; basis=:sin, M, δ)
+@time xh = XSpaceHamiltonian{:dense}([xlimits], nothing; basis=:cos, M, δ)
 @time diagonalize!(xh, nev=0);
 xh.ε
 
 stateno = 1
-xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=N)
-plot(xs, real(ψ[:, 1, 1]))
+xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=100)
+plot!(xs, real(ψ[:, 1, 1]))
 plot(xs, imag(ψ[:, 1, 1]))
 plot(xs, abs2.(ψ[:, 1, 1]))
 
@@ -92,10 +91,10 @@ get_ε_μ(xh, xh.V[:, 1], [g;;])
 p = 1/√(2R) |> Float # value of wf in the bulk (= ground state solution for the free case)
 ξ = √(1/(p^2 * g)) |> Float # healing length
 𝜓₀(x) = p * tanh(x/ξ) # soliton trial
-
-T_max = 1e-1 |> Float
+# LawsonEuler NorsettEuler ETDRK2 HochOst4
+T_max = 0.1 |> Float
 dt = 1e-4 |> Float
-@time sol = propagate(xh, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true)
+@time sol = propagate(xh, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true, solver=XSpaceHamiltonians.DE.HochOst4())
 V = sol.u[end]
 get_ε_μ(xh, V, [g;;])
 
@@ -104,12 +103,12 @@ plot(xs, real(ψ[:, 1]), ylims=(-0.5, 0.5))
 
 #### Real time propagation
 
-T_max = 10 |> Float
+T_max = 1 |> Float
 dt = 1e-3 |> Float
 nsaves = 500
 
 # starting from p-space functions
-@time sol = propagate(xh, V, [g;;]; T_max, dt, itime=false, nsaves)
+@time sol = propagate(xh, V, [g;;]; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.DE.HochOst4());
 
 v = sol.u[end]
 get_ε_μ(xh, v, [g;;])
@@ -143,12 +142,12 @@ R = 11 # trap half-length, in units of a₀
 
 #### Imaginary time
 
-M = 129 # cis -- 62; sin -- 127; cos -- 129
+M = 300 # cis -- 62; sin -- 127; cos -- 129
 xlimits = (-R, R) .|> Float
 xs = range(xlimits..., 100)
 plot(xs, 𝑈)
 
-@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=false, M, δ)
+@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cos, 𝑈_iseven=false, M, δ)
 diagonalize!(xh, nev=5)
 xh.ε
 
@@ -156,10 +155,10 @@ xh.ε
 p = 1/√(2R) |> Float # value of wf in the bulk (= ground state solution for the free case)
 ξ = √(1/(p^2 * g)) |> Float # healing length
 𝜓₀(x) = p * tanh(x/ξ) # soliton trial
-
-T_max = 10 |> Float
+# LawsonEuler NorsettEuler ETDRK2 HochOst4
+T_max = 0.5 |> Float
 dt = 1e-2 |> Float
-@time sol = propagate(xh, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true)
+@time sol = propagate(xh, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true, solver=XSpaceHamiltonians.DE.HochOst4())
 V = sol.u[end]
 get_ε_μ(xh, V, [g;;])
 
@@ -180,7 +179,7 @@ plot(xs, ψ₀)
 𝜓₀(x) = p * tanh(x/ξ) # soliton trial
 ψ₀ = vec(ψ)
 
-T_max = 10 |> Float
+T_max = 1 |> Float
 dt = 1e-3 |> Float
 nsaves = 500
 
@@ -189,7 +188,7 @@ nsaves = 500
 @time sol = propagate(xh, real(ψ[:, 1]), g; T_max, dt, itime=false, nsaves)
 
 # starting from p-space functions
-@time sol = propagate(xh, V, [g;;]; T_max, dt, itime=false, nsaves)
+@time sol = propagate(xh, V, [g;;]; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.DE.ETDRK4())
 
 v = sol.u[end]
 get_ε_μ(xh, v, [g;;])

@@ -1,6 +1,6 @@
 using XSpaceHamiltonians
 
-using Plots, DelimitedFiles
+using Plots
 plotlyjs()
 theme(:dark, size=(600, 500))
 
@@ -13,10 +13,9 @@ end
 Float = Float32 # operating type
 
 xlimits = (-5, 5) .|> Float
-M = 20
+M = 300
 
 @time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, δ=Float(√0.5));
-xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, δ=Float(√0.5))
 @time diagonalize!(xh, nev=5);
 xh.ε
 
@@ -31,13 +30,12 @@ plot(xs, 𝑈)
 plot!(xs, part(ψ[:, 1, 1]) .+ xh.ε[stateno])
 
 # Or we can solve using the sine basis, yielding real coordinate-space eigenfunctions
-
-xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, M, δ=Float(√0.5))
+xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cos, M, δ=Float(√0.5))
 @time diagonalize!(xh, nev=5);
 xh.ε
 
-stateno = 4
-xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=200)
+stateno = 1
+@time xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=200);
 plot(xs, 𝑈)
 plot!(xs, ψ[:, 1, 1] .+ xh.ε[stateno])
 
