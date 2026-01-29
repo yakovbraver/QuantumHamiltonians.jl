@@ -93,7 +93,7 @@ function transform!(ft::FourierTransformer, 𝑓::Function)
         end
         plan * buff
         plan * buff_im
-        ft.did_complex_rxdft = true # will be used in fft_to_matrix_*D! to inclue `buff_im` when constructing the matrix
+        ft.did_complex_rxdft = true # will be used in fft_to_matrix_*D! to include `buff_im` when constructing the matrix
     end
     return
 end
@@ -173,6 +173,10 @@ function fft_to_vector!(v::AbstractVector{<:Number}, ft::FourierTransformer; mak
             copy!(v, buff)
             if ft.did_complex_rxdft
                 v .+= im.*buff_im
+            end
+            if basis == :cos # proper normalisation of the zeroth and last harmonic. It is assumed that `v` is in p-space. 
+                v[1] /= √2  
+                v[end] /= √2
             end
         end
     else
@@ -266,18 +270,18 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
     else # basis == :cos
         if ft.did_complex_rxdft
             for jx in 0:M
-                ζₓ = ifelse(iszero(jx), 2, 1)
+                ζₓ = ifelse(jx == 0 || jx == M, 2, 1)
                 for j′x in 0:M
-                    ζ′ₓ = ifelse(iszero(j′x), 2, 1)
+                    ζ′ₓ = ifelse(j′x == 0 || j′x == M, 2, 1)
                     j₋x = abs(j′x-jx)
                     A[j′x+1, jx+1] = ( (buff[j₋x+1] + buff[j′x+jx+1]) + im*(buff_im[j₋x+1] + buff_im[j′x+jx+1]) ) / √(ζₓ*ζ′ₓ)
                 end
             end
         else
             for jx in 0:M
-                ζₓ = ifelse(iszero(jx), 2, 1)
+                ζₓ = ifelse(jx == 0 || jx == M, 2, 1)
                 for j′x in 0:M
-                    ζ′ₓ = ifelse(iszero(j′x), 2, 1)
+                    ζ′ₓ = ifelse(j′x == 0 || j′x == M, 2, 1)
                     j₋x = abs(j′x-jx)
                     A[j′x+1, jx+1] = (buff[j₋x+1] + buff[j′x+jx+1]) / √(ζₓ*ζ′ₓ)
                 end
