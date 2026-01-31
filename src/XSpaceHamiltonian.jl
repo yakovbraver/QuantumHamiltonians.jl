@@ -129,6 +129,7 @@ function make_wavefunction(xh::XSpaceHamiltonian{Storage,R}, v::AbstractVector) 
             ψ[1, c] *= √2
             ψ[end, c] *= √2
         end
+        basis == :cis && (ψ[:, c] = FFTW.ifftshift(ψ[:, c])) # undo what is done in `fft_to_vector`
     end
     return ft.xs, ψ
 end
