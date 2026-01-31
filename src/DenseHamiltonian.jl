@@ -277,7 +277,7 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
             transform!(ft, ψ₀[c])
             ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
             fft_to_vector!(ψ₀ₚ_block, ft; makereal=(ψ₀_iseven[c] && ψ₀_isreal[c]))
-            # normalize!(ψ₀ₚ_block)
+            normalize!(ψ₀ₚ_block) # because the passed ψ₀ might have not been normalised
         end
     end
 
@@ -285,15 +285,15 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
         N = 2M + 1 # number of points in each dimension
         dx = L ./ N
         # combine all fft normalisation factors in g so that this multiplication can be done just once at each step:
-        g *= prod(@. dx / L^2) # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
+        g .*= prod(@. dx / L^2) # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
     elseif basis == :sin
         N = M
         dx = L ./ (N+1)
-        g *= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
+        g .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
     else # basis == :cos
         N = M + 1
         dx = L ./ (N-1)
-        g *= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
+        g .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
     end
 
     if itime # propagation in imaginary time: equation is real if `xh.H` and `ψ₀ₚ` are real
@@ -310,10 +310,8 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
         prob = DE.ODEProblem(SciMLOperators.MatrixOperator(H), ψ₀ₚ, tspan)
     else # nonlinearity present
         if basis == :cis
-            bfft_plan = FFTW.plan_bfft(ψ₀ₚ) # will first use this and write the result to the buffer
-            fft_plan! = FFTW.plan_fft!(ψ₀ₚ) # then will use this in-place on that buffer
-            # params = (H, G[1], similar(ψ₀ₚ), bfft_plan, fft_plan!)
-            # prob = DE.ODEProblem(gpe_cis_1comp!, ψ₀ₚ, tspan, params)
+            bfft_plan = FFTW.plan_bfft(ψ₀ₚ) # will first use this and write the result into `du`
+            fft_plan! = FFTW.plan_fft!(ψ₀ₚ) # then will use this in-place on `du`
             params = (G[1], bfft_plan, fft_plan!)
             prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_cis_1comp_nln!, ψ₀ₚ, tspan, params)
         else # basis == :sin || basis == :cos
@@ -321,8 +319,6 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
             if itime
                 rft_plan  = FFTW.plan_r2r(real(ψ₀ₚ), ft_type)  # will first use this and write the result to the buffer
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ), ft_type) # then will use this in-place on that buffer
-                # params = (H, G[1], similar(ψ₀ₚ, R), rft_plan, rft_plan!)
-                # prob = DE.ODEProblem(gpe_sincos_itime_1comp!, ψ₀ₚ, tspan, params)
                 if basis == :sin
                     params = (G[1], rft_plan, rft_plan!)
                     prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_sin_itime_1comp_nln!, ψ₀ₚ, tspan, params)
@@ -332,8 +328,6 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
                 end
             else
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ), ft_type)
-                # params = (H, G[1], similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), rft_plan!)
-                # prob = DE.ODEProblem(gpe_sincos_1comp!, ψ₀ₚ, tspan, params)
                 params = (G[1], similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), rft_plan!, basis)
                 prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_sincos_1comp_nln!, ψ₀ₚ, tspan, params)
             end
@@ -347,48 +341,28 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
         # prepare the callback that remormalises wave function at every step
         condition = Returns(true) # condition is checked at the end of each time step; we want this to be always true
         affect!(integrator) = normalize!(integrator.u)
-        cb = DE.DiscreteCallback(condition, affect!) 
-        return DE.solve(prob, solver; callback=cb, save_everystep=false, save_start=false, dt, saveat)
+        cb = DE.DiscreteCallback(condition, affect!) # will save every step before and after the callback (`save_positions=(true, true)`); docs say this is mandatory when change of `u` is discontinuous
+        sol = DE.solve(prob, solver; callback=cb, save_everystep=false, save_start=true, dt)
+        normalize!(sol.u[end]) # the final step is saved only before the callback, so normalise manually
+        return sol
     else
         return DE.solve(prob, solver; save_everystep=false, save_start=true, dt, saveat)
     end
 end
 
-# "Update the 𝑢′ matrix of the GPE in the cis basis."
-# function gpe_cis_1comp!(du, u, params, t)
-#     H, g, u_buff, bfft_plan, fft_plan! = params
-#     mul!(du, H, u)
-#     mul!(u_buff, bfft_plan, u) # transform `u` and write into `u_buff`
-#     u_buff .*= g .* abs2.(u_buff)
-#     fft_plan! * u_buff # in-place transform of `u_buff`
-#     du .+= u_buff
-#     return
-# end
-
 "Update the 𝑢′ matrix of the GPE in the cis basis."
 function gpe_cis_1comp_nln!(du, u, params, t)
-    g, rft_plan, rft_plan! = params
-    mul!(du, rft_plan, u) # transform `u` and write into `du`
+    g, bfft_plan, fft_plan! = params
+    mul!(du, bfft_plan, u) # transform `u` and write into `du`
     du .*= g .* abs2.(du)
-    rft_plan! * du # in-place transform of `du`
+    fft_plan! * du # in-place transform of `du`
     return
 end
-
-# "Update the 𝑢′ matrix of the imaginary-time GPE in the sin/cos basis. The equation is real."
-# function gpe_sincos_itime_1comp!(du, u, params, t)
-#     H, g, u_buff, rft_plan, rft_plan! = params
-#     mul!(du, H, u)
-#     mul!(u_buff, rft_plan, u) # transform `u` and write into `u_buff`
-#     u_buff .*= g .* u_buff.^2
-#     rft_plan! * u_buff # in-place transform of `u_buff`
-#     du .+= u_buff
-#     return
-# end
 
 "Update the 𝑢′ matrix of the imaginary-time GPE in the sin/cos basis. The equation is real."
 function gpe_sin_itime_1comp_nln!(du, u, params, t)
     g, rft_plan, rft_plan! = params
-    mul!(du, rft_plan, u) # transform `u` and write into `u_buff`
+    mul!(du, rft_plan, u) # transform `u` and write into `du`
     du .*= g .* du.^2
     rft_plan! * du # in-place transform of `du`
     return
@@ -426,25 +400,6 @@ function gpe_sincos_1comp_nln!(du, u, params, t)
     basis == :cos && (du[1] /= √2; du[end] /= √2)
     return
 end
-
-# "Update the 𝑢′ matrix of the real-time GPE in the sin/cos basis. The equation is complex."
-# function gpe_sincos_1comp!(du, u, params, t)
-#     H, g, u_buff, u_buff_im, rft_plan! = params
-#     mul!(du, H, u)
-#     # treat real part
-#     u_buff .= real.(u)
-#     rft_plan! * u_buff
-#     u_buff .*= u_buff.^2
-#     rft_plan! * u_buff
-#     # treat imaginary part
-#     u_buff_im .= imag.(u)
-#     rft_plan! * u_buff_im
-#     u_buff_im .*= u_buff_im.^2
-#     rft_plan! * u_buff_im
-#     # add re and im
-#     @. du += g * (u_buff + im * u_buff_im)
-#     return
-# end
 
 "Return mean energy and chemical potential for a p-space state `v`. (currently, 1-component only)"
 function get_ε_μ(xh::XSpaceHamiltonian{Storage,R}, v, g=zeros(typeof(xh.δ), xh.nc, xh.nc)) where {Storage,R}
