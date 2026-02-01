@@ -328,7 +328,7 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
                 end
             else
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ), ft_type)
-                params = (G[1], similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), rft_plan!, basis)
+                params = (G[1], similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), rft_plan!, basis)
                 prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_sincos_1comp_nln!, ψ₀ₚ, tspan, params)
             end
         end
@@ -382,21 +382,25 @@ end
 
 "Update the 𝑢′ matrix of the real-time GPE in the sin/cos basis. The equation is complex."
 function gpe_sincos_1comp_nln!(du, u, params, t)
-    g, u_buff, u_buff_im, rft_plan!, basis = params
-    # treat real part
-    u_buff .= real.(u)
-    basis == :cos && (u_buff[1] *= √2; u_buff[end] *= √2)
-    rft_plan! * u_buff
-    u_buff .*= u_buff.^2
-    rft_plan! * u_buff
-    # treat imaginary part
-    u_buff_im .= imag.(u)
-    basis == :cos && (u_buff_im[1] *= √2; u_buff_im[end] *= √2)
-    rft_plan! * u_buff_im
-    u_buff_im .*= u_buff_im.^2
-    rft_plan! * u_buff_im
+    g, u_re, u_im, u², rft_plan!, basis = params
+    # split re and im
+    for i in eachindex(u)
+        u_re[i], u_im[i] = reim(u[i])
+    end
+    basis == :cos && (u_re[1] *= √2; u_re[end] *= √2; u_im[1] *= √2; u_im[end] *= √2)
+    # transform to x-space
+    rft_plan! * u_re
+    rft_plan! * u_im
+    # calculate |𝑢(𝑥)|²
+    @. u² = u_re^2 + u_im^2
+    # calculate 𝑢(𝑥)|𝑢(𝑥)|²
+    @. u_re *= u²
+    @. u_im *= u²
+    # transform to p-space
+    rft_plan! * u_re
+    rft_plan! * u_im
     # add re and im
-    @. du = g * (u_buff + im * u_buff_im)
+    @. du = g * (u_re + im * u_im)
     basis == :cos && (du[1] /= √2; du[end] /= √2)
     return
 end
@@ -417,8 +421,14 @@ function get_ε_μ(xh::XSpaceHamiltonian{Storage,R}, v, g=zeros(typeof(xh.δ), x
         transform!(ft, v_input)
         ψ = fft_to_vector(ft)
         basis == :cos && (ψ[1] *= √2; ψ[end] *= √2)  # undo what is done in `fft_to_vector!` (that assumes p-space while we actually got back to x-space)
+        # itnegrate |𝑢(𝑥)|^4        
         dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
-        U = g[1] * sum(abs2.(ψ).^2) * dV
+        u = abs2.(ψ).^2
+        if basis == :cos # 𝑥 is discretised with both endpoints included
+            U = g[1] * (sum(u) - u[end]) * dV # so final point is redundant (assuming rectangle rule)
+        else
+            U = g[1] * sum(u) * dV # for sin, endpoints are not included but are zero, so this is equivalent to the trapezoid rule. For cis, rectangle rule is more appropriate because there is no boundary
+        end
         μ += U
         ε += U / 2
     end
