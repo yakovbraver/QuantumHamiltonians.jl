@@ -146,10 +146,9 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
             fft_to_matrix!(h, ft; makereal)
             # @debug "Wrote 𝑈[$iH, $jH] into H[$iH, $jH]"
 
-            if !iszero(Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view)
-                H[wj, wi] .= h' # TODO possible to use `copyto!` ?
-                # @debug "Copied H[$iH, $jH]' into H[$jH, $iH]"
-            end
+            # copy adjoint of H[wi, wj] into H[wj, wi]. Needed for nonhermitian diagonalisation (cannot use Hermitian view) and also for GPE
+            copy_adjoint!(H, wj, wi, H, wi, wj)
+            # @debug "Copied H[$iH, $jH]' into H[$jH, $iH]"
         end
     end
 
@@ -225,7 +224,8 @@ end
 
 "Convenience caller for the 1-component case, where `ψ₀` is an analytic function or a vector representing discretised functions, `g` is a number, and `ψ₀_iseven` is a Bool."
 function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{Function,AbstractVector}, g::R=zero(R);
-                   ψ₀_iseven::Bool=false, T_max::R, dt::R, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0) where {Storage,R}
+                   ψ₀_iseven::Bool=false, T_max::R, dt::R, itime::Bool=false,
+                   solver=(iszero(g) ? DE.LinearExponential() : itime ? DE.LawsonEuler() : DE.ETDRK4()), nsaves::Integer=0) where {Storage,R}
     propagate(xh, [ψ₀], [g;;]; ψ₀_iseven=[ψ₀_iseven], T_max, dt, itime, solver, nsaves)
 end
 
@@ -239,11 +239,14 @@ Set `itime=true` for imaginary time propagation.
 `ψ₀_iseven[c]` matters only if `xh.basis=:cis` and shows whether `ψ₀[c]` is an even function (i.e. whether ψ(x) = ψ(-x)).
 If it is, then Fourier transform is real; if `xh.H` is also real, the imaginary time propagation can be done for a real type.
 `solver` is a solver from DifferentialEquations.jl. For SE, recommended are `LinearExponential` (default) or state-independent ones from https://docs.sciml.ai/DiffEqDocs/stable/solvers/nonautonomous_linear_ode/.
-For GPE, the default is `Tsit5`.
+For GPE, recommended are the Semilinear Split ODE Solvers from https://docs.sciml.ai/DiffEqDocs/stable/solvers/split_ode_solve/.
+For imaginary time, the default is LawsonEuler(), which is first order, but is sufficient when the time step is small.
+For real-time, the default is ETDRK4(); lower order variants can also be used for quick results.
 Return the DifferentialEquations solution object. 
 """
 function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector{<:Function},AbstractVector{<:AbstractVector},AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
-                   ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), T_max::R, dt::R, itime::Bool=false, solver=(iszero(g) ? DE.LinearExponential() : DE.Tsit5()), nsaves::Integer=0) where {Storage,R}
+                   ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), T_max::R, dt::R, itime::Bool=false,
+                   solver=(iszero(g) ? DE.LinearExponential() : itime ? DE.LawsonEuler() : DE.ETDRK4()), nsaves::Integer=0) where {Storage,R}
     (;xlims, L, M, basis, nc) = xh
     D = length(xlims)
     # size of each Hamiltonian block
@@ -277,25 +280,11 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
             transform!(ft, ψ₀[c])
             ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
             fft_to_vector!(ψ₀ₚ_block, ft; makereal=(ψ₀_iseven[c] && ψ₀_isreal[c]))
-            normalize!(ψ₀ₚ_block) # because the passed ψ₀ might have not been normalised
         end
+        normalize!(ψ₀ₚ)
     end
 
-    if basis == :cis
-        N = 2M + 1 # number of points in each dimension
-        dx = L ./ N
-        # combine all fft normalisation factors in g so that this multiplication can be done just once at each step:
-        g .*= prod(@. dx / L^2) # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
-    elseif basis == :sin
-        N = M
-        dx = L ./ (N+1)
-        g .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
-    else # basis == :cos
-        N = M + 1
-        dx = L ./ (N-1)
-        g .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
-    end
-
+    # initialise the Hamiltonian and coupling matrix `G` with the appropriate sign and im factor
     if itime # propagation in imaginary time: equation is real if `xh.H` and `ψ₀ₚ` are real
         H = !ψ₀ₚ_isreal && eltype(xh.H) <: Real ? -complex(xh.H) : -xh.H # if `ψ₀ₚ` is complex then solver needs complex matrix. So cast `xh.H` to complex if it is real
         G = -g
@@ -304,38 +293,57 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
         G = -im * g
     end
 
+    # Combine in `G` all fft normalisation factors so that this multiplication can be done just once at each step
+    if basis == :cis
+        N = 2M + 1 # number of points in each dimension
+        dx = L ./ N
+        G .*= prod(@. dx / L^2) # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
+    elseif basis == :sin
+        N = M
+        dx = L ./ (N+1)
+        G .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
+    else # basis == :cos
+        N = M + 1
+        dx = L ./ (N-1)
+        G .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
+    end
+
     # initialise the problem
     tspan = (zero(R), T_max)
     if iszero(g) # nonlinearity absent
         prob = DE.ODEProblem(SciMLOperators.MatrixOperator(H), ψ₀ₚ, tspan)
     else # nonlinearity present
+        ψ₀ₚ_block = @view ψ₀ₚ[1:B] # for constructing FFT plans and various buffers
         if basis == :cis
-            bfft_plan = FFTW.plan_bfft(ψ₀ₚ) # will first use this and write the result into `du`
-            fft_plan! = FFTW.plan_fft!(ψ₀ₚ) # then will use this in-place on `du`
-            params = (G[1], bfft_plan, fft_plan!)
-            prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_cis_1comp_nln!, ψ₀ₚ, tspan, params)
+            bfft_plan = FFTW.plan_bfft(ψ₀ₚ_block) # will first use this and write the result into `du`
+            fft_plan! = FFTW.plan_fft!(ψ₀ₚ_block) # then will use this in-place on `du`
+            if nc == 1 # the 1-component case can be treated more efficiently
+                params = (G[1], bfft_plan, fft_plan!)
+                prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_cis_1comp!, ψ₀ₚ, tspan, params)
+            else
+                buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
+                params = (G, B, nc, buff, similar(ψ₀ₚ_block), bfft_plan, fft_plan!)
+                prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_cis!, ψ₀ₚ, tspan, params)
+            end
         else # basis == :sin || basis == :cos
             ft_type = basis == :sin ? FFTW.RODFT00 : FFTW.REDFT00
             if itime
-                rft_plan  = FFTW.plan_r2r(real(ψ₀ₚ), ft_type)  # will first use this and write the result to the buffer
-                rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ), ft_type) # then will use this in-place on that buffer
+                rft_plan  = FFTW.plan_r2r(real(ψ₀ₚ_block), ft_type)  # will first use this and write the result to the buffer
+                rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type) # then will use this in-place on that buffer
                 if basis == :sin
                     params = (G[1], rft_plan, rft_plan!)
-                    prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_sin_itime_1comp_nln!, ψ₀ₚ, tspan, params)
+                    prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_sin_itime_1comp!, ψ₀ₚ, tspan, params)
                 else # basis == :cos
-                    params = (G[1], similar(ψ₀ₚ), rft_plan, rft_plan!)
-                    prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_cos_itime_1comp_nln!, ψ₀ₚ, tspan, params)
+                    params = (G[1], similar(ψ₀ₚ_block), rft_plan, rft_plan!)
+                    prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_cos_itime_1comp!, ψ₀ₚ, tspan, params)
                 end
-            else
-                rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ), ft_type)
-                params = (G[1], similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), rft_plan!, basis)
-                prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_sincos_1comp_nln!, ψ₀ₚ, tspan, params)
+            else # real time
+                rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type) # TODO make one buffer usin similar, which is also needed anyway, and use here and above. use similar with real type as appropriate
+                params = (G[1], similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
+                prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_sincos_1comp!, ψ₀ₚ, tspan, params)
             end
         end
     end
-
-    # when `saveat` is set, saving happens at points `tspan[1]:saveat:tspan[2]`
-    saveat = nsaves == 0 ? T_max+1 : (tspan[2] - tspan[1]) / nsaves
 
     if itime
         # prepare the callback that remormalises wave function at every step
@@ -346,12 +354,18 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
         normalize!(sol.u[end]) # the final step is saved only before the callback, so normalise manually
         return sol
     else
+        # when `saveat` is set, saving happens at points `tspan[1]:saveat:tspan[2]`
+        saveat = nsaves == 0 ? T_max+1 : (tspan[2] - tspan[1]) / nsaves
         return DE.solve(prob, solver; save_everystep=false, save_start=true, dt, saveat)
     end
 end
 
-"Update the 𝑢′ matrix of the GPE in the cis basis."
-function gpe_cis_1comp_nln!(du, u, params, t)
+"""
+Update the 𝑢′ vector of the nonlinear part of the 1-component GPE
+    𝑢′ = 𝑔|𝑢|²𝑢
+in the cis basis. 𝑔 must contain `im` (for real-time propagation) and the proper sign.
+"""
+function gpe_cis_1comp!(du, u, params, t)
     g, bfft_plan, fft_plan! = params
     mul!(du, bfft_plan, u) # transform `u` and write into `du`
     du .*= g .* abs2.(du)
@@ -359,8 +373,38 @@ function gpe_cis_1comp_nln!(du, u, params, t)
     return
 end
 
+"""
+Update the 𝑢′ vector of the nonlinear part of the GPE
+    𝑢′ᵢ = ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|²𝑢ᵢ
+in the cis basis. The 𝑔ᵢⱼ's must contain `im` (for real-time propagation) and the proper sign.
+"""
+function gpe_cis!(du, u, params, t)
+    g, B, nc, u², u²_sum, bfft_plan, fft_plan! = params
+    # for each `i`th component, transform 𝑢ᵢ to x-space and write into `du`. Also, calculate |𝑢ᵢ|²
+    for i in 1:nc
+        window = (i-1)B+1:i*B
+        du_i = @view du[window] # view into the relevant component
+        mul!(du_i, bfft_plan, @view(u[window])) # transform `u` and write into `du`
+        @. u²[i] = abs2(du_i)
+    end
+    # for each `i`th component, calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² an multiply by 𝑢ᵢ, stored in `du`
+    for i in 1:nc
+        @. u²_sum = g[i, 1] * u²[1]
+        for j in 2:nc
+            iszero(g[i, j]) && continue
+            @. u²_sum += g[i, j] * u²[j]
+        end
+        du[(i-1)B+1:i*B] .*= u²_sum
+    end
+    # transform `du` to p-space in-place
+    for i in 1:nc
+        fft_plan! * @view(du[(i-1)B+1:i*B])
+    end
+    return
+end
+
 "Update the 𝑢′ matrix of the imaginary-time GPE in the sin/cos basis. The equation is real."
-function gpe_sin_itime_1comp_nln!(du, u, params, t)
+function gpe_sin_itime_1comp!(du, u, params, t)
     g, rft_plan, rft_plan! = params
     mul!(du, rft_plan, u) # transform `u` and write into `du`
     du .*= g .* du.^2
@@ -369,7 +413,7 @@ function gpe_sin_itime_1comp_nln!(du, u, params, t)
 end
 
 "Update the 𝑢′ matrix of the imaginary-time GPE in the sin/cos basis. The equation is real."
-function gpe_cos_itime_1comp_nln!(du, u, params, t)
+function gpe_cos_itime_1comp!(du, u, params, t)
     g, u_buff, rft_plan, rft_plan! = params
     copy!(u_buff, u) # because of the next step; cannot do it for `u` (not allowed to change `u`)
     u_buff[1] *= √2; u_buff[end] *= √2
@@ -381,7 +425,7 @@ function gpe_cos_itime_1comp_nln!(du, u, params, t)
 end
 
 "Update the 𝑢′ matrix of the real-time GPE in the sin/cos basis. The equation is complex."
-function gpe_sincos_1comp_nln!(du, u, params, t)
+function gpe_sincos_1comp!(du, u, params, t)
     g, u_re, u_im, u², rft_plan!, basis = params
     # split re and im
     for i in eachindex(u)
@@ -405,32 +449,45 @@ function gpe_sincos_1comp_nln!(du, u, params, t)
     return
 end
 
-"Return mean energy and chemical potential for a p-space state `v`. (currently, 1-component only)"
-function get_ε_μ(xh::XSpaceHamiltonian{Storage,R}, v, g=zeros(typeof(xh.δ), xh.nc, xh.nc)) where {Storage,R}
+"Return mean energy (per particle) and chemical potential for a p-space state `v`."
+function get_ε_μ(xh::XSpaceHamiltonian{Storage,R}, v, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc)) where {Storage,R}
     (;xlims, M, nc, basis) = xh
-    B = length(v)    
     ε = dot(v, xh.H, v)
     μ = ε
     if !iszero(g)
+        B = length(v) ÷ nc  
         v_isreal = eltype(v) <: Real
         ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, forward=false)
-        c = 1
-        # make a copy (needed for the cos case; cheap anyway)
-        v_input = basis == :cis ? FFTW.ifftshift(v[(c-1)B+1:B]) : v[(c-1)B+1:B] # `ifftshift` because our matrices and vectors assume -M:M ordering, but FFT assumes 0..M,-M,..-1
-        basis == :cos && (v_input[1] *= √2; v_input[end] *= √2) # proper normalisation of the 0th and last harmonics
-        transform!(ft, v_input)
-        ψ = fft_to_vector(ft)
-        basis == :cos && (ψ[1] *= √2; ψ[end] *= √2)  # undo what is done in `fft_to_vector!` (that assumes p-space while we actually got back to x-space)
-        # itnegrate |𝑢(𝑥)|^4        
         dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
-        u = abs2.(ψ).^2
-        if basis == :cos # 𝑥 is discretised with both endpoints included
-            U = g[1] * (sum(u) - u[end]) * dV # so final point is redundant (assuming rectangle rule)
-        else
-            U = g[1] * sum(u) * dV # for sin, endpoints are not included but are zero, so this is equivalent to the trapezoid rule. For cis, rectangle rule is more appropriate because there is no boundary
+        U = ε # initialise integral
+        # create an array of arrays holding squared x-space wfs |𝜓(𝑥)|² for each component
+        ψ² = map(1:nc) do c
+            v_input = v[(c-1)B+1:c*B] # a copy is needed only in the cos case, but we always make it
+            basis == :cos && (v_input[1] *= √2; v_input[end] *= √2) # proper normalisation of the 0th and last harmonics
+            transform!(ft, v_input)
+            ψ = fft_to_vector(ft)
+            basis == :cos && (ψ[1] *= √2; ψ[end] *= √2)  # undo what is done in `fft_to_vector!` (that assumes p-space while we actually got back to x-space)
+            basis == :cis && (ψ = FFTW.ifftshift(ψ)) # undo what is done in `fft_to_vector`
+            ψ .= abs2.(ψ)
+            return ψ
         end
-        μ += U
-        ε += U / 2
+        ψ²_sum = similar(ψ²[1])
+        # for each `i`th component: calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝜓ⱼ|², then multiply by |𝜓ᵢ|², then integrate
+        for i in 1:nc
+            ψ²_sum .= 0
+            for j in 1:nc
+                g[i, j] == 0 && continue
+                @. ψ²_sum += g[i, j] * ψ²[j]
+            end
+            ψ²_sum .*= ψ²[i]
+            if basis == :cos # 𝑥 is discretised with both endpoints included
+                U = (sum(ψ²_sum) - ψ²_sum[end]) * dV # so final point is redundant (assuming rectangle rule)
+            else
+                U = sum(ψ²_sum) * dV # for sin, endpoints are not included but are zero, so this is equivalent to the trapezoid rule. For cis, rectangle rule is more appropriate because there is no boundary
+            end
+            μ += U
+            ε += U / 2
+        end
     end
     return ε, μ
 end
