@@ -310,8 +310,11 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
 
     # initialise the problem
     tspan = (zero(R), T_max)
+    # prepare the SciMLOperator based on the Hamiltonian. If `xh` describes a free system (no 𝑈 or 𝐴), then use `Diagonal`. Then matrix exponential is trivial, leading to immense speed-up
+    H_op = all(isnothing.(xh.𝑈)) && all(isnothing.(xh.𝐴)) ? SciMLOperators.MatrixOperator(Diagonal(H)) : SciMLOperators.MatrixOperator(H)
+
     if iszero(g) # nonlinearity absent
-        prob = DE.ODEProblem(SciMLOperators.MatrixOperator(H), ψ₀ₚ, tspan)
+        prob = DE.ODEProblem(H_op, ψ₀ₚ, tspan)
     else # nonlinearity present
         ψ₀ₚ_block = @view ψ₀ₚ[1:B] # for constructing FFT plans and various buffers
         if basis == :cis
@@ -319,11 +322,11 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
             fft_plan! = FFTW.plan_fft!(ψ₀ₚ_block) # then will use this in-place on `du`
             if nc == 1 # the 1-component case can be treated more efficiently
                 params = (G[1], bfft_plan, fft_plan!)
-                prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_cis_1comp!, ψ₀ₚ, tspan, params)
+                prob = DE.SplitODEProblem(H_op, gpe_cis_1comp!, ψ₀ₚ, tspan, params)
             else
                 buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
                 params = (G, B, nc, buff, similar(ψ₀ₚ_block), bfft_plan, fft_plan!)
-                prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_cis!, ψ₀ₚ, tspan, params)
+                prob = DE.SplitODEProblem(H_op, gpe_cis!, ψ₀ₚ, tspan, params)
             end
         else # basis == :sin || basis == :cos
             ft_type = basis == :sin ? FFTW.RODFT00 : FFTW.REDFT00
@@ -332,15 +335,15 @@ function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type) # then will use this in-place on that buffer
                 if basis == :sin
                     params = (G[1], rft_plan, rft_plan!)
-                    prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_sin_itime_1comp!, ψ₀ₚ, tspan, params)
+                    prob = DE.SplitODEProblem(H_op, gpe_sin_itime_1comp!, ψ₀ₚ, tspan, params)
                 else # basis == :cos
                     params = (G[1], similar(ψ₀ₚ_block), rft_plan, rft_plan!)
-                    prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_cos_itime_1comp!, ψ₀ₚ, tspan, params)
+                    prob = DE.SplitODEProblem(H_op, gpe_cos_itime_1comp!, ψ₀ₚ, tspan, params)
                 end
             else # real time
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type) # TODO make one buffer usin similar, which is also needed anyway, and use here and above. use similar with real type as appropriate
                 params = (G[1], similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
-                prob = DE.SplitODEProblem(SciMLOperators.MatrixOperator(H), gpe_sincos_1comp!, ψ₀ₚ, tspan, params)
+                prob = DE.SplitODEProblem(H_op, gpe_sincos_1comp!, ψ₀ₚ, tspan, params)
             end
         end
     end
@@ -391,7 +394,7 @@ function gpe_cis!(du, u, params, t)
     for i in 1:nc
         @. u²_sum = g[i, 1] * u²[1]
         for j in 2:nc
-            iszero(g[i, j]) && continue
+            g[i, j] == 0 && continue
             @. u²_sum += g[i, j] * u²[j]
         end
         du[(i-1)B+1:i*B] .*= u²_sum
