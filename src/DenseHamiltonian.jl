@@ -329,26 +329,26 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
             end
         else # basis == :sin || basis == :cos
             ft_type = basis == :sin ? FFTW.RODFT00 : FFTW.REDFT00
-            if itime
-                rft_plan  = FFTW.plan_r2r(real(ψ₀ₚ_block), ft_type)  # will first use this and write the result to the buffer
-                rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type) # then will use this in-place on that buffer
+            if eq_isreal # basically, if solving imaginary-time GPE with a real Hamiltonian
+                rft_plan  = FFTW.plan_r2r(ψ₀ₚ_block, ft_type)  # will first use this and write the result to the buffer
+                rft_plan! = FFTW.plan_r2r!(ψ₀ₚ_block, ft_type) # then will use this in-place on that buffer
                 if basis == :sin
                     params = (G[1], rft_plan, rft_plan!)
-                    prob = DE.SplitODEProblem(H_op, gpe_sin_itime_1comp!, ψ₀ₚ, tspan, params)
+                    prob = DE.SplitODEProblem(H_op, gpe_sin_real_1comp!, ψ₀ₚ, tspan, params)
                 else # basis == :cos
                     params = (G[1], similar(ψ₀ₚ_block), rft_plan, rft_plan!)
-                    prob = DE.SplitODEProblem(H_op, gpe_cos_itime_1comp!, ψ₀ₚ, tspan, params)
+                    prob = DE.SplitODEProblem(H_op, gpe_cos_real_1comp!, ψ₀ₚ, tspan, params)
                 end
-            else # real time
-                rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type) # TODO make one buffer usin similar, which is also needed anyway, and use here and above. use similar with real type as appropriate
+            else # solving complex equation
+                rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type)
                 params = (G[1], similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
-                prob = DE.SplitODEProblem(H_op, gpe_sincos_1comp!, ψ₀ₚ, tspan, params)
+                prob = DE.SplitODEProblem(H_op, gpe_sincos_complex_1comp!, ψ₀ₚ, tspan, params)
             end
         end
     end
 
     if itime
-        # prepare the callback that remormalises wave function at every step
+        # prepare the callback that remormalises wf at every step
         condition = Returns(true) # condition is checked at the end of each time step; we want this to be always true
         affect!(integrator) = normalize!(integrator.u)
         cb = DE.DiscreteCallback(condition, affect!) # will save every step before and after the callback (`save_positions=(true, true)`); docs say this is mandatory when change of `u` is discontinuous
@@ -405,8 +405,8 @@ function gpe_cis!(du, u, params, t)
     return
 end
 
-"Update the 𝑢′ matrix of the imaginary-time GPE in the sin/cos basis. The equation is real."
-function gpe_sin_itime_1comp!(du, u, params, t)
+"Update the 𝑢′ matrix of the real GPE in the sin/cos basis."
+function gpe_sin_real_1comp!(du, u, params, t)
     g, rft_plan, rft_plan! = params
     mul!(du, rft_plan, u) # transform `u` and write into `du`
     du .*= g .* du.^2
@@ -414,8 +414,8 @@ function gpe_sin_itime_1comp!(du, u, params, t)
     return
 end
 
-"Update the 𝑢′ matrix of the imaginary-time GPE in the sin/cos basis. The equation is real."
-function gpe_cos_itime_1comp!(du, u, params, t)
+"Update the 𝑢′ matrix of the real GPE in the sin/cos basis."
+function gpe_cos_real_1comp!(du, u, params, t)
     g, u_buff, rft_plan, rft_plan! = params
     copy!(u_buff, u) # because of the next step; cannot do it for `u` (not allowed to change `u`)
     u_buff[1] *= √2; u_buff[end] *= √2
@@ -426,8 +426,8 @@ function gpe_cos_itime_1comp!(du, u, params, t)
     return
 end
 
-"Update the 𝑢′ matrix of the real-time GPE in the sin/cos basis. The equation is complex."
-function gpe_sincos_1comp!(du, u, params, t)
+"Update the 𝑢′ matrix of the complex GPE in the sin/cos basis."
+function gpe_sincos_complex_1comp!(du, u, params, t)
     g, u_re, u_im, u², rft_plan!, basis = params
     # split re and im
     for i in eachindex(u)
