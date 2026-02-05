@@ -223,70 +223,69 @@ function update_diag!(xh::DenseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴�
 end
 
 "Convenience caller for the 1-component case, where `ψ₀` is an analytic function or a vector representing discretised functions, `g` is a number, and `ψ₀_iseven` is a Bool."
-function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{Function,AbstractVector}, g::R=zero(R);
+function propagate(xh::XSpaceHamiltonian{Storage, R}, ψ₀::Union{Function, AbstractVector}, g::R=zero(R);
                    ψ₀_iseven::Bool=false, T_max::R, dt::R, itime::Bool=false,
-                   solver=(iszero(g) ? DE.LinearExponential() : itime ? DE.LawsonEuler() : DE.ETDRK4()), nsaves::Integer=0) where {Storage,R}
+                   solver=(iszero(g) ? DE.LinearExponential() : itime ? DE.LawsonEuler() : DE.ETDRK4()), nsaves::Integer=0) where {Storage, R}
     propagate(xh, [ψ₀], [g;;]; ψ₀_iseven=[ψ₀_iseven], T_max, dt, itime, solver, nsaves)
 end
 
 """
-Propagate the time-dependent Schrödinger or Gross-Pitaevskii (with nonlinearity matrix `g`) equation for the initial wave function `ψ₀`.
+Propagate the time-dependent Schrödinger or Gross-Pitaevskii (with nonlinearity matrix `g`) equation (SE and GPE, respectively) for the initial wave function `ψ₀`.
 `ψ₀` can be:
     * a vector of x-space analytic functions (one for each component)
     * a vector of vectors (one for each component) representing discretised x-space functions
     * a vector representing discretised p-space functions, all lumped together 
 Set `itime=true` for imaginary time propagation.
-`ψ₀_iseven[c]` matters only if `xh.basis=:cis` and shows whether `ψ₀[c]` is an even function (i.e. whether ψ(x) = ψ(-x)).
-If it is, then Fourier transform is real; if `xh.H` is also real, the imaginary time propagation can be done for a real type.
+`ψ₀_iseven[c]` matters only if basis is cis, `g`s are zero (SE case), and `ψ₀` is given in x-space. It shows whether `ψ₀[c]` is an even function (i.e. whether ψ(x) = ψ(-x)).
+If it is, then if `xh.H` is also real, the imaginary time propagation will be done for a real type.
 `solver` is a solver from DifferentialEquations.jl. For SE, recommended are `LinearExponential` (default) or state-independent ones from https://docs.sciml.ai/DiffEqDocs/stable/solvers/nonautonomous_linear_ode/.
 For GPE, recommended are the Semilinear Split ODE Solvers from https://docs.sciml.ai/DiffEqDocs/stable/solvers/split_ode_solve/.
-For imaginary time, the default is LawsonEuler(), which is first order, but is sufficient when the time step is small.
-For real-time, the default is ETDRK4(); lower order variants can also be used for quick results.
+For imaginary-time GPE, the default is `LawsonEuler`, which is first order (and hence fast), but is sufficient when the time step is small.
+For real-time GPE, the default is `ETDRK4`; lower order variants can also be used for quick results. `HochOst4` seems to conserve the norm even better, but is a bit slower.
 Return the DifferentialEquations solution object. 
 """
-function propagate(xh::XSpaceHamiltonian{Storage,R}, ψ₀::Union{AbstractVector{<:Function},AbstractVector{<:AbstractVector},AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
+function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
                    ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), T_max::R, dt::R, itime::Bool=false,
-                   solver=(iszero(g) ? DE.LinearExponential() : itime ? DE.LawsonEuler() : DE.ETDRK4()), nsaves::Integer=0) where {Storage,R}
+                   solver=(iszero(g) ? DE.LinearExponential() : itime ? DE.LawsonEuler() : DE.ETDRK4()), nsaves::Integer=0) where {Storage, R, T}
     (;xlims, L, M, basis, nc) = xh
     D = length(xlims)
     # size of each Hamiltonian block
     B = basis == :cis ? (2M+1)^D :
         basis == :sin ?      M^D : (M+1)^D
 
-    # prepare the p-space wave function
+    # determine if equation can be solved using real types. Note that for cis with nonzero `g` it cannot because intermediate FFT's will be yielding complex results
+    eq_isreal = itime && T <: Real && !(basis == :cis && !iszero(g)) # below `eq_isreal` might change if initial state is complex
+
+    # prepare the p-space wf
     if ψ₀ isa AbstractVector{<:Number} # `ψ₀` is given in p-space
-        if eltype(ψ₀) <: Real && !itime # if `ψ₀` is real, but we are going to solve real-time equation
-            ψ₀ₚ = complex(ψ₀) # convert to complex
-            ψ₀ₚ_isreal = false # shows if the initial wf in p-space is stored in a real array
-        else
-            ψ₀ₚ = ψ₀ # just a reference
-            ψ₀ₚ_isreal = true
-        end
+        ψ₀_isreal = eltype(ψ₀) <: Real
+        eq_isreal &= ψ₀_isreal
+        ψ₀ₚ = ψ₀_isreal && !eq_isreal ? complex(ψ₀) : ψ₀  # if the passed initial is real but equation is not, then convert; otherwise take as-is
     else # `ψ₀` is given in x-space
         if ψ₀ isa AbstractVector{<:Function} # `ψ₀` a vector of analytic functions
-            ψ₀_isreal = [ ψ([xlims[i][1] for i in eachindex(xlims)]...) isa Real for ψ in ψ₀ ]
+            ψ₀_arereal = [ ψ([xlims[i][1] for i in eachindex(xlims)]...) isa Real for ψ in ψ₀ ]
         else # `ψ₀` is a vector of vectors of discretised functions
-            ψ₀_isreal = [eltype(ψ) isa Real for ψ in ψ₀]
+            ψ₀_arereal = [eltype(ψ) <: Real for ψ in ψ₀]
         end
-        ψ₀ₚ_isreal = all(ψ₀_isreal) # will show if `ψ₀ₚ` should be constructed real
-        if basis == :cis # also check if functions are even 
-            ψ₀ₚ_isreal &= all(ψ₀_iseven)
+        eq_isreal &= all(ψ₀_arereal)
+        if basis == :cis && iszero(g) # then also check if functions are even 
+            eq_isreal &= all(ψ₀_iseven)
         end
-        ψ₀ₚ = Vector{ψ₀ₚ_isreal && itime ? R : Complex{R}}(undef, nc*B)
+        ψ₀ₚ = Vector{eq_isreal ? R : Complex{R}}(undef, nc*B)
 
         # transform each component's wf and put into ψ₀ₚ
-        ft = FourierTransformer(xlims, M; basis, target_real=ψ₀ₚ_isreal, target_rank=1) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
+        ft = FourierTransformer(xlims, M; basis, target_real=all(ψ₀_arereal), target_rank=1) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
         for c in 1:nc
             transform!(ft, ψ₀[c])
             ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
-            fft_to_vector!(ψ₀ₚ_block, ft; makereal=(ψ₀_iseven[c] && ψ₀_isreal[c]))
+            fft_to_vector!(ψ₀ₚ_block, ft; makereal=(ψ₀_iseven[c] && ψ₀_arereal[c]))
         end
         normalize!(ψ₀ₚ)
     end
 
-    # initialise the Hamiltonian and coupling matrix `G` with the appropriate sign and im factor
+    # initialise the Hamiltonian and coupling matrix `G` with the appropriate sign and `im` factor
     if itime # propagation in imaginary time: equation is real if `xh.H` and `ψ₀ₚ` are real
-        H = !ψ₀ₚ_isreal && eltype(xh.H) <: Real ? -complex(xh.H) : -xh.H # if `ψ₀ₚ` is complex then solver needs complex matrix. So cast `xh.H` to complex if it is real
+        H = T <: Real && !eq_isreal ? -complex(xh.H) : -xh.H # `xh.H` is real but equation is not, then convert the Hamiltonian to complex. Solving then proceeds faster TODO: figure out why
         G = -g
     else # propagation in real time: equation is always complex
         H = -im * xh.H
