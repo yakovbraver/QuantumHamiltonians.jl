@@ -289,7 +289,7 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
         G = -g
     else # propagation in real time: equation is always complex
         H = -im * xh.H
-        G = -im * g
+        G = basis == :cis ? -im * g : -g # in the sin/cos case, do not include `im`
     end
 
     # Combine in `G` all fft normalisation factors so that this multiplication can be done just once at each step
@@ -348,8 +348,14 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
                 end
             else # solving complex equation
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type)
-                params = (G[1], similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
-                prob = DE.SplitODEProblem(H_op, gpe_sincos_complex_1comp!, ψ₀ₚ, tspan, params)
+                if nc == 1
+                    params = (G[1], similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
+                    prob = DE.SplitODEProblem(H_op, gpe_complexsincos_1comp!, ψ₀ₚ, tspan, params)
+                else
+                    u² = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
+                    params = (G, B, nc, similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), u², similar(ψ₀ₚ_block, R), rft_plan!, basis)
+                    prob = DE.SplitODEProblem(H_op, gpe_complexsincos!, ψ₀ₚ, tspan, params)
+                end
             end
         end
     end
@@ -391,7 +397,7 @@ Suitable for cases: (1) basis is cis; (2) basis is sin/cos and equation is real.
 """
 function gpe_cis_realsincos!(du, u, params, t)
     g, B, nc, u², u²_sum, bfft_plan, fft_plan!, basis = params
-    # for each `i`th component, transform 𝑢ᵢ to x-space and write into `du`. Also, calculate |𝑢ᵢ|²
+    # for each `i`th component, transform 𝑢ᵢ to x-space and write into `du`. Also, calculate |𝑢ᵢ|² and store in `u²`
     for i in 1:nc
         window = (i-1)B+1:i*B
         du_i = @view du[window] # view into the relevant component
@@ -424,7 +430,7 @@ end
 """
 Update the 𝑢′ vector of the nonlinear part of the 1-component GPE
     𝑢′ = 𝑔|𝑢|²𝑢
-The 𝑔 must contain `im` (for real-time propagation) and the proper sign.
+The 𝑔 must contain the proper sign.
 Suitable for the case: basis is cos and equation is real.
 """
 function gpe_realcos_1comp!(du, u, params, t)
@@ -438,8 +444,13 @@ function gpe_realcos_1comp!(du, u, params, t)
     return
 end
 
-"Update the 𝑢′ matrix of the complex GPE in the sin/cos basis."
-function gpe_sincos_complex_1comp!(du, u, params, t)
+"""
+Update the 𝑢′ vector of the nonlinear part of the 1-component GPE
+    𝑢′ = i𝑔|𝑢|²𝑢
+The 𝑔 must contain the proper sign but must NOT contain `im` .
+Suitable for the case: basis is sin/cos and equation is complex.
+"""
+function gpe_complexsincos_1comp!(du, u, params, t)
     g, u_re, u_im, u², rft_plan!, basis = params
     # split re and im
     for i in eachindex(u)
@@ -458,8 +469,60 @@ function gpe_sincos_complex_1comp!(du, u, params, t)
     rft_plan! * u_re
     rft_plan! * u_im
     # add re and im
-    @. du = g * (u_re + im * u_im)
+    @. du = g * (im * u_re - u_im) # recall additional `im` from the equation, not contained in `g`
     basis == :cos && (du[1] /= √2; du[end] /= √2)
+    return
+end
+
+"""
+Update the 𝑢′ vector of the nonlinear part of the multi-component GPE
+    𝑢′ᵢ = i ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|²𝑢ᵢ
+The 𝑔ᵢⱼ's must contain the proper sign but must NOT contain `im` .
+Suitable for the cases: basis is sin/cos and equation is complex.
+"""
+function gpe_complexsincos!(du, u, params, t)
+    # u_re, u_im, u² -- same length as `u`. `u²_sum` -- 1-component length, and it's real
+    g, B, nc, u_re, u_im, u², u²_sum, rft_plan!, basis = params
+    # for each `i`th component, transform 𝑢ᵢ to x-space and write into `uᵢ_re` and `uᵢ_im`. Also, calculate |𝑢ᵢ|² and write into `u²`
+    for i in 1:nc
+        window = (i-1)B+1:i*B
+        # views into the relevant component
+        uᵢ = @view u[window]
+        uᵢ_re = @view u_re[window]
+        uᵢ_im = @view u_im[window]
+        # split re and im
+        for a in eachindex(uᵢ)
+            uᵢ_re[a], uᵢ_im[a] = reim(uᵢ[a])
+        end
+        # transform to x-space
+        basis == :cos && (uᵢ_re[1] *= √2; uᵢ_re[end] *= √2; uᵢ_im[1] *= √2; uᵢ_im[end] *= √2)
+        rft_plan! * uᵢ_re
+        rft_plan! * uᵢ_im
+        @. u²[i] = uᵢ_re^2 + uᵢ_im^2
+    end
+    # for each `i`th component, calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² an multiply by 𝑢ᵢ, stored in `uᵢ_re` and `uᵢ_im`
+    for i in 1:nc
+        @. u²_sum = g[i, 1] * u²[1]
+        for j in 2:nc
+            g[i, j] == 0 && continue
+            @. u²_sum += g[i, j] * u²[j]
+        end
+        u_re[(i-1)B+1:i*B] .*= u²_sum
+        u_im[(i-1)B+1:i*B] .*= u²_sum
+    end
+    # transform `du` to p-space in-place
+    for i in 1:nc
+        window = (i-1)B+1:i*B
+        # views into the relevant component
+        uᵢ_re = @view u_re[window]
+        uᵢ_im = @view u_im[window]
+        # transform to p-space
+        rft_plan! * uᵢ_re
+        rft_plan! * uᵢ_im
+        basis == :cos && (uᵢ_re[1] /= √2; uᵢ_re[end] /= √2; uᵢ_im[1] /= √2; uᵢ_im[end] /= √2)
+    end
+    # add re and im
+    @. du = im * u_re - u_im # recall additional `im` from the equation, not contained in `g`
     return
 end
 
