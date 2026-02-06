@@ -1,6 +1,6 @@
 abstract type XSpaceHamiltonian{Storage, R<:AbstractFloat, T<:Union{R,Complex{R}}, S<:Union{R,Complex{R}}, D1, D2} end
 # `R` - base real type, `T` - Hamiltonian, eigenvectors elements, `S` - eigenvalues
-# The types are restricted *here*, therefore no need to specify restrictions in functions (except for constructors). E.g. and object with complex R cannot be constructed.
+# The types are restricted *here*, therefore no need to specify restrictions in functions (except for constructors). E.g. an object with complex R cannot be constructed.
 
 matrix_density(xh::XSpaceHamiltonian) = error("Matrix density calculation is available for sparse Hamiltonians only.")
 
@@ -110,11 +110,11 @@ end
 Construct a 1D x-space wave function using its p-space representation `v`.
 Return (`xs`, `ψ`) where `ψ[x, components]`.
 """
-function make_wavefunction(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector) where {Storage, R}
+function make_wavefunction(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}) where {Storage, R}
     (;xlims, M, basis, nc) = xh
     v_isreal = eltype(v) <: Real
     ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, forward=false)
-    ψ_type = basis != :cis && v_isreal ? R : complex(R)  # `ψ` are real if elements of v are real and if the basis is real (sin/cos). If basis is real but `v` are complex, this will yield complex function as expected.
+    ψ_type = basis != :cis && v_isreal ? R : complex(R)  # `ψ` are real if elements of `v` are real and if the basis is real (sin/cos). If basis is real but `v` are complex, this will yield complex function as expected.
     B = size(ft.xs, 1) # component-block size (= number of x points in each dimension)
     ψ = Matrix{ψ_type}(undef, B, nc)
     for c in 1:nc

@@ -261,6 +261,7 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
         ψ₀_isreal = eltype(ψ₀) <: Real
         eq_isreal &= ψ₀_isreal
         ψ₀ₚ = ψ₀_isreal && !eq_isreal ? complex(ψ₀) : ψ₀  # if the passed initial is real but equation is not, then convert; otherwise take as-is
+        # In the p-space case we don't normalise ψ₀ₚ. E.g. the user might want to remove one component and propagate the rest. Normalisation can have consequences since equation is nonlinear
     else # `ψ₀` is given in x-space
         if ψ₀ isa AbstractVector{<:Function} # `ψ₀` a vector of analytic functions
             ψ₀_arereal = [ ψ([xlims[i][1] for i in eachindex(xlims)]...) isa Real for ψ in ψ₀ ]
@@ -280,6 +281,7 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
             ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
             fft_to_vector!(ψ₀ₚ_block, ft; makereal=(ψ₀_iseven[c] && ψ₀_arereal[c]))
         end
+        # In the x-space case we normalise because the initial state is likely just some approximate state.
         normalize!(ψ₀ₚ)
     end
 
@@ -521,16 +523,15 @@ function gpe_complexsincos!(du, u, params, t)
 end
 
 "Return mean energy (per particle) and chemical potential for a p-space state `v`."
-function get_ε_μ(xh::XSpaceHamiltonian{Storage,R}, v, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc)) where {Storage,R}
+function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc)) where {Storage, R}
     (;xlims, M, nc, basis) = xh
-    ε = dot(v, xh.H, v)
-    μ = ε
+    E = dot(v, xh.H, v)
+    μ = E
     if !iszero(g)
         B = length(v) ÷ nc  
         v_isreal = eltype(v) <: Real
         ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, forward=false)
         dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
-        U = ε # initialise integral
         # create an array of arrays holding squared x-space wfs |𝜓(𝑥)|² for each component
         ψ² = map(1:nc) do c
             v_input = v[(c-1)B+1:c*B] # a copy is needed only in the cos case, but we always make it
@@ -557,8 +558,8 @@ function get_ε_μ(xh::XSpaceHamiltonian{Storage,R}, v, g::AbstractMatrix{<:Numb
                 U = sum(ψ²_sum) * dV # for sin, endpoints are not included but are zero, so this is equivalent to the trapezoid rule. For cis, rectangle rule is more appropriate because there is no boundary
             end
             μ += U
-            ε += U / 2
+            E += U / 2
         end
     end
-    return ε, μ
+    return E, μ
 end
