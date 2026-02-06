@@ -6,6 +6,7 @@ mutable struct FourierTransformer{R,T,Plan,D} # T is the type of buffer, real fo
     buff::Array{T,D} # buffer for the result of the transform
     buff_im::Array{T,D} # additional buffer for storing the DST/DCT of the imaginary part of a function
     did_complex_rxdft::Bool # a flag that is true if the last-performed transformation was a DST/DCT ("FFTW.RODFT"/"FFTW.REDFT") of a *complex* function. The only reason why the type is mutable.
+    isforward::Bool # true if the object is constructed for transforming to p-space and false otherwise. Only matters for constructing vectors; user is not expected to use isforward=false for matrices
     plan::Plan
 end
 
@@ -13,8 +14,9 @@ end
 `target_real` is only used in the sin and cos case: set to false if you plan to calculate DST or DCT for complex functions.
 Set `target_rank=1` if you are making the transform for building a Fourier-space vector (using `fft_to_vector`),
 set `target_rank=2` if you are making the transform for building a Fourier-space matrix (using `fft_to_matrix`). The latter needs twice the number of harmonics.
+Pass `isforward=true` (default) if going to p-space (this should always be the case for target_rank=2). If `target_rank=1`, you can use `isforward=true` to get back to x-space.
 """
-function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_real::Bool=true, target_rank::Integer=2, forward::Bool=true) where R <: AbstractFloat
+function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_real::Bool=true, target_rank::Integer=2, isforward::Bool=true) where R <: AbstractFloat
     D = length(xlims) # number of spatial dimensions
     L = Vector{R}(undef, D) # periods in each dimension. Only needed here, to calculate the normalisation factor
     dx = Vector{R}(undef, D) # dx's in each dimension
@@ -29,7 +31,7 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
         buff = Array{Complex{R}}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
         buff_im = similar(buff, ntuple(Returns(0), D)) # this buffer is not needed in the cis case; make it 0x0 (in `D` dimesions)
         # the time savings of rfft are negligible for us, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
-        plan = forward ? FFTW.plan_fft!(buff) : FFTW.plan_bfft!(buff) # using unnormalised `bfft` because the "1/N" used in `ifft` is not right for our use case
+        plan = isforward ? FFTW.plan_fft!(buff) : FFTW.plan_bfft!(buff) # using unnormalised `bfft` because the "1/N" used in `ifft` is not right for our use case
     else # sin/cos
         if basis == :cos || target_rank == 2 # for `target_rank == 2` we always need DCT, even if the basis is sin
             N = target_rank*M + 1
@@ -57,14 +59,14 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
         L .*= 2 # for proper calculation of `normalisation`, to cancel the 2 included in FFTW DST/DCT
     end
 
-    if forward
-        normalisation = target_rank == 1 ? prod(dx ./ sqrt.(L)) : prod(dx./L) # the latter equals (1/N)^D, (1/(N+1)), (1/(N-1)) in the cis, sin, cos cases respectively
+    if isforward
+        normalisation = target_rank == 1 ? prod(dx ./ sqrt.(L)) : prod(dx./L) # the latter equals 1/N^D, 1/(N+1)^D, 1/(N-1)^D in the cis, sin, cos cases respectively
     else
         normalisation = target_rank == 1 ? prod(inv.(sqrt.(L))) : prod(inv.(L))
     end
     
     did_complex_rxdft = false # value does not matter before any transform is performed
-    return FourierTransformer(xs, M, normalisation, basis, buff, buff_im, did_complex_rxdft, plan)
+    return FourierTransformer(xs, M, normalisation, basis, buff, buff_im, did_complex_rxdft, isforward, plan)
 end
 
 "Perform the transformation of a callable function `𝑓`."
@@ -101,23 +103,31 @@ end
 "Perform the transformation of a discretised function `f`."
 function transform!(ft::FourierTransformer, f::AbstractArray{<:Number})
     (;normalisation, basis, buff, buff_im, plan) = ft
+    # preparation of the input if going to x-space
+    if basis == :cis && !ft.isforward # then do `ifftshift` because `f` is stored in -M:M ordering, while FFT assumes 0:M,-M:-1
+        f_input = FFTW.ifftshift(f)
+    elseif basis == :cos && !ft.isforward
+        f_input = copy(f)
+        f_input[1] *= √2; f_input[end] *= √2
+    else
+        f_input = f
+    end
+    # transform              
     if basis == :cis || eltype(f) <: Real
-        buff .= f .* normalisation
+        buff .= f_input .* normalisation
         plan * buff # in-place transform, weird syntax
         ft.did_complex_rxdft = false
     else # if basis is sin/cos and `f` is complex
         # `FFTW.RxDFT00` can only handle real input. So we transform Re and Im separately.
         for i in eachindex(f)
-            buff[i], buff_im[i] = reim(f[i]) .* normalisation
+            buff[i], buff_im[i] = reim(f_input[i]) .* normalisation
         end
         plan * buff
         plan * buff_im
-        ft.did_complex_rxdft = true # will be used in fft_to_matrix_*D! to inclue `buff_im` when constructing the matrix
+        ft.did_complex_rxdft = true # will be used in `fft_to_vector` and `fft_to_matrix!` to inclue `buff_im`
     end
     return
 end
-
-################ Dense ################
 
 """
 Use the result of the transform to construct a vector indexed by (𝑗ₓ𝑗y⋯).
@@ -168,16 +178,17 @@ function fft_to_vector!(v::AbstractVector{<:Number}, ft::FourierTransformer; mak
     makereal && (buff .= real.(buff))
     if D == 1
         if basis == :cis
-            FFTW.fftshift!(v, buff) # we also do fftshift in `fft_to_matrix`, and hence go over the harmonics in the order -M:M when constructing x-space wf's.
+            if ft.isforward
+                # we always work with fftshift'ed vectors -- we also do this in `fft_to_matrix!` and use -M:M ordering for momentum terms
+                FFTW.fftshift!(v, buff)
+            else # `v` is in x-space
+                copy!(v, buff)
+            end
         else # sin/cos
             copy!(v, buff)
-            if ft.did_complex_rxdft
-                v .+= im.*buff_im
-            end
-            if basis == :cos # proper normalisation of the zeroth and last harmonic. It is assumed that `v` is in p-space. 
-                v[1] /= √2  
-                v[end] /= √2
-            end
+            ft.did_complex_rxdft && (v .+= im.*buff_im)
+            # proper normalisation of the zeroth and last harmonic
+            basis == :cos && ft.isforward && (v[1] /= √2; v[end] /= √2)
         end
     else
         error("fft_to_vector! not implemented in $(D)D.")
@@ -223,6 +234,8 @@ function fft_to_matrix(ft::FourierTransformer{R,T}; makesparse::Bool=false, make
     end
     return A
 end
+
+################ Dense ################
 
 """
 Use the result of the transform to fill `A` as a matrix indexed by (𝑗′ₓ𝑗′y⋯, 𝑗ₓ𝑗y⋯). 

@@ -113,20 +113,13 @@ Return (`xs`, `ψ`) where `ψ[x, components]`.
 function make_wavefunction(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}) where {Storage, R}
     (;xlims, M, basis, nc) = xh
     v_isreal = eltype(v) <: Real
-    ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, forward=false)
+    ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, isforward=false)
     ψ_type = basis != :cis && v_isreal ? R : complex(R)  # `ψ` are real if elements of `v` are real and if the basis is real (sin/cos). If basis is real but `v` are complex, this will yield complex function as expected.
     B = size(ft.xs, 1) # component-block size (= number of x points in each dimension)
     ψ = Matrix{ψ_type}(undef, B, nc)
-    for c in 1:nc
-        # for cis, do `ifftshift` because our matrices and vectors assume -M:M ordering, while FFT assumes 0:M,-M:-1. For cos, we need a copy because will be mutating.
-        v_input = basis == :cis ? FFTW.ifftshift(@view(v[(c-1)B+1:c*B])) : v[(c-1)B+1:c*B] #  For sin we could use a view, but we don't care
-        # 0th and last harmonics need additional normalisation
-        basis == :cos && (v_input[1] *= √2; v_input[end] *= √2)
-        transform!(ft, v_input)
-        fft_to_vector!(@view(ψ[:, c]), ft)
-        # undo what is done in `fft_to_vector!` (that assumes p-space while we actually got back to x-space)
-        basis == :cis && (ψ[:, c] = FFTW.ifftshift(ψ[:, c]))
-        basis == :cos && (ψ[1, c] *= √2; ψ[end, c] *= √2)
+    @views for c in 1:nc
+        transform!(ft, v[(c-1)B+1:c*B])
+        fft_to_vector!(ψ[:, c], ft)
     end
     return ft.xs, ψ
 end

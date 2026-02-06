@@ -530,16 +530,12 @@ function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}
     if !iszero(g)
         B = length(v) ÷ nc  
         v_isreal = eltype(v) <: Real
-        ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, forward=false)
+        ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, isforward=false)
         dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
         # create an array of arrays holding squared x-space wfs |𝜓(𝑥)|² for each component
         ψ² = map(1:nc) do c
-            v_input = v[(c-1)B+1:c*B] # a copy is needed only in the cos case, but we always make it
-            basis == :cos && (v_input[1] *= √2; v_input[end] *= √2) # proper normalisation of the 0th and last harmonics
-            transform!(ft, v_input)
+            @views transform!(ft, v[(c-1)B+1:c*B])
             ψ = fft_to_vector(ft)
-            basis == :cos && (ψ[1] *= √2; ψ[end] *= √2)  # undo what is done in `fft_to_vector!` (that assumes p-space while we actually got back to x-space)
-            basis == :cis && (ψ = FFTW.ifftshift(ψ)) # undo what is done in `fft_to_vector`
             ψ .= abs2.(ψ)
             return ψ
         end
