@@ -352,8 +352,11 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
                     params = (G[1], similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
                     prob = DE.SplitODEProblem(H_op, gpe_complexsincos_1comp!, ψ₀ₚ, tspan, params)
                 else
+                    # using vectors of vectors instead of contiguous vectors is ~10% faster and x1000 less memory
+                    u_re = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
+                    u_im = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
                     u² = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
-                    params = (G, B, nc, similar(ψ₀ₚ, R), similar(ψ₀ₚ, R), u², similar(ψ₀ₚ_block, R), rft_plan!, basis)
+                    params = (G, B, nc, u_re, u_im, u², similar(ψ₀ₚ_block, R), rft_plan!, basis)
                     prob = DE.SplitODEProblem(H_op, gpe_complexsincos!, ψ₀ₚ, tspan, params)
                 end
             end
@@ -477,52 +480,43 @@ end
 """
 Update the 𝑢′ vector of the nonlinear part of the multi-component GPE
     𝑢′ᵢ = i ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|²𝑢ᵢ
-The 𝑔ᵢⱼ's must contain the proper sign but must NOT contain `im` .
+The 𝑔ᵢⱼ's must contain the proper sign but must NOT contain `im`.
 Suitable for the cases: basis is sin/cos and equation is complex.
 """
 function gpe_complexsincos!(du, u, params, t)
-    # u_re, u_im, u² -- same length as `u`. `u²_sum` -- 1-component length, and it's real
+    # u_re, u_im, u² -- vectors of `nc` vectors. `u²_sum` -- 1-component length, and it's real
     g, B, nc, u_re, u_im, u², u²_sum, rft_plan!, basis = params
     # for each `i`th component, transform 𝑢ᵢ to x-space and write into `uᵢ_re` and `uᵢ_im`. Also, calculate |𝑢ᵢ|² and write into `u²`
     for i in 1:nc
-        window = (i-1)B+1:i*B
-        # views into the relevant component
-        uᵢ = @view u[window]
-        uᵢ_re = @view u_re[window]
-        uᵢ_im = @view u_im[window]
         # split re and im
-        for a in eachindex(uᵢ)
-            uᵢ_re[a], uᵢ_im[a] = reim(uᵢ[a])
+        for b in 1:B
+            u_re[i][b], u_im[i][b] = reim(u[(i-1)B+b])
         end
         # transform to x-space
-        basis == :cos && (uᵢ_re[1] *= √2; uᵢ_re[end] *= √2; uᵢ_im[1] *= √2; uᵢ_im[end] *= √2)
-        rft_plan! * uᵢ_re
-        rft_plan! * uᵢ_im
-        @. u²[i] = uᵢ_re^2 + uᵢ_im^2
+        basis == :cos && (u_re[i][1] *= √2; u_re[i][end] *= √2; u_im[i][1] *= √2; u_im[i][end] *= √2)
+        rft_plan! * u_re[i]
+        rft_plan! * u_im[i]
+        @. u²[i] = u_re[i]^2 + u_im[i]^2
     end
-    # for each `i`th component, calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² an multiply by 𝑢ᵢ, stored in `uᵢ_re` and `uᵢ_im`
+    # for each `i`th component, calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² an multiply by 𝑢ᵢ, stored in `u_re[i]` and `u_im[i]`
     for i in 1:nc
         @. u²_sum = g[i, 1] * u²[1]
         for j in 2:nc
             g[i, j] == 0 && continue
             @. u²_sum += g[i, j] * u²[j]
         end
-        u_re[(i-1)B+1:i*B] .*= u²_sum
-        u_im[(i-1)B+1:i*B] .*= u²_sum
+        u_re[i] .*= u²_sum
+        u_im[i] .*= u²_sum
     end
     # transform `du` to p-space in-place
     for i in 1:nc
-        window = (i-1)B+1:i*B
-        # views into the relevant component
-        uᵢ_re = @view u_re[window]
-        uᵢ_im = @view u_im[window]
         # transform to p-space
-        rft_plan! * uᵢ_re
-        rft_plan! * uᵢ_im
-        basis == :cos && (uᵢ_re[1] /= √2; uᵢ_re[end] /= √2; uᵢ_im[1] /= √2; uᵢ_im[end] /= √2)
+        rft_plan! * u_re[i]
+        rft_plan! * u_im[i]
+        # add re and im
+        basis == :cos && (u_re[i][1] /= √2; u_re[i][end] /= √2; u_im[i][1] /= √2; u_im[i][end] /= √2)
+        @. du[(i-1)B+1:i*B] = im * u_re[i] - u_im[i] # recall additional `im` from the equation, not contained in `g`
     end
-    # add re and im
-    @. du = im * u_re - u_im # recall additional `im` from the equation, not contained in `g`
     return
 end
 
