@@ -317,27 +317,34 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
     else # nonlinearity present
         ψ₀ₚ_block = @view ψ₀ₚ[1:B] # for constructing FFT plans and various buffers
         if basis == :cis
+            # Both plans will operate on views in `gpe_cis_*`, and they seem to fail for Float32 on Windows/Intel due to alignment issues. The workaround is to pass `flags=FFTW.UNALIGNED`, see https://github.com/JuliaMath/FFTW.jl/issues/67
             bfft_plan = FFTW.plan_bfft(ψ₀ₚ_block) # will first use this and write the result into `du`
             fft_plan! = FFTW.plan_fft!(ψ₀ₚ_block) # then will use this in-place on `du`
             if nc == 1 # the 1-component case can be treated more efficiently
                 params = (G[1], bfft_plan, fft_plan!)
-                prob = DE.SplitODEProblem(H_op, gpe_cis_1comp!, ψ₀ₚ, tspan, params)
+                prob = DE.SplitODEProblem(H_op, gpe_cis_realsin_1comp!, ψ₀ₚ, tspan, params)
             else
                 buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
-                params = (G, B, nc, buff, similar(ψ₀ₚ_block), bfft_plan, fft_plan!)
-                prob = DE.SplitODEProblem(H_op, gpe_cis!, ψ₀ₚ, tspan, params)
+                params = (G, B, nc, buff, similar(ψ₀ₚ_block), bfft_plan, fft_plan!, basis)
+                prob = DE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
             end
         else # basis == :sin || basis == :cos
             ft_type = basis == :sin ? FFTW.RODFT00 : FFTW.REDFT00
             if eq_isreal # basically, if solving imaginary-time GPE with a real Hamiltonian
                 rft_plan  = FFTW.plan_r2r(ψ₀ₚ_block, ft_type)  # will first use this and write the result to the buffer
                 rft_plan! = FFTW.plan_r2r!(ψ₀ₚ_block, ft_type) # then will use this in-place on that buffer
-                if basis == :sin
-                    params = (G[1], rft_plan, rft_plan!)
-                    prob = DE.SplitODEProblem(H_op, gpe_sin_real_1comp!, ψ₀ₚ, tspan, params)
-                else # basis == :cos
-                    params = (G[1], similar(ψ₀ₚ_block), rft_plan, rft_plan!)
-                    prob = DE.SplitODEProblem(H_op, gpe_cos_real_1comp!, ψ₀ₚ, tspan, params)
+                if nc == 1 # the 1-component case can be treated more efficiently
+                    if basis == :sin
+                        params = (G[1], rft_plan, rft_plan!)
+                        prob = DE.SplitODEProblem(H_op, gpe_cis_realsin_1comp!, ψ₀ₚ, tspan, params)
+                    else # basis == :cos
+                        params = (G[1], similar(ψ₀ₚ_block), rft_plan, rft_plan!)
+                        prob = DE.SplitODEProblem(H_op, gpe_realcos_1comp!, ψ₀ₚ, tspan, params)
+                    end
+                else # arbitrary number of components
+                    buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
+                    params = (G, B, nc, buff, similar(ψ₀ₚ_block), rft_plan, rft_plan!, basis)
+                    prob = DE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
                 end
             else # solving complex equation
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type)
@@ -365,28 +372,36 @@ end
 """
 Update the 𝑢′ vector of the nonlinear part of the 1-component GPE
     𝑢′ = 𝑔|𝑢|²𝑢
-in the cis basis. 𝑔 must contain `im` (for real-time propagation) and the proper sign.
+The 𝑔 must contain `im` (for real-time propagation) and the proper sign.
+Suitable for cases: (1) basis is cis; (2) basis is sin and equation is real.
 """
-function gpe_cis_1comp!(du, u, params, t)
-    g, bfft_plan, fft_plan! = params
-    mul!(du, bfft_plan, u) # transform `u` and write into `du`
+function gpe_cis_realsin_1comp!(du, u, params, t)
+    g, bft_plan, ft_plan! = params
+    mul!(du, bft_plan, u) # transform `u` and write into `du`
     du .*= g .* abs2.(du)
-    fft_plan! * du # in-place transform of `du`
+    ft_plan! * du # in-place transform of `du`
     return
 end
 
 """
 Update the 𝑢′ vector of the nonlinear part of the GPE
     𝑢′ᵢ = ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|²𝑢ᵢ
-in the cis basis. The 𝑔ᵢⱼ's must contain `im` (for real-time propagation) and the proper sign.
+The 𝑔ᵢⱼ's must contain `im` (for real-time propagation) and the proper sign.
+Suitable for cases: (1) basis is cis; (2) basis is sin/cos and equation is real.
 """
-function gpe_cis!(du, u, params, t)
-    g, B, nc, u², u²_sum, bfft_plan, fft_plan! = params
+function gpe_cis_realsincos!(du, u, params, t)
+    g, B, nc, u², u²_sum, bfft_plan, fft_plan!, basis = params
     # for each `i`th component, transform 𝑢ᵢ to x-space and write into `du`. Also, calculate |𝑢ᵢ|²
     for i in 1:nc
         window = (i-1)B+1:i*B
         du_i = @view du[window] # view into the relevant component
-        mul!(du_i, bfft_plan, @view(u[window])) # transform `u` and write into `du`
+        if basis == :cos # then must normalise 0th and last harmonics before transforming; will use `u²_sum` as a buffer
+            copyto!(u²_sum, 1, u, (i-1)B+1, B) # copy `B` elements of `u`, starting from `(i-1)B+1`th into `u²_sum`, starting from index 1
+            u²_sum[1] *= √2; u²_sum[end] *= √2
+            mul!(du_i, bfft_plan, u²_sum) # transform `u²_sum` and write into `du`
+        else
+            mul!(du_i, bfft_plan, @view(u[window])) # transform `u` and write into `du`
+        end
         @. u²[i] = abs2(du_i)
     end
     # for each `i`th component, calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² an multiply by 𝑢ᵢ, stored in `du`
@@ -401,21 +416,18 @@ function gpe_cis!(du, u, params, t)
     # transform `du` to p-space in-place
     for i in 1:nc
         fft_plan! * @view(du[(i-1)B+1:i*B])
+        basis == :cos && (du[(i-1)B+1] /= √2; du[i*B] /= √2)
     end
     return
 end
 
-"Update the 𝑢′ matrix of the real GPE in the sin/cos basis."
-function gpe_sin_real_1comp!(du, u, params, t)
-    g, rft_plan, rft_plan! = params
-    mul!(du, rft_plan, u) # transform `u` and write into `du`
-    du .*= g .* du.^2
-    rft_plan! * du # in-place transform of `du`
-    return
-end
-
-"Update the 𝑢′ matrix of the real GPE in the sin/cos basis."
-function gpe_cos_real_1comp!(du, u, params, t)
+"""
+Update the 𝑢′ vector of the nonlinear part of the 1-component GPE
+    𝑢′ = 𝑔|𝑢|²𝑢
+The 𝑔 must contain `im` (for real-time propagation) and the proper sign.
+Suitable for the case: basis is cos and equation is real.
+"""
+function gpe_realcos_1comp!(du, u, params, t)
     g, u_buff, rft_plan, rft_plan! = params
     copy!(u_buff, u) # because of the next step; cannot do it for `u` (not allowed to change `u`)
     u_buff[1] *= √2; u_buff[end] *= √2
