@@ -401,15 +401,15 @@ Suitable for cases: (1) basis is cis; (2) basis is sin/cos and equation is real.
 function gpe_cis_realsincos!(du, u, params, t)
     g, B, nc, u², u²_sum, bfft_plan, fft_plan!, basis = params
     # for each `i`th component, transform 𝑢ᵢ to x-space and write into `du`. Also, calculate |𝑢ᵢ|² and store in `u²`
-    for i in 1:nc
+    @views for i in 1:nc
         window = (i-1)B+1:i*B
-        du_i = @view du[window] # view into the relevant component
+        du_i = du[window] # view into the relevant component
         if basis == :cos # then must normalise 0th and last harmonics before transforming; will use `u²_sum` as a buffer
             copyto!(u²_sum, 1, u, (i-1)B+1, B) # copy `B` elements of `u`, starting from `(i-1)B+1`th into `u²_sum`, starting from index 1
             u²_sum[1] *= √2; u²_sum[end] *= √2
             mul!(du_i, bfft_plan, u²_sum) # transform `u²_sum` and write into `du`
         else
-            mul!(du_i, bfft_plan, @view(u[window])) # transform `u` and write into `du`
+            mul!(du_i, bfft_plan, u[window]) # transform `u` and write into `du`
         end
         @. u²[i] = abs2(du_i)
     end
@@ -420,11 +420,11 @@ function gpe_cis_realsincos!(du, u, params, t)
             g[i, j] == 0 && continue
             @. u²_sum += g[i, j] * u²[j]
         end
-        du[(i-1)B+1:i*B] .*= u²_sum
+        @views du[(i-1)B+1:i*B] .*= u²_sum
     end
     # transform `du` to p-space in-place
     for i in 1:nc
-        fft_plan! * @view(du[(i-1)B+1:i*B])
+        @views fft_plan! * du[(i-1)B+1:i*B]
         basis == :cos && (du[(i-1)B+1] /= √2; du[i*B] /= √2)
     end
     return
@@ -450,7 +450,7 @@ end
 """
 Update the 𝑢′ vector of the nonlinear part of the 1-component GPE
     𝑢′ = i𝑔|𝑢|²𝑢
-The 𝑔 must contain the proper sign but must NOT contain `im` .
+The 𝑔 must contain the proper sign but must NOT contain `im`.
 Suitable for the case: basis is sin/cos and equation is complex.
 """
 function gpe_complexsincos_1comp!(du, u, params, t)
