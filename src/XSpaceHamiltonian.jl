@@ -107,10 +107,10 @@ end
 
 # TODO tweak ψ a bit to generalise to any D
 """
-Construct a 1D coordinate-space wave function using its p-space representation `v`.
+Construct a 1D x-space wave function using its p-space representation `v`.
 Return (`xs`, `ψ`) where `ψ[x, components]`.
 """
-function make_wavefunction(xh::XSpaceHamiltonian{Storage,R}, v::AbstractVector) where {Storage,R}
+function make_wavefunction(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector) where {Storage, R}
     (;xlims, M, basis, nc) = xh
     v_isreal = eltype(v) <: Real
     ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, forward=false)
@@ -118,18 +118,15 @@ function make_wavefunction(xh::XSpaceHamiltonian{Storage,R}, v::AbstractVector) 
     B = size(ft.xs, 1) # component-block size (= number of x points in each dimension)
     ψ = Matrix{ψ_type}(undef, B, nc)
     for c in 1:nc
-        v_input = basis == :cis ? FFTW.ifftshift(v[(c-1)B+1:c*B]) : @view(v[(c-1)B+1:c*B]) # `ifftshift` because our matrices and vectors assume -M:M ordering, but FFT assumes 0..M,-M,..-1
-        if basis == :cos # 0th and last harmonics need additional normalisation
-            v[(c-1)B+1] *= √2
-            v[c*B] *= √2
-        end
+        # for cis, do `ifftshift` because our matrices and vectors assume -M:M ordering, while FFT assumes 0:M,-M:-1. For cos, we need a copy because will be mutating.
+        v_input = basis == :cis ? FFTW.ifftshift(@view(v[(c-1)B+1:c*B])) : v[(c-1)B+1:c*B] #  For sin we could use a view, but we don't care
+        # 0th and last harmonics need additional normalisation
+        basis == :cos && (v_input[1] *= √2; v_input[end] *= √2)
         transform!(ft, v_input)
         fft_to_vector!(@view(ψ[:, c]), ft)
-        if basis == :cos # undo what is done in `fft_to_vector!` (that assumes p-space while we actually got back to x-space)
-            ψ[1, c] *= √2
-            ψ[end, c] *= √2
-        end
-        basis == :cis && (ψ[:, c] = FFTW.ifftshift(ψ[:, c])) # undo what is done in `fft_to_vector`
+        # undo what is done in `fft_to_vector!` (that assumes p-space while we actually got back to x-space)
+        basis == :cis && (ψ[:, c] = FFTW.ifftshift(ψ[:, c]))
+        basis == :cos && (ψ[1, c] *= √2; ψ[end, c] *= √2)
     end
     return ft.xs, ψ
 end
