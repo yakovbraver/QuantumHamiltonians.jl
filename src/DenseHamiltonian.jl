@@ -308,6 +308,7 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
         dx = L ./ (N-1)
         G .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
     end
+    G_input = nc == 1 || allequal(G) ? G[1] : G # the `gpe_*` functions specialise on the equal-g case
 
     # initialise the problem
     tspan = (zero(R), T_max)
@@ -323,7 +324,7 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
             bfft_plan = FFTW.plan_bfft(ψ₀ₚ_block) # will first use this and write the result into `du`
             fft_plan! = FFTW.plan_fft!(ψ₀ₚ_block) # then will use this in-place on `du`
             if nc == 1 # the 1-component case can be treated more efficiently
-                params = (G[1], bfft_plan, fft_plan!)
+                params = (G_input, bfft_plan, fft_plan!)
                 prob = DE.SplitODEProblem(H_op, gpe_cis_realsin_1comp!, ψ₀ₚ, tspan, params)
             else
                 buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
@@ -337,10 +338,10 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
                 rft_plan! = FFTW.plan_r2r!(ψ₀ₚ_block, ft_type) # then will use this in-place on that buffer
                 if nc == 1 # the 1-component case can be treated more efficiently
                     if basis == :sin
-                        params = (G[1], rft_plan, rft_plan!)
+                        params = (G_input, rft_plan, rft_plan!)
                         prob = DE.SplitODEProblem(H_op, gpe_cis_realsin_1comp!, ψ₀ₚ, tspan, params)
                     else # basis == :cos
-                        params = (G[1], similar(ψ₀ₚ_block), rft_plan, rft_plan!)
+                        params = (G_input, similar(ψ₀ₚ_block), rft_plan, rft_plan!)
                         prob = DE.SplitODEProblem(H_op, gpe_realcos_1comp!, ψ₀ₚ, tspan, params)
                     end
                 else # arbitrary number of components
@@ -351,14 +352,14 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
             else # solving complex equation
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type)
                 if nc == 1
-                    params = (G[1], similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
+                    params = (G_input, similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
                     prob = DE.SplitODEProblem(H_op, gpe_complexsincos_1comp!, ψ₀ₚ, tspan, params)
                 else
                     # using vectors of vectors instead of contiguous vectors is ~10% faster and x1000 less memory
                     u_re = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
                     u_im = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
                     u² = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
-                    params = (G, B, nc, u_re, u_im, u², similar(ψ₀ₚ_block, R), rft_plan!, basis)
+                    params = (G_input, B, nc, u_re, u_im, u², similar(ψ₀ₚ_block, R), rft_plan!, basis)
                     prob = DE.SplitODEProblem(H_op, gpe_complexsincos!, ψ₀ₚ, tspan, params)
                 end
             end
@@ -415,19 +416,41 @@ function gpe_cis_realsincos!(du, u, params, t)
         end
         @. u²[i] = abs2(du_i)
     end
-    # for each `i`th component, calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² an multiply by 𝑢ᵢ, stored in `du`
-    for i in 1:nc
-        @turbo @. u²_sum = g[i, 1] * u²[1]
-        for j in 2:nc
-            g[i, j] == 0 && continue
-            @turbo @. u²_sum += g[i, j] * u²[j]
-        end
-        @views du[(i-1)B+1:i*B] .*= u²_sum
-    end
+    # for each `i`th component, calculate 𝑢ᵢ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² storing the result in the appropriate block of `du`.
+    u∑gu²_complex!(du, u², u²_sum, g, nc, B)
     # transform `du` to p-space in-place
     for i in 1:nc
         @views fft_plan! * du[(i-1)B+1:i*B]
         basis == :cos && (du[(i-1)B+1] /= √2; du[i*B] /= √2)
+    end
+    return
+end
+
+"""
+For each `i`th component, calculate 𝑢ᵢ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² storing the result in the appropriate block of `du`.
+"""
+function u∑gu²_complex!(du, u², u²_sum, g::AbstractMatrix{<:Number}, nc, B)
+    for i in 1:nc
+        @. u²_sum = g[i, 1] * u²[1]
+        for j in 2:nc
+            g[i, j] == 0 && continue
+            @. u²_sum += g[i, j] * u²[j]
+        end
+        @views du[(i-1)B+1:i*B] .*= u²_sum
+    end
+    return
+end
+
+"""
+For each `i`th component, calculate 𝑢ᵢ𝑔∑ⱼ|𝑢ⱼ|² storing the result in the appropriate block of `du`.
+"""
+function u∑gu²_complex!(du, u², u²_sum, g::Number, nc, B) # `u²_sum` is not used but kept for compatibility with the other method
+    for i in 2:nc
+        @turbo u²[1] .+= u²[i]
+    end
+    u²[1] .*= g
+    for i in 1:nc
+        @views du[(i-1)B+1:i*B] .*= u²[1]
     end
     return
 end
@@ -500,7 +523,24 @@ function gpe_complexsincos!(du, u, params, t)
         rft_plan! * u_im[i]
         @turbo @. u²[i] = u_re[i]^2 + u_im[i]^2
     end
-    # for each `i`th component, calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² an multiply by 𝑢ᵢ, stored in `u_re[i]` and `u_im[i]`
+    # for each `i`th component, calculate 𝑢ᵢ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² overwriting 𝑢ᵢ, stored in `u_re[i]` and `u_im[i]`
+    u∑gu²_real!(u_re, u_im, u², u²_sum, g, nc) # this specialises for the cases when `g` is a number (this is the case when all are 𝑔's equal) or an array
+    # transform `du` to p-space in-place
+    for i in 1:nc
+        # transform to p-space
+        rft_plan! * u_re[i]
+        rft_plan! * u_im[i]
+        # add re and im
+        basis == :cos && (u_re[i][1] /= √2; u_re[i][end] /= √2; u_im[i][1] /= √2; u_im[i][end] /= √2)
+        @. du[(i-1)B+1:i*B] = Complex(-u_im[i], u_re[i])  # recall additional `im` from the equation, not contained in `g`. So we do `im * u_re - u_im`
+    end
+    return
+end
+
+"""
+For each `i`th component, calculate 𝑢ᵢ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² overwriting 𝑢ᵢ, stored in `u_re[i]` and `u_im[i]`.
+"""
+function u∑gu²_real!(u_re, u_im, u², u²_sum, g::AbstractMatrix{<:Number}, nc)
     for i in 1:nc
         @turbo @. u²_sum = g[i, 1] * u²[1]
         for j in 2:nc
@@ -510,14 +550,20 @@ function gpe_complexsincos!(du, u, params, t)
         @turbo u_re[i] .*= u²_sum
         @turbo u_im[i] .*= u²_sum
     end
-    # transform `du` to p-space in-place
+    return
+end
+
+"""
+For each `i`th component, calculate 𝑢ᵢ𝑔∑ⱼ|𝑢ⱼ|² overwriting 𝑢ᵢ, stored in `u_re[i]` and `u_im[i]`.
+"""
+function u∑gu²_real!(u_re, u_im, u², u²_sum, g::Number, nc) # `u²_sum` is not used but kept for compatibility with the other method
+    for i in 2:nc
+        @turbo u²[1] .+= u²[i]
+    end
+    @turbo u²[1] .*= g
     for i in 1:nc
-        # transform to p-space
-        rft_plan! * u_re[i]
-        rft_plan! * u_im[i]
-        # add re and im
-        basis == :cos && (u_re[i][1] /= √2; u_re[i][end] /= √2; u_im[i][1] /= √2; u_im[i][end] /= √2)
-        @. du[(i-1)B+1:i*B] = Complex(-u_im[i], u_re[i])  # recall additional `im` from the equation, not contained in `g`. So we do `im * u_re - u_im`
+        @turbo u_re[i] .*= u²[1]
+        @turbo u_im[i] .*= u²[1]
     end
     return
 end
