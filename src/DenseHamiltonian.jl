@@ -389,7 +389,7 @@ Suitable for cases: (1) basis is cis; (2) basis is sin and equation is real.
 function gpe_cis_realsin_1comp!(du, u, params, t)
     g, bft_plan, ft_plan! = params
     mul!(du, bft_plan, u) # transform `u` and write into `du`
-    du .*= g .* abs2.(du)
+    @. du *= g * abs2(du)
     ft_plan! * du # in-place transform of `du`
     return
 end
@@ -417,10 +417,10 @@ function gpe_cis_realsincos!(du, u, params, t)
     end
     # for each `i`th component, calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² an multiply by 𝑢ᵢ, stored in `du`
     for i in 1:nc
-        @. u²_sum = g[i, 1] * u²[1]
+        @turbo @. u²_sum = g[i, 1] * u²[1]
         for j in 2:nc
             g[i, j] == 0 && continue
-            @. u²_sum += g[i, j] * u²[j]
+            @turbo @. u²_sum += g[i, j] * u²[j]
         end
         @views du[(i-1)B+1:i*B] .*= u²_sum
     end
@@ -443,7 +443,7 @@ function gpe_realcos_1comp!(du, u, params, t)
     copy!(u_buff, u) # because of the next step; cannot do it for `u` (not allowed to change `u`)
     u_buff[1] *= √2; u_buff[end] *= √2
     mul!(du, rft_plan, u_buff)
-    du .*= g .* du.^2
+    @turbo @. du *= g * du^2
     rft_plan! * du
     du[1] /= √2; du[end] /= √2
     return
@@ -466,10 +466,10 @@ function gpe_complexsincos_1comp!(du, u, params, t)
     rft_plan! * u_re
     rft_plan! * u_im
     # calculate |𝑢(𝑥)|²
-    @. u² = u_re^2 + u_im^2
+    @turbo @. u² = u_re^2 + u_im^2
     # calculate 𝑢(𝑥)|𝑢(𝑥)|²
-    @. u_re *= u²
-    @. u_im *= u²
+    @turbo @. u_re *= u²
+    @turbo @. u_im *= u²
     # transform to p-space
     rft_plan! * u_re
     rft_plan! * u_im
@@ -498,17 +498,17 @@ function gpe_complexsincos!(du, u, params, t)
         basis == :cos && (u_re[i][1] *= √2; u_re[i][end] *= √2; u_im[i][1] *= √2; u_im[i][end] *= √2)
         rft_plan! * u_re[i]
         rft_plan! * u_im[i]
-        @. u²[i] = u_re[i]^2 + u_im[i]^2
+        @turbo @. u²[i] = u_re[i]^2 + u_im[i]^2
     end
     # for each `i`th component, calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² an multiply by 𝑢ᵢ, stored in `u_re[i]` and `u_im[i]`
     for i in 1:nc
-        @. u²_sum = g[i, 1] * u²[1]
+        @turbo @. u²_sum = g[i, 1] * u²[1]
         for j in 2:nc
             g[i, j] == 0 && continue
-            @. u²_sum += g[i, j] * u²[j]
+            @turbo @. u²_sum += g[i, j] * u²[j]
         end
-        u_re[i] .*= u²_sum
-        u_im[i] .*= u²_sum
+        @turbo u_re[i] .*= u²_sum
+        @turbo u_im[i] .*= u²_sum
     end
     # transform `du` to p-space in-place
     for i in 1:nc
@@ -517,7 +517,7 @@ function gpe_complexsincos!(du, u, params, t)
         rft_plan! * u_im[i]
         # add re and im
         basis == :cos && (u_re[i][1] /= √2; u_re[i][end] /= √2; u_im[i][1] /= √2; u_im[i][end] /= √2)
-        @. du[(i-1)B+1:i*B] = im * u_re[i] - u_im[i] # recall additional `im` from the equation, not contained in `g`
+        @. du[(i-1)B+1:i*B] = Complex(-u_im[i], u_re[i])  # recall additional `im` from the equation, not contained in `g`. So we do `im * u_re - u_im`
     end
     return
 end

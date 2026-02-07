@@ -10,6 +10,7 @@ using LinearMaps
 import LinearSolve as LS
 using SparseArrays
 using FLoops: @floop
+using LoopVectorization: @turbo
 
 export XSpaceHamiltonian, diagonalize!, make_eigenfunction, make_eigenfunctions, matrix_density, make_wavefunction,
        compute_wanniers!, make_wannierfunctions, make_wanniers_real, compute_tunneling, compute_tb_hamiltonian,
