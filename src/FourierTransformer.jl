@@ -69,7 +69,7 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
     return FourierTransformer(xs, M, normalisation, basis, buff, buff_im, did_complex_rxdft, isforward, plan)
 end
 
-"Perform the transformation of a callable function `𝑓`."
+"Transform a callable function `𝑓` given in x-space to p-space."
 function transform!(ft::FourierTransformer, 𝑓::Function)
     (;xs, normalisation, basis, buff, buff_im, plan) = ft
     D = size(xs, 2)
@@ -100,7 +100,10 @@ function transform!(ft::FourierTransformer, 𝑓::Function)
     return
 end
 
-"Perform the transformation of a discretised function `f`."
+"""
+Transform a discretised function `f`, which can be either in x-space or p-space.
+The transformation is forward or backward depending on `ft.isforward`.
+"""
 function transform!(ft::FourierTransformer, f::AbstractArray{<:Number})
     (;normalisation, basis, buff, buff_im, plan) = ft
     # preparation of the input if going to x-space
@@ -108,7 +111,7 @@ function transform!(ft::FourierTransformer, f::AbstractArray{<:Number})
         f_input = FFTW.ifftshift(f)
     elseif basis == :cos && !ft.isforward
         f_input = copy(f)
-        f_input[1] *= √2; f_input[end] *= √2
+        f_input[1] *= √2; f_input[end] *= √2 # TODO generalise to n dims
     else
         f_input = f
     end
@@ -260,7 +263,7 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
     (;M, basis, buff, buff_im) = ft
     if basis == :cis
         A[diagind(A)] .= buff[1]
-        for i in 2:M+1
+        for i in 2:2M+1
             A[diagind(A, 1-i)] .= buff[i]       # fill lower triangle
             A[diagind(A, i-1)] .= buff[end-i+2] # fill upper triangle
         end
