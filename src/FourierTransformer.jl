@@ -276,7 +276,7 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
                 end
             end
         else
-            for jx in 1:M
+            @turbo for jx in 1:M
                 for j′x in 1:M
                     j₋x = abs(j′x-jx)
                     A[j′x, jx] = buff[j₋x+1] - buff[j′x+jx+1]
@@ -286,18 +286,18 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
     else # basis == :cos
         if ft.did_complex_rxdft
             for jx in 0:M
-                ζₓ = ifelse(jx == 0 || jx == M, 2, 1)
+                ζₓ = ifelse(jx == 0, 2, 1)
                 for j′x in 0:M
-                    ζ′ₓ = ifelse(j′x == 0 || j′x == M, 2, 1)
+                    ζ′ₓ = ifelse(j′x == 0, 2, 1)
                     j₋x = abs(j′x-jx)
                     A[j′x+1, jx+1] = ( (buff[j₋x+1] + buff[j′x+jx+1]) + im*(buff_im[j₋x+1] + buff_im[j′x+jx+1]) ) / √(ζₓ*ζ′ₓ)
                 end
             end
         else
-            for jx in 0:M
-                ζₓ = ifelse(jx == 0 || jx == M, 2, 1)
+            @turbo for jx in 0:M
+                ζₓ = ifelse(jx == 0, 2, 1)
                 for j′x in 0:M
-                    ζ′ₓ = ifelse(j′x == 0 || j′x == M, 2, 1)
+                    ζ′ₓ = ifelse(j′x == 0, 2, 1)
                     j₋x = abs(j′x-jx)
                     A[j′x+1, jx+1] = (buff[j₋x+1] + buff[j′x+jx+1]) / √(ζₓ*ζ′ₓ)
                 end
@@ -347,7 +347,7 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
             end
         end
     else # basis == :cos
-        b = M + 1 # not `B` to preven Core.Box :(
+        b = M + 1 # not `B` to prevent Core.Box :(
         if ft.did_complex_rxdft
             @floop for jx in 0:M
                 for jy in 0:M, j′x in 0:M, j′y in 0:M
