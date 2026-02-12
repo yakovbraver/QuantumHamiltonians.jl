@@ -605,3 +605,35 @@ function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}
     end
     return E, μ
 end
+
+"""
+Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ`.
+`xh` must contain the required Hamiltonian, while `ψ` should have twice the number of harmonics compared to `xh`.
+"""
+function bdg_spectrum(xh::XSpaceHamiltonian, ψ, g, μ)
+    (;xlims, M, nc, basis) = xh
+    # transform `ψ2` to p-space
+    ψ_isreal = eltype(ψ) <: Real
+    ψ2 = g .* ψ.^2
+    ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2, isforward=true) # the constructed matrix will correspond to `M`
+    transform!(ft, ψ2)
+    v2 = fft_to_matrix(ft)
+    if ψ_isreal
+        vconj2 = v2
+        vabs2 = 2 .* v2
+    else
+        # transform `conj(ψ2)` to p-space
+        transform!(ft, conj(ψ2))
+        vconj2 = fft_to_matrix(ft)
+        # transform `ψabs2` to p-space
+        ψabs2 = abs2.(ψ)
+        ft = FourierTransformer(xlims, M; basis, target_real=true, target_rank=2, isforward=true)
+        transform!(ft, ψabs2)
+        vabs2 = fft_to_matrix(ft)
+    end
+    # construct the matrix
+    A11 = -xh.H + μ*LA.I - vabs2
+    A = im .* [A11    -v2
+               vconj2 -A11]
+    return eigen(A)
+end
