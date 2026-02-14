@@ -607,17 +607,19 @@ function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}
 end
 
 """
-Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ`.
+Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (1-component case).
+If `nev > 0`, calculate only `nev` eigenvalues of of type `whichvals` (`:LI` = largest imaginary by default).
 `xh` must contain the required Hamiltonian, while `ψ` should have twice the number of harmonics compared to `xh`.
+`ψ` can be a vector or a N×1 matrix (where N is the number of x points).
 """
-function bdg_spectrum(xh::XSpaceHamiltonian, ψ, g, μ)
+function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::AbstractFloat, μ::AbstractFloat; ψ_iseven=false, nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
     (;xlims, M, nc, basis) = xh
     # transform `ψ2` to p-space
     ψ_isreal = eltype(ψ) <: Real
     ψ2 = g .* ψ.^2
     ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2, isforward=true) # the constructed matrix will correspond to `M`
     transform!(ft, ψ2)
-    v2 = fft_to_matrix(ft)
+    v2 = fft_to_matrix(ft; makereal=(ψ_iseven && ψ_isreal))
     if ψ_isreal
         vconj2 = v2
         vabs2 = 2 .* v2
@@ -632,8 +634,89 @@ function bdg_spectrum(xh::XSpaceHamiltonian, ψ, g, μ)
         vabs2 = fft_to_matrix(ft)
     end
     # construct the matrix
-    A11 = -xh.H + μ*LA.I - vabs2
-    A = im .* [A11    -v2
-               vconj2 -A11]
-    return eigen(A)
+    A11 = xh.H - μ*LA.I + vabs2
+    A = [A11     v2
+         -vconj2 -A11]
+    if nev == 0
+        vals, vecs = eigen(A)
+    else
+        ps, info = partialschur(A; nev, which=whichvals, restarts=200)
+        verbose && @show info
+        vals, vecs = partialeigen(ps)
+    end
+    return vals, vecs
+end
+
+"""
+Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (2-component case).
+If `nev > 0`, calculate only `nev` eigenvalues of of type `whichvals` (`:LI` = largest imaginary by default).
+`xh` must contain the required Hamiltonian, while `ψ` should have twice the number of harmonics compared to `xh`.
+`ψ` must be a N×nc matrix, where `N` is the number of x points and `nc` is the number of components.
+"""
+function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::AbstractFloat, nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
+    (;xlims, M, basis) = xh
+    ψ_isreal = eltype(ψ) <: Real
+    ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2, isforward=true) # the constructed matrix will correspond to `M`
+    transform!(ft, ψ[:, 1].^2)
+    v₁² = fft_to_matrix(ft)
+    transform!(ft, ψ[:, 2].^2)
+    v₂² = fft_to_matrix(ft)
+    transform!(ft, ψ[:, 1].*ψ[:, 2])
+    v₁v₂ = fft_to_matrix(ft)
+    if ψ_isreal
+        v₁⁺² = v₁² # "+" means conjugate
+        V₁²  = v₁² # uppercase means modulus
+        v₂⁺² = v₂²  
+        V₂²  = v₂²
+        v₁⁺v₂⁺ = v₁v₂
+        v₁v₂⁺ = v₁v₂
+        v₁⁺v₂ = v₁v₂
+    else
+        transform!(ft, conj(ψ[:, 1]).^2)
+        v₁⁺² = fft_to_matrix(ft)
+        transform!(ft, conj(ψ[:, 2]).^2)
+        v₂⁺² = fft_to_matrix(ft)
+        
+        ft_real = FourierTransformer(xlims, M; basis, target_real=true, target_rank=2, isforward=true)
+        transform!(ft_real, abs2.(ψ[:, 1]))
+        V₁² = fft_to_matrix(ft_real)
+        transform!(ft_real, abs2.(ψ[:, 2]))
+        V₂² = fft_to_matrix(ft_real)
+
+        transform!(ft, conj.(ψ[:, 1]) .* conj.(ψ[:, 2]))
+        v₁⁺v₂⁺ = fft_to_matrix(ft)
+        transform!(ft, ψ[:, 1] .* conj.(ψ[:, 2]))
+        v₁v₂⁺ = fft_to_matrix(ft)
+        transform!(ft, conj.(ψ[:, 1]) .* ψ[:, 2])
+        v₁⁺v₂ = fft_to_matrix(ft)
+    end
+    B = size(ψ, 1)
+    A = Matrix{eltype(v₁²)}(undef, 4B, 4B)
+    block(a, b) = CartesianIndices(((a-1)B+1:a*B, (b-1)B+1:b*B))
+    @. A[block(1, 1)] = xh.H[block(1, 1)] - μ*LA.I + 2g[1,1]V₁² + g[1,2]V₂²
+    @. A[block(1, 2)] = g[1,1]v₁²
+    @. A[block(1, 3)] = g[1,2]v₁v₂⁺
+    @. A[block(1, 4)] = g[1,2]v₁v₂
+    @. A[block(2, 1)] = -g[1,1]v₁⁺²
+    @. A[block(2, 2)] = -A[block(1, 1)] # assumes real `xh.H`
+    @. A[block(2, 3)] = -g[1,2]v₁⁺v₂⁺
+    @. A[block(2, 4)] = -g[1,2]v₁⁺v₂
+    @. A[block(3, 1)] = g[2,1]v₁⁺v₂
+    @. A[block(3, 2)] = g[2,1]v₁v₂
+    @. A[block(3, 3)] = xh.H[block(2, 2)] - μ*LA.I + 2g[2,2]V₂² + g[2,1]V₁²
+    @. A[block(3, 4)] = g[2,2]v₂²
+    @. A[block(4, 1)] = -g[2,1]v₁⁺v₂⁺
+    @. A[block(4, 2)] = -g[2,1]v₁v₂⁺
+    @. A[block(4, 3)] = -g[2,2]v₂⁺²
+    @. A[block(4, 4)] = -A[block(3, 3)] # assumes real `xh.H`
+
+    if nev == 0
+        vals, vecs = eigen(A)
+    else
+        ps, info = partialschur(A; nev, which=whichvals, restarts=200)
+        verbose && @show info
+        vals, vecs = partialeigen(ps)
+    end
+
+    return vals, vecs
 end
