@@ -8,6 +8,7 @@ using LinearAlgebra: Hermitian, Diagonal, diag, diagind, diagview, factorize, ei
 import LinearAlgebra as LA # mainly for the identity operator LA.I
 using LinearMaps
 import LinearSolve as LS
+import NonlinearSolve as NLS
 using SparseArrays
 using FLoops: @floop
 using LoopVectorization: @turbo

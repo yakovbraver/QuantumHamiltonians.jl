@@ -603,7 +603,8 @@ function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}
             E += U / 2
         end
     end
-    return E, μ
+    nrm = sum(abs2, v) # `v` might not be normalised to unity if it's the result of nonlinear solve, so take this into account
+    return E/nrm, μ/nrm
 end
 
 """
@@ -719,4 +720,179 @@ function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Un
     end
 
     return vals, vecs
+end
+
+"""
+Propagate the time-dependent Schrödinger or Gross-Pitaevskii (with nonlinearity matrix `g`) equation (SE and GPE, respectively) for the initial wave function `ψ₀`.
+`ψ₀` can be:
+    * a vector of x-space analytic functions (one for each component)
+    * a vector of vectors (one for each component) representing discretised x-space functions
+    * a vector representing discretised p-space functions, all lumped together 
+Set `itime=true` for imaginary time propagation.
+`ψ₀_iseven[c]` matters only if basis is cis, `g`s are zero (SE case), and `ψ₀` is given in x-space. It shows whether `ψ₀[c]` is an even function (i.e. whether ψ(x) = ψ(-x)).
+If it is, then if `xh.H` is also real, the imaginary time propagation will be done for a real type.
+`solver` is a solver from DifferentialEquations.jl. For SE, recommended are `LinearExponential` (default) or state-independent ones from https://docs.sciml.ai/DiffEqDocs/stable/solvers/nonautonomous_linear_ode/.
+For GPE, recommended are the Semilinear Split ODE Solvers from https://docs.sciml.ai/DiffEqDocs/stable/solvers/split_ode_solve/.
+For imaginary-time GPE, the default is `LawsonEuler`, which is first order (and hence fast), but is sufficient when the time step is small.
+For real-time GPE, the default is `ETDRK4`; lower order variants can also be used for quick results. `HochOst4` seems to conserve the norm even better, but is a bit slower.
+Return the DifferentialEquations solution object. 
+"""
+function nlsolve(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, μ::R, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
+                 ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), solver=nothing) where {Storage, R, T}
+    (;xlims, L, M, basis, nc) = xh
+    D = length(xlims)
+    # size of each Hamiltonian block
+    B = basis == :cis ? (2M+1)^D :
+        basis == :sin ?      M^D : (M+1)^D
+
+    # determine if equation can be solved using real types. Note that for cis with nonzero `g` it cannot because intermediate FFT's will be yielding complex results
+    eq_isreal = T <: Real && !(basis == :cis && !iszero(g)) # below `eq_isreal` might change if initial state is complex
+
+    # prepare the p-space wf
+    if ψ₀ isa AbstractVector{<:Number} # `ψ₀` is given in p-space
+        ψ₀_isreal = eltype(ψ₀) <: Real
+        eq_isreal &= ψ₀_isreal
+        ψ₀ₚ = ψ₀_isreal && !eq_isreal ? complex(ψ₀) : ψ₀  # if the passed initial is real but equation is not, then convert; otherwise take as-is
+        # In the p-space case we don't normalise ψ₀ₚ. E.g. the user might want to remove one component and propagate the rest. Normalisation can have consequences since equation is nonlinear
+    else # `ψ₀` is given in x-space
+        if ψ₀ isa AbstractVector{<:Function} # `ψ₀` a vector of analytic functions
+            ψ₀_arereal = [ ψ([xlims[i][1] for i in eachindex(xlims)]...) isa Real for ψ in ψ₀ ]
+        else # `ψ₀` is a vector of vectors of discretised functions
+            ψ₀_arereal = [eltype(ψ) <: Real for ψ in ψ₀]
+        end
+        eq_isreal &= all(ψ₀_arereal)
+        if basis == :cis && iszero(g) # then also check if functions are even 
+            eq_isreal &= all(ψ₀_iseven)
+        end
+        ψ₀ₚ = Vector{eq_isreal ? R : Complex{R}}(undef, nc*B)
+
+        # transform each component's wf and put into ψ₀ₚ
+        ft = FourierTransformer(xlims, M; basis, target_real=all(ψ₀_arereal), target_rank=1) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
+        for c in 1:nc
+            transform!(ft, ψ₀[c])
+            ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
+            fft_to_vector!(ψ₀ₚ_block, ft; makereal=(ψ₀_iseven[c] && ψ₀_arereal[c]))
+        end
+        # In the x-space case we normalise because the initial state is likely just some approximate state.
+        normalize!(ψ₀ₚ)
+    end
+
+    H = T <: Real && !eq_isreal ? complex(xh.H) : xh.H # `xh.H` is real but equation is not, then convert the Hamiltonian to complex. Solving then proceeds faster TODO: figure out why
+
+    # Combine in `G` all fft normalisation factors so that this multiplication can be done just once at each step
+    if basis == :cis
+        N = 2M + 1 # number of points in each dimension
+        dx = L ./ N
+        G = g .* prod(@. dx / L^2) # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
+    elseif basis == :sin
+        N = M
+        dx = L ./ (N+1)
+        G = g .* prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
+    else # basis == :cos
+        N = M + 1
+        dx = L ./ (N-1)
+        G = g .* prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
+    end
+    G_input = nc == 1 || allequal(G) ? G[1] : G # the `gpe_*` functions specialise on the equal-g case
+
+    ψ₀ₚ_block = @view ψ₀ₚ[1:B] # for constructing FFT plans and various buffers
+    if basis == :cis
+        # Both plans will operate on views in `gpe_cis_*`, and they seem to fail for Float32 on Windows/Intel due to alignment issues. The workaround is to pass `flags=FFTW.UNALIGNED`, see https://github.com/JuliaMath/FFTW.jl/issues/67
+        bfft_plan = FFTW.plan_bfft(ψ₀ₚ_block) # will first use this and write the result into `du`
+        fft_plan! = FFTW.plan_fft!(ψ₀ₚ_block) # then will use this in-place on `du`
+        if nc == 1 # the 1-component case can be treated more efficiently
+            params = (H, μ, G_input, similar(ψ₀ₚ), bfft_plan, fft_plan!)
+            prob = NLS.NonlinearProblem(nls_gpe_cis_realsin_1comp!, ψ₀ₚ, params)
+        else
+            buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
+            params = (G, B, nc, buff, similar(ψ₀ₚ_block), bfft_plan, fft_plan!, basis)
+            # prob = DE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
+        end
+    else # basis == :sin || basis == :cos
+        ft_type = basis == :sin ? FFTW.RODFT00 : FFTW.REDFT00
+        if eq_isreal # basically, if solving imaginary-time GPE with a real Hamiltonian
+            rft_plan  = FFTW.plan_r2r(ψ₀ₚ_block, ft_type)  # will first use this and write the result to the buffer
+            rft_plan! = FFTW.plan_r2r!(ψ₀ₚ_block, ft_type) # then will use this in-place on that buffer
+            if nc == 1 # the 1-component case can be treated more efficiently
+                if basis == :sin
+                    params = (H, μ, G_input, similar(ψ₀ₚ), similar(ψ₀ₚ), rft_plan, rft_plan!)
+                    nlfunction = NLS.NonlinearFunction(nls_gpe_cis_realsin_1comp!; jvp=jvp_gpe_cis_realsin_1comp!)
+                    prob = NLS.NonlinearProblem(nlfunction, ψ₀ₚ, params)
+                else # basis == :cos
+                    params = (G_input, similar(ψ₀ₚ_block), rft_plan, rft_plan!)
+                    # prob = DE.SplitODEProblem(H_op, gpe_realcos_1comp!, ψ₀ₚ, tspan, params)
+                end
+            else # arbitrary number of components
+                buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
+                params = (G, B, nc, buff, similar(ψ₀ₚ_block), rft_plan, rft_plan!, basis)
+                # prob = DE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
+            end
+        else # solving complex equation
+            rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type)
+            if nc == 1
+                params = (G_input, similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
+                # prob = DE.SplitODEProblem(H_op, gpe_complexsincos_1comp!, ψ₀ₚ, tspan, params)
+            else
+                # using vectors of vectors instead of contiguous vectors is ~10% faster and x1000 less memory
+                u_re = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
+                u_im = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
+                u² = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
+                params = (G_input, B, nc, u_re, u_im, u², similar(ψ₀ₚ_block, R), rft_plan!, basis)
+                # prob = DE.SplitODEProblem(H_op, gpe_complexsincos!, ψ₀ₚ, tspan, params)
+            end
+        end
+    end
+
+    return NLS.solve(prob, solver)
+end
+
+
+"""
+Update the 𝑢′ vector of the 1-component GPE
+    𝑢′ = 𝐻𝑢 + 𝑔|𝑢|²𝑢 - 𝜇𝑢
+We use this for finding the steady state with nonlinear solve.
+Suitable for the case: basis is sin.
+"""
+function nls_gpe_realsin_1comp!(du, u, params)
+    H, μ, g, u_buff, v_buff, bft_plan, ft_plan!, basis = params
+    mul!(du, H, u)
+    @. du -= u * μ
+    # transform `u` to x-space
+    mul!(u_buff, bft_plan, u)
+    @. u_buff *= g * abs2(u_buff)
+    ft_plan! * u_buff
+    du .+= u_buff
+    return
+end
+
+# """
+# Update the 𝑢′ vector of the 1-component GPE
+#     𝑢′ = 𝐻𝑢 + 𝑔|𝑢|²𝑢 - 𝜇𝑢
+# We use this for finding the steady state with nonlinear solve.
+# Suitable for the case: basis is sin.
+# """
+# function nls_gpe_realcos_1comp!(du, u, params)
+#     H, μ, g, u_buff, v_buff, bft_plan, ft_plan!, basis = params
+#     mul!(du, H, u)
+#     @. du -= u * μ
+#     # transform `u` to x-space
+#     (u_buff[1] *= √2; u_buff[end] *= √2)
+#     du[1] /= √2; du[end] /= √2 mul!(u_buff, bft_plan, u)
+#     @. u_buff *= g * abs2(u_buff)
+#     ft_plan! * u_buff
+#     du .+= u_buff
+#     return
+# end
+
+function jvp_gpe_cis_realsin_1comp!(Jv, v, u, params)
+    H, μ, g, u_buff, v_buff, bft_plan, ft_plan! = params
+    mul!(Jv, H, v)
+    @. Jv -= μ * v
+    # transform `v` and `u` to x-space
+    mul!(u_buff, bft_plan, u)
+    mul!(v_buff, bft_plan, v)
+    @. v_buff *= 3g * u_buff.^2
+    ft_plan! * v_buff
+    @. Jv += v_buff
+    return
 end
