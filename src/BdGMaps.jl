@@ -3,7 +3,7 @@ A lazy linear map describing the action of the BdG operator on an x-space vector
      (𝐻 - 𝜇 + 2𝑔|𝑓₀|²)𝑎 + 𝑔𝑓₀²𝑏  = iλ𝑎
     -(𝐻 - 𝜇 + 2𝑔|𝑓₀|²)𝑏 - 𝑔𝑓₀⁺²𝑎 = iλ𝑏
 """
-struct BdGMap1comp{T,R,H,FT_FORWARD,FT_BACKWARD} <: LinearMaps.LinearMap{T}
+struct BdGMap1comp{T,R,H,FT_FORWARD,FT_BACKWARD} <: LM.LinearMap{T}
     Hₚ::H
     G::Matrix{Vector{T}} # An analogue of the BdG matrix
     ψₚ_buff1::Vector{Complex{R}} # buffer for storing ψₚ
@@ -38,7 +38,7 @@ function BdGMap1comp(μ::R, g::R, xh::XSpaceHamiltonian, f₀::AbstractVector{S}
     return BdGMap1comp(xh.H, G, ψₚ_buff1, ψₚ_buff2, ft_forward, ft_backward, size(xh.H) .* 2)
 end
 
-function LinearMaps._unsafe_mul!(ψ_out, bdg_map::BdGMap1comp{T}, ψ_in::AbstractVector) where T
+function LM._unsafe_mul!(ψ_out, bdg_map::BdGMap1comp{T}, ψ_in::AbstractVector) where T
     (;Hₚ, G, ψₚ_buff1, ψₚ_buff2, ft_forward, ft_backward) = bdg_map
     a_in = @view ψ_in[1:end÷2]
     b_in = @view ψ_in[end÷2+1:end]
@@ -86,7 +86,7 @@ Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (1-c
 Calculate `nev` eigenvalues of of type `whichvals` (`:LI` = largest imaginary by default).
 `ψ` can be a vector or a N×1 matrix (where N is the number of x points).
 """
-function bdg_spectrum_xspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::AbstractFloat, μ::AbstractFloat; nev::Integer, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
+function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::AbstractFloat, μ::AbstractFloat; nev::Integer, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
     bdg_map = BdGMap1comp(μ, g, xh, ψ)
     ps, info = partialschur(bdg_map; nev, which=whichvals);
     verbose && @show info

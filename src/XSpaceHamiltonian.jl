@@ -315,7 +315,7 @@ end
 "Helper function for shift-and-invert: construct a linear map that applies the inverse of `A`."
 function dense_linear_map(A)
     F = factorize(A) # Bunch-Kaufman for Hermitian `A`, LU otherwise
-    return LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
+    return LM.LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
 end
 
 ########## Sparse
@@ -342,14 +342,14 @@ function diagonalize(xh::XSpaceHamiltonian{:sparse}; nev::Integer, verbose::Bool
 end
 
 "A linear map holding a `LinearSolve` object, used for applying the inverse map."
-struct LinSolveLinMap{T,L} <: LinearMaps.LinearMap{T}
+struct LinSolveLinMap{T,L} <: LM.LinearMap{T}
     linsolve::L
     size::Dims{2}
 end
 
 Base.size(lm::LinSolveLinMap) = lm.size
 
-function LinearMaps._unsafe_mul!(y, lm::LinSolveLinMap, x::AbstractVector)
+function LM._unsafe_mul!(y, lm::LinSolveLinMap, x::AbstractVector)
     copy!(lm.linsolve.b, x)
     copy!(y, LS.solve!(lm.linsolve).u) # `solve!` allocates up to 50 KiB :(
 end
