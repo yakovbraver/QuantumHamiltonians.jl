@@ -568,22 +568,46 @@ function u∑gu²_real!(u_re, u_im, u², u²_sum, g::Number, nc) # `u²_sum` is 
     return
 end
 
-"Return mean energy (per particle) and chemical potential for a p-space state `v`."
-function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc)) where {Storage, R}
+"""
+Return mean energy (per particle) and chemical potential for a state `v`.
+`v_is_pspace=true` means that `v` is given in p-space, and x-space otherwise.
+"""
+function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc); v_is_pspace=true) where {Storage, R}
     (;xlims, M, nc, basis) = xh
-    E = dot(v, xh.H, v)
+    B = length(v) ÷ nc  
+     
+    if v_is_pspace # if `v` is in p-space, then make `vₚ` point to `v`
+        vₚ = v
+    else # if `v` is in x-space, then perform FT to transition to p-space
+        v_isreal = eltype(v) <: Real
+        ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, isforward=true)
+        v_type = !v_isreal ? Complex{R} : eltype(ft.buff) # if v in x-space is complex, then result will be complex; otherwise the same as determined in `ft`
+        vₚ = Vector{v_type}(undef, length(v))
+        @views for c in 1:nc
+            window = (c-1)B+1:c*B
+            transform!(ft, v[window])
+            fft_to_vector!(vₚ[window], ft)
+        end
+    end
+    E = dot(vₚ, xh.H, vₚ)
     μ = E
     if !iszero(g)
-        B = length(v) ÷ nc  
+        # we need `ft` object to get the coordinates
         v_isreal = eltype(v) <: Real
         ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, isforward=false)
         dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
-        # create an array of arrays holding squared x-space wfs |𝜓(𝑥)|² for each component
-        ψ² = map(1:nc) do c
-            @views transform!(ft, v[(c-1)B+1:c*B])
-            ψ = fft_to_vector(ft)
-            ψ .= abs2.(ψ)
-            return ψ
+        if v_is_pspace # if `v` is in p-space, then perform FT to x-space
+            # create an array of arrays holding squared x-space wfs |𝜓(𝑥)|² for each component
+            ψ² = map(1:nc) do c
+                @views transform!(ft, v[(c-1)B+1:c*B])
+                ψ = fft_to_vector(ft)
+                ψ .= abs2.(ψ)
+                return ψ
+            end
+        else # if `v` is in x-space, then calculate abs2 directly, but we need a vector of vectors instead of contiguous
+            ψ² = map(1:nc) do c
+                @views abs2.(v[(c-1)B+1:c*B])
+            end
         end
         ψ²_sum = similar(ψ²[1])
         # for each `i`th component: calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝜓ⱼ|², then multiply by |𝜓ᵢ|², then integrate
@@ -603,7 +627,7 @@ function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}
             E += U / 2
         end
     end
-    nrm = sum(abs2, v) # `v` might not be normalised to unity if it's the result of nonlinear solve, so take this into account
+    nrm = sum(abs2, vₚ) # `v` might not be normalised to unity if it's the result of nonlinear solve, so take this into account
     return E/nrm, μ/nrm
 end
 
@@ -614,7 +638,7 @@ If `nev > 0`, calculate only `nev` eigenvalues of of type `whichvals` (`:LI` = l
 `ψ` can be a vector or a N×1 matrix (where N is the number of x points).
 """
 function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::AbstractFloat, μ::AbstractFloat; ψ_iseven=false, nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
-    (;xlims, M, nc, basis) = xh
+    (;xlims, M, basis) = xh
     # transform `ψ2` to p-space
     ψ_isreal = eltype(ψ) <: Real
     ψ2 = g .* ψ.^2
@@ -738,7 +762,7 @@ For real-time GPE, the default is `ETDRK4`; lower order variants can also be use
 Return the DifferentialEquations solution object. 
 """
 function nlsolve(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, μ::R, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
-                 ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), solver=nothing) where {Storage, R, T}
+                 ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), solver=NLS.NewtonRaphson(;concrete_jac=false, linsolve=NLS.KrylovJL_GMRES())) where {Storage, R, T}
     (;xlims, L, M, basis, nc) = xh
     D = length(xlims)
     # size of each Hamiltonian block
@@ -797,15 +821,16 @@ function nlsolve(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVect
 
     ψ₀ₚ_block = @view ψ₀ₚ[1:B] # for constructing FFT plans and various buffers
     if basis == :cis
-        # Both plans will operate on views in `gpe_cis_*`, and they seem to fail for Float32 on Windows/Intel due to alignment issues. The workaround is to pass `flags=FFTW.UNALIGNED`, see https://github.com/JuliaMath/FFTW.jl/issues/67
-        bfft_plan = FFTW.plan_bfft(ψ₀ₚ_block) # will first use this and write the result into `du`
-        fft_plan! = FFTW.plan_fft!(ψ₀ₚ_block) # then will use this in-place on `du`
+        # Both plans will operate on views in `gpe_*`, and they seem to fail for Float32 on Windows/Intel due to alignment issues. The workaround is to pass `flags=FFTW.UNALIGNED`, see https://github.com/JuliaMath/FFTW.jl/issues/67
+        bfft_plan! = FFTW.plan_bfft!(ψ₀ₚ_block)
+        fft_plan!  = FFTW.plan_fft!(ψ₀ₚ_block)
         if nc == 1 # the 1-component case can be treated more efficiently
-            params = (H, μ, G_input, similar(ψ₀ₚ), bfft_plan, fft_plan!)
-            prob = NLS.NonlinearProblem(nls_gpe_cis_realsin_1comp!, ψ₀ₚ, params)
+            params = (H, μ, G_input, similar(ψ₀ₚ), similar(ψ₀ₚ), bfft_plan!, fft_plan!) # the buffers are complex and hence same length as `ψ₀ₚ`
+            nlfunction = NLS.NonlinearFunction(nls_gpe_cis_1comp!; jvp=jvp_gpe_cis_1comp!)
+            prob = NLS.NonlinearProblem(nlfunction, complex_to_real(ψ₀ₚ), params)
         else
             buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
-            params = (G, B, nc, buff, similar(ψ₀ₚ_block), bfft_plan, fft_plan!, basis)
+            params = (G, B, nc, buff, similar(ψ₀ₚ_block), bfft_plan!, fft_plan!, basis)
             # prob = DE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
         end
     else # basis == :sin || basis == :cos
@@ -816,7 +841,7 @@ function nlsolve(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVect
             if nc == 1 # the 1-component case can be treated more efficiently
                 if basis == :sin
                     params = (H, μ, G_input, similar(ψ₀ₚ), similar(ψ₀ₚ), rft_plan, rft_plan!)
-                    nlfunction = NLS.NonlinearFunction(nls_gpe_cis_realsin_1comp!; jvp=jvp_gpe_cis_realsin_1comp!)
+                    nlfunction = NLS.NonlinearFunction(nls_gpe_realsin_1comp!; jvp=jvp_gpe_realsin_1comp!)
                     prob = NLS.NonlinearProblem(nlfunction, ψ₀ₚ, params)
                 else # basis == :cos
                     params = (G_input, similar(ψ₀ₚ_block), rft_plan, rft_plan!)
@@ -846,22 +871,111 @@ function nlsolve(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVect
     return NLS.solve(prob, solver)
 end
 
+"Return a real vector [real(v); imag(v)]"
+function complex_to_real(v::AbstractVector{Complex{R}}) where R <: Real
+    n = length(v)
+    result = Vector{R}(undef, 2n)
+    for i in eachindex(v)
+        result[i], result[i+n] = reim(v[i])
+    end
+    result
+end
+
 
 """
 Update the 𝑢′ vector of the 1-component GPE
     𝑢′ = 𝐻𝑢 + 𝑔|𝑢|²𝑢 - 𝜇𝑢
 We use this for finding the steady state with nonlinear solve.
-Suitable for the case: basis is sin.
+Suitable for the case: wave function is real and basis is sin.
 """
 function nls_gpe_realsin_1comp!(du, u, params)
-    H, μ, g, u_buff, v_buff, bft_plan, ft_plan!, basis = params
+    H, μ, g, u_buff, v_buff, bft_plan, ft_plan! = params # `v_buff` is not neede here but the same set of parameters is also used in `jvp_` function
     mul!(du, H, u)
-    @. du -= u * μ
+    @turbo @. du -= u * μ
     # transform `u` to x-space
     mul!(u_buff, bft_plan, u)
-    @. u_buff *= g * abs2(u_buff)
+    @turbo @. u_buff *= g * abs2(u_buff)
     ft_plan! * u_buff
     du .+= u_buff
+    return
+end
+
+"""
+Describes the action of the Jacobian of the 1-component GPE on a vector 𝑣:
+    𝐽𝑣 = 𝐻𝑣 + 3𝑔|𝑢|²𝑣 - 𝜇𝑣
+We use this for finding the steady state with nonlinear solve.
+Suitable for the case: wave function is real and basis is sin.
+"""
+function jvp_gpe_realsin_1comp!(Jv, v, u, params)
+    H, μ, g, u_buff, v_buff, bft_plan, ft_plan! = params
+    mul!(Jv, H, v)
+    @turbo @. Jv -= μ * v
+    # transform `v` and `u` to x-space
+    mul!(u_buff, bft_plan, u)
+    mul!(v_buff, bft_plan, v)
+    @turbo @. v_buff *= 3g * u_buff^2
+    ft_plan! * v_buff
+    @turbo @. Jv += v_buff
+    return
+end
+
+"""
+Update the 𝑢′ vector of the 1-component GPE
+    𝑢′ = 𝐻𝑢 + 𝑔|𝑢|²𝑢 - 𝜇𝑢
+We use this for finding the steady state with nonlinear solve.
+Suitable for the case: basis is cis.
+"""
+function nls_gpe_cis_1comp!(du, u, params)
+    H, μ, g, u_complex, v_complex, bft_plan!, ft_plan! = params
+    b = length(u) ÷ 2
+    # For real and imaginary parts, calculate 𝐻𝑢 - 𝜇𝑢 and write into appropriate halves of `du`
+    @views for window in (1:b, b+1:2b)
+        mul!(du[window], H, u[window]) # `H` is assumed real
+        @. du[window] -= μ * u[window] # all quantities are real but @turbo cannot be applied for views
+    end
+    # assemble complex `u`
+    @views @. u_complex = Complex(u[1:b], u[b+1:2b])
+    # apply nonlinearity
+    bft_plan! * u_complex
+    @. u_complex *= g * abs2(u_complex)
+    ft_plan! * u_complex
+    # add re and im parts of the nonlinear term to the final `du`
+    for i in eachindex(u_complex)
+        u_re, u_im = reim(u_complex[i])
+        du[i] += u_re
+        du[i+b] += u_im
+    end
+    return
+end
+
+"""
+Describes the action of the Jacobian of the 1-component GPE on a vector 𝑣:
+    𝐽𝑣 = 𝐻𝑣 + 3𝑔|𝑢|²𝑣 - 𝜇𝑣
+We use this for finding the steady state with nonlinear solve.
+Suitable for the case: wave function is real and basis is sin.
+"""
+function jvp_gpe_cis_1comp!(Jv, v, u, params)
+    H, μ, g, u_complex, v_complex, bft_plan!, ft_plan! = params
+    b = length(u) ÷ 2
+    # For real and imaginary parts, calculate 𝐻𝑣 - 𝜇𝑣 and write into appropriate halves of `Jv`
+    @views for window in (1:b, b+1:2b)
+        mul!(Jv[window], H, v[window]) # `H` is assumed real
+        @. Jv[window] -= μ * v[window]
+    end
+    # assemble complex `u` and `v`
+    @views @. u_complex = Complex(u[1:b], u[b+1:2b])
+    @views @. v_complex = Complex(v[1:b], v[b+1:2b])
+    # transform `v` and `u` to x-space
+    bft_plan! * u_complex
+    bft_plan! * v_complex
+    @. v_complex *= 3g * abs2(u_complex)
+    ft_plan! * v_complex
+    # add re and im parts of the nonlinear term to the final `Jv`
+    for i in eachindex(v_complex)
+        v_re, v_im = reim(v_complex[i])
+        Jv[i] += v_re
+        Jv[i+b] += v_im
+    end
     return
 end
 
@@ -884,15 +998,99 @@ end
 #     return
 # end
 
-function jvp_gpe_cis_realsin_1comp!(Jv, v, u, params)
-    H, μ, g, u_buff, v_buff, bft_plan, ft_plan! = params
-    mul!(Jv, H, v)
-    @. Jv -= μ * v
-    # transform `v` and `u` to x-space
-    mul!(u_buff, bft_plan, u)
-    mul!(v_buff, bft_plan, v)
-    @. v_buff *= 3g * u_buff.^2
-    ft_plan! * v_buff
-    @. Jv += v_buff
+#############
+
+"""
+Find the stationary state of the Gross-Pitaevskii equation (with nonlinearity matrix `g`) starting from the trial function `ψ₀`.
+`ψ₀` can be:
+    * a vector of x-space analytic functions (one for each component)
+    * a vector of vectors (one for each component) representing discretised x-space functions
+`solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodifferentiation will fail because it doesn't work with FFT that we are using.
+Therefore, when passing the solver, always turn off concrete Jacobian and set linear solving to an iterative method.
+Return the NonlinearSolution object. 
+"""
+function nlsolve_xspace(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, μ::R, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
+                        solver=NLS.NewtonRaphson(;concrete_jac=false, linsolve=NLS.KrylovJL_GMRES())) where {Storage, R, T}
+    (;xlims, M, basis, nc) = xh
+    D = length(xlims)
+
+    # prepare the input wf
+    if ψ₀ isa AbstractVector{<:Function} # `ψ₀` is a vector of analytic functions
+        ψ₀_arereal = [ ψ([xlims[i][1] for i in eachindex(xlims)]...) isa Real for ψ in ψ₀ ]
+        eq_isreal = all(ψ₀_arereal) && all(isnothing.(xh.𝐴)) # equations are real (in x-space) if Hamiltonian and wfs are real (in x-space)
+        ft_forward  = FourierTransformer(xlims, M; basis, target_real=eq_isreal, target_rank=1, isforward=true) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
+        ft_backward = FourierTransformer(xlims, M; basis, target_real=eq_isreal, target_rank=1, isforward=false) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
+        if eq_isreal
+            # sample each function in ψ₀ at points `ft_forward.xs`
+            nx = length(ft_forward.xs)
+            ψ_input = Vector{R}(undef, nc*nx)
+            for c in 1:nc
+                ψ_input[(c-1)*nx+1:c*nx] .= ψ₀[c].(ft_forward.xs)
+            end
+        else # equations in x-space are complex
+            nx = length(ft_forward.xs)
+            ψ_input = Vector{R}(undef, nc*2nx)
+            for c in 1:nc, ix in 1:nx
+                ψ_input[(c-1)*2nx + ix], ψ_input[(c-1)*2nx + nx+ix] = reim(ψ₀[c].(ft_forward.xs[ix]))
+            end
+        end
+    else # `ψ₀` is a vector of vectors of discretised functions
+        # TODO
+    end
+
+    g_input = nc == 1 || allequal(g) ? g[1] : g # the `gpe_*` functions specialise on the equal-g case
+
+    if nc == 1 # the 1-component case can be treated more efficiently
+        if basis == :cis || eq_isreal # in the cis case, the p-space buffer is always complex, so copy `ft_forward.buff` -- it's always complex for cis. If `eq_isreal` and basis is sin/cos, then also copy `ft_forward.buff` -- it's always real for sin/cos
+            uₚ_buff  = similar(ft_forward.buff)
+            uₚ_buff2 = similar(ft_forward.buff)
+        else # !eq_isreal and basis is sin/cos
+            uₚ_buff = similar(ft_forward.buff, Complex{R})
+            uₚ_buff2 = similar(ft_forward.buff, Complex{R})
+        end
+        params = (xh.H, μ, g_input, uₚ_buff, uₚ_buff2, ft_forward, ft_backward)
+        nlfunction = NLS.NonlinearFunction(nls_gpe_1comp!; jvp=jvp_gpe_1comp!)
+        prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
+    else
+        # TODO
+    end
+    
+    return NLS.solve(prob, solver)
+end
+
+"""
+Update the 𝑢′ vector of the 1-component GPE
+    𝑢′ = 𝐻𝑢 + 𝑔|𝑢|²𝑢 - 𝜇𝑢
+We use this for finding the steady state with nonlinear solve.
+Suitable for the case when 𝑢 is real in x-space.
+"""
+function nls_gpe_1comp!(du, u, params)
+    H, μ, g, uₚ_buff, uₚ_buff2, ft_forward, ft_backward = params
+    # transform `u` to p-space, multiply by `H` and transform back
+    transform!(ft_forward, u)
+    fft_to_vector!(uₚ_buff, ft_forward)
+    mul!(uₚ_buff2, H, uₚ_buff)
+    transform!(ft_backward, uₚ_buff2)
+    fft_to_vector!(du, ft_backward; makereal=true) # we assume that `u` is real, so the result here must be real: pass `make_real=true` to drop imaginary part in the cis case
+    # add g and μ terms
+    @. du += (g * abs2(u) - μ) * u
+    return
+end
+
+"""
+Describes the action of the Jacobian of the 1-component GPE on a vector 𝑣:
+    𝐽𝑣 = 𝐻𝑣 + 3𝑔|𝑢|²𝑣 - 𝜇𝑣
+We use this for finding the steady state with nonlinear solve.
+"""
+function jvp_gpe_1comp!(Jv, v, u, params)
+    H, μ, g, vₚ_buff, vₚ_buff2, ft_forward, ft_backward = params
+    # transform `v` to p-space, multiply by `H` and transform back
+    transform!(ft_forward, v)
+    fft_to_vector!(vₚ_buff, ft_forward)
+    mul!(vₚ_buff2, H, vₚ_buff)
+    transform!(ft_backward, vₚ_buff2)
+    fft_to_vector!(Jv, ft_backward; makereal=true)
+    # add g and μ terms
+    @. Jv += (3g * abs2(u) - μ) * v
     return
 end
