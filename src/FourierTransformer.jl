@@ -29,7 +29,8 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
             xs[:, i] .= range(xlims[i][1], xlims[i][2]-dx[i], N)
         end
         buff = Array{Complex{R}}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
-        buff_im = similar(buff, ntuple(Returns(0), D)) # this buffer is not needed in the cis case; make it 0x0 (in `D` dimesions)
+        buff2_size = target_rank == 1 && !isforward ? N : 0 # in the former case we need an additional buffer for performing `fftshift` in `transform!`. In the latter case we make it 0x0 (in `D` dimesions)
+        buff_im = similar(buff, ntuple(Returns(buff2_size), D))
         # the time savings of rfft are negligible for us, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
         plan = isforward ? FFTW.plan_fft!(buff) : FFTW.plan_bfft!(buff) # using unnormalised `bfft` because the "1/N" used in `ifft` is not right for our use case
     else # sin/cos
@@ -108,7 +109,8 @@ function transform!(ft::FourierTransformer, f::AbstractArray{<:Number})
     (;normalisation, basis, buff, buff_im, plan) = ft
     # preparation of the input if going to x-space
     if basis == :cis && !ft.isforward # then do `ifftshift` because `f` is stored in -M:M ordering, while FFT assumes 0:M,-M:-1
-        f_input = FFTW.ifftshift(f)
+        FFTW.ifftshift!(ft.buff_im, f) # using `ft.buff_im` as a convenient buffer (specifically made for this case)
+        f_input = ft.buff_im
     elseif basis == :cos && !ft.isforward
         f_input = copy(f)
         f_input[1] *= √2; f_input[end] *= √2 # TODO generalise to n dims
