@@ -256,12 +256,13 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
     # determine if equation can be solved using real types. Note that for cis with nonzero `g` it cannot because intermediate FFT's will be yielding complex results
     eq_isreal = itime && T <: Real && !(basis == :cis && !iszero(g)) # below `eq_isreal` might change if initial state is complex
 
-    # prepare the p-space wf
+    # Prepare the p-space wf. We don't normalise it. E.g. in p-space the user might want to remove one component and propagate the rest, meaning that total norm is not one.
+    # In x-space the user might use a stationary state calculated for a fixed 𝜇 and not necessarily unit norm.
+    # Normalisation can have consequences since equation is nonlinear.
     if ψ₀ isa AbstractVector{<:Number} # `ψ₀` is given in p-space
         ψ₀_isreal = eltype(ψ₀) <: Real
         eq_isreal &= ψ₀_isreal
         ψ₀ₚ = ψ₀_isreal && !eq_isreal ? complex(ψ₀) : ψ₀  # if the passed initial is real but equation is not, then convert; otherwise take as-is
-        # In the p-space case we don't normalise ψ₀ₚ. E.g. the user might want to remove one component and propagate the rest. Normalisation can have consequences since equation is nonlinear
     else # `ψ₀` is given in x-space
         if ψ₀ isa AbstractVector{<:Function} # `ψ₀` a vector of analytic functions
             ψ₀_arereal = [ ψ([xlims[i][1] for i in eachindex(xlims)]...) isa Real for ψ in ψ₀ ]
@@ -281,8 +282,6 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
             ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
             fft_to_vector!(ψ₀ₚ_block, ft; makereal=(ψ₀_iseven[c] && ψ₀_arereal[c]))
         end
-        # In the x-space case we normalise because the initial state is likely just some approximate state.
-        # normalize!(ψ₀ₚ)
     end
 
     # initialise the Hamiltonian and coupling matrix `G` with the appropriate sign and `im` factor
@@ -687,6 +686,7 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         # TODO
     end
     
+    # We use default NonlinearSolve tolerance, which for Float64 is ≈ 3e-13. Meanwhile LinearSolve uses ≈ 1.5e-8 which is enough because it's only a subproblem
     return NLS.solve(prob, solver)
 end
 
