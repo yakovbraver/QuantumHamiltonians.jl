@@ -640,7 +640,7 @@ Therefore, when passing the solver, always turn off concrete Jacobian and set li
 Note that the chemical potential rather than the wave function norm is fixed.
 Return the NonlinearSolution object. 
 """
-function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, μ::R, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
+function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, μ::Union{R, AbstractVector{<:R}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
                         solver=NLS.NewtonRaphson(;concrete_jac=false, linsolve=LS.KrylovJL_GMRES())) where {Storage, R, T}
     (;xlims, M, basis, nc) = xh
     D = length(xlims)
@@ -695,13 +695,14 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         u²_sum = Vector{R}(undef, B)
         u² = [similar(u²_sum) for _ in 1:nc]
         uⱼvⱼ = [similar(u²_sum) for _ in 1:nc]
-        params = (xh.H, μ, g, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward)
+        μ_input = μ isa R ? fill(μ, nc) : μ # if only one μ is passed, then construct a vector of same values
+        params = (xh.H, μ_input, g, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward)
         nlfunction = NLS.NonlinearFunction(gpe_real_xspace!; jvp=jvp_gpe_real_xspace!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
     end
     
-    # We use default NonlinearSolve tolerance, which for Float64 is ≈ 3e-13. Meanwhile LinearSolve uses ≈ 1.5e-8 (in KrylovJL_GMRES) which is enough because it's only a subproblem
-    return NLS.solve(prob, solver)
+    # Default abstol in NonlinearSolve for Float64 is ≈ 3e-13; then it always gets stalled. Meanwhile LinearSolve uses ≈ 1.5e-8 (in KrylovJL_GMRES) which is enough because it's only a subproblem
+    return NLS.solve(prob, solver; abstol=1e-11)
 end
 
 """
@@ -767,17 +768,18 @@ function gpe_real_xspace!(du, u, params)
     ### Nonlinear part
     # pre-calculate 𝑢ᵢ² for each component and store in `u²`
     @views for i in 1:nc
-        @. u²[i] = u[(i-1)B+1:i*B]^2
+        @turbo @. u²[i] = u[(i-1)B+1:i*B]^2
     end
     # add (∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇)𝑢ᵢ to `duᵢ`
     @views for i in 1:nc
-        @. u²_sum = g[i, 1] * u²[1]
+        @turbo @. u²_sum = g[i, 1] * u²[1]
         for j in 2:nc
             g[i, j] == 0 && continue
-            @. u²_sum += g[i, j] * u²[j]
+            @turbo @. u²_sum += g[i, j] * u²[j]
         end
         window = (i-1)B+1:i*B
-        @. du[window] += (u²_sum - μ) * u[window]
+        duᵢ = du[window] # must create a view separately for @turbo to work in the next line
+        @turbo @. duᵢ += (u²_sum - μ[i]) * u[window]
     end
     return
 end
@@ -808,8 +810,8 @@ function jvp_gpe_real_xspace!(Jv, v, u, params)
     @views for j in 1:nc
         uⱼ = u[(j-1)B+1:j*B]
         vⱼ = v[(j-1)B+1:j*B]
-        @. uⱼvⱼ[j] = uⱼ * vⱼ
-        @. u²[j] = uⱼ^2
+        @turbo @. uⱼvⱼ[j] = uⱼ * vⱼ
+        @turbo @. u²[j] = uⱼ^2
     end
     # add to `Jv` all nonlinear terms
     @views for i in 1:nc
@@ -818,19 +820,19 @@ function jvp_gpe_real_xspace!(Jv, v, u, params)
         Jvᵢ = Jv[(i-1)B+1:i*B]
         # add 2𝑢ᵢ∑ⱼ𝑔ᵢⱼ𝑢ⱼ𝑣ⱼ to `Jvᵢ`
         j′ = i == 1 ? 2 : 1 # determine the first allowed index of the sum (1 by default, but 2 if i is 1)
-        @. u²_sum = g[i,j′] * uⱼvⱼ[j′] # treat the first term of the sum separately to initialise `u²_sum`
+        @turbo @. u²_sum = g[i,j′] * uⱼvⱼ[j′] # treat the first term of the sum separately to initialise `u²_sum`
         for j in j′+1:nc # add the remaining terms
             j == i || g[i,j] == 0 && continue
-            @. u²_sum += g[i,j] * uⱼvⱼ[j]
+            @turbo @. u²_sum += g[i,j] * uⱼvⱼ[j]
         end
-        @. Jvᵢ += 2uᵢ * u²_sum
+        @turbo @. Jvᵢ += 2uᵢ * u²_sum
         # add (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇)𝑣ᵢ to `Jvᵢ`
-        @. u²_sum = 3g[i,i] * u²[i]
+        @turbo @. u²_sum = 3g[i,i] * u²[i]
         for j in 1:nc
             j == i || g[i,j] == 0 && continue
-            @. u²_sum += g[i,j] * u²[j]
+            @turbo @. u²_sum += g[i,j] * u²[j]
         end
-        @. Jvᵢ += (u²_sum - μ) * vᵢ
+        @turbo @. Jvᵢ += (u²_sum - μ[i]) * vᵢ
     end
     return
 end
@@ -1073,7 +1075,7 @@ end
 """
 Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (1-component case).
 If `nev > 0`, calculate only `nev` eigenvalues of of type `whichvals` (`:LI` = largest imaginary by default).
-`xh` must contain the required Hamiltonian, while `ψ` should have twice the number of harmonics compared to `xh`.
+`xh` must contain half the number of harmonics of `ψ` (because having N points in `ψ` we can only construct a p-space operator of size N/2).
 `ψ` can be a vector or a N×1 matrix (where N is the number of x points).
 """
 function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::AbstractFloat, μ::AbstractFloat; ψ_iseven=false, nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
@@ -1113,11 +1115,11 @@ end
 
 """
 Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (2-component case).
-If `nev > 0`, calculate only `nev` eigenvalues of of type `whichvals` (`:LI` = largest imaginary by default).
+If `nev > 0`, calculate only `nev` eigenvalues of type `whichvals` (`:LI` = largest imaginary by default).
 `xh` must contain half the number of harmonics of `ψ`.
 `ψ` must be a N×nc matrix, where `N` is the number of x points and `nc` is the number of components.
 """
-function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::AbstractFloat, nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
+function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::AbstractFloat; nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
     (;xlims, M, basis) = xh
     ψ_isreal = eltype(ψ) <: Real
     ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2, isforward=true) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
