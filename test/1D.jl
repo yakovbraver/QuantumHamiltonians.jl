@@ -1,5 +1,5 @@
-@testset "Test dense 1D 1-component diagonalisation" begin
-    ########## Quantum harmonic oscillator: 𝐻 = -Δ/2 + 𝑥²/2 
+@testset "Dense 1D 1-component diagonalisation" begin
+    # Quantum harmonic oscillator: 𝐻 = -Δ/2 + 𝑥²/2 
 
     𝑈(x) = x^2 / 2
     xlimits = (-5, 5) .|> Float32
@@ -35,8 +35,8 @@
     @test abs.(ψ) ≈ abs.(ψ_true) atol=1e-2 # test abs because a sign difference is possible
 end
 
-@testset "Test dense 1D 1-component nlsolve stationary state and BdG" begin
-    ########## Soliton on a hill (https://doi.org/10.1093/oso/9780192843234.001.0001, Section 22.5) ################
+@testset "Dense 1D 1-component nlsolve stationary state and BdG" begin
+    # Bright soliton in a "parabolic + bump at the centre" potential -- "Soliton on a hill" from https://doi.org/10.1093/oso/9780192843234.001.0001, Section 22.5
 
     𝑈(x::Real) = (Ω*x)^2 / 2 + B*sech(β*x)^2
 
@@ -67,10 +67,62 @@ end
 
         # also test BdG in p-space. Skip sin case because that requires 2M+1 harmonics for dimensions to match, but the result is then inaccurate
         if basis != :sin
-            xh_double = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M=2M, δ)
-            _, sol = find_stationary(xh_double, [𝜓₀], μ₀, [g;;])
-            vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh, sol.u, g, μ₀; ψ_iseven=true)
-            @test maximum(imag, vals) ≈ 0.3306185 atol=1e-7
+            xh_half = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M=M÷2, δ)
+            vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, sol.u, g, μ₀; ψ_iseven=true)
+            @test maximum(imag, vals) ≈ 0.3306185 atol=1e-5 # using larger atol because with twice less harmonics this is less accurate
         end
     end
+end
+
+@testset "Dense 1D 2-component nlsolve stationary state, BdG, and time evolution" begin
+    # Stationary Manakov dark-bright soliton, see e.g. https://doi.org/10.1093/oso/9780192843234.001.0001, Section 27.1
+
+    Float = Float64 # operating type
+
+    basis = :cos
+    M = 256
+
+    R = 10 |> Float
+    xlimits = (-R, R)
+
+    xh = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5)
+
+    μ₀ = 4 |> Float
+    η = 1 |> Float
+    D = √(μ₀ - η^2)
+    g = ones(Float, 2, 2)
+    μs = [μ₀, (μ₀+η^2)/2] # actual chemical potentials of the two components
+
+    # Get stationary state starting from a basic tanh-sech trial
+    xs, sol = find_stationary(xh, [tanh, sech], μs, g; abstol=1e-9)
+    @test Int(sol.retcode) == 1 # test for success
+    ψ_db = sol.u
+
+    # Test against analytical solution
+    𝛹 = [x -> √μ₀ * tanh(D*x), x -> η * sech(D*x)]
+    Ψ_exact = [𝛹[1].(xs); 𝛹[2].(xs)] |> vec
+    @test sum(abs, Ψ_exact - ψ_db) / length(ψ_db) < 1e-8
+
+    # Calculate BdG spectrum
+    vals, vecs = bdg_spectrum(xh, ψ_db, g, μs)
+    smallindx = findall(x -> abs(x) < 1e-2, vals) # find indices of very small values
+    @test length(smallindx) == 6 # there should be exactly 6 values "close to zero"
+    @test all(x -> abs(x) < 5e-5, vals[smallindx]) # those values should be ≲ 5e-5
+
+    # time evolution
+    nsaves = 2
+    T_max = 50 |> Float
+    dt = 1e-3 |> Float
+    sol = propagate(xh, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.DE.ETDRK2())
+    @test Int(sol.retcode) == 1 # test for success
+
+    # test energy conservation
+    E1, _ = get_E_μ(xh, sol.u[1], g)
+    E2, _ = get_E_μ(xh, sol.u[end], g)
+    @test abs(E2 - E1) < 1e-5
+
+    # test that density remains the same
+    xs, Ψ1 = make_wavefunction(xh, sol.u[1])
+    xs, Ψ2 = make_wavefunction(xh, sol.u[end])
+    @test sum(abs2, abs2.(Ψ1) - abs2.(Ψ2)) < 5e-8
 end
