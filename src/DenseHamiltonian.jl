@@ -635,13 +635,15 @@ Find the stationary state of the Gross-Pitaevskii equation (with nonlinearity ma
 `ψ₀` can be:
     * a vector of x-space analytic functions (one for each component)
     * a vector of vectors (one for each component) representing discretised x-space functions
-`solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodifferentiation will fail because it doesn't work with FFT that we are using.
+The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components.
+`solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodifferentiation will fail because it doesn't work with FFT, which we are using.
 Therefore, when passing the solver, always turn off concrete Jacobian and set linear solving to an iterative method.
+By default, `abstol` is set to the default of NonlinearSolvers.
 Note that the chemical potential rather than the wave function norm is fixed.
 Return the NonlinearSolution object. 
 """
 function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, μ::Union{R, AbstractVector{<:R}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
-                        solver=NLS.NewtonRaphson(;concrete_jac=false, linsolve=LS.KrylovJL_GMRES())) where {Storage, R, T}
+                        solver=NLS.NewtonRaphson(;concrete_jac=false, linsolve=LS.KrylovJL_GMRES()), abstol=real(oneunit(T))*(eps(real(one(T))))^(4//5)) where {Storage, R, T}
     (;xlims, M, basis, nc) = xh
     D = length(xlims)
 
@@ -701,8 +703,8 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
     end
     
-    # Default abstol in NonlinearSolve for Float64 is ≈ 3e-13; then it always gets stalled. Meanwhile LinearSolve uses ≈ 1.5e-8 (in KrylovJL_GMRES) which is enough because it's only a subproblem
-    return NLS.solve(prob, solver; abstol=1e-11)
+    # LinearSolve uses (in KrylovJL_GMRES) abstol ≈ 1.5e-8 (for Float64) which is enough because it's only a subproblem
+    return ft_forward.xs, NLS.solve(prob, solver; abstol, termination_condition=NLS.AbsTerminationMode())
 end
 
 """
@@ -1118,9 +1120,12 @@ Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (2-c
 If `nev > 0`, calculate only `nev` eigenvalues of type `whichvals` (`:LI` = largest imaginary by default).
 `xh` must contain half the number of harmonics of `ψ`.
 `ψ` must be a N×nc matrix, where `N` is the number of x points and `nc` is the number of components.
+The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components.
 """
-function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::AbstractFloat; nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
+function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::Union{R, AbstractVector{<:R}};
+                             nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
     (;xlims, M, basis) = xh
+    μs = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values
     ψ_isreal = eltype(ψ) <: Real
     ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2, isforward=true) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
     transform!(ft, ψ[:, 1].^2)
@@ -1160,7 +1165,7 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
     A = Matrix{eltype(v₁²)}(undef, 4B, 4B)
     block(a, b) = CartesianIndices(((a-1)B+1:a*B, (b-1)B+1:b*B))
     @. A[block(1, 1)] = xh.H[block(1, 1)] + 2g[1,1]V₁² + g[1,2]V₂²
-    A[block(1, 1)] -= μ*LA.I # do this separately because cannot use broadcast
+    A[block(1, 1)] -= μs[1]*LA.I # do this separately because cannot use broadcast
     @. A[block(1, 2)] = g[1,1]v₁²
     @. A[block(1, 3)] = g[1,2]v₁v₂⁺
     @. A[block(1, 4)] = g[1,2]v₁v₂
@@ -1171,7 +1176,7 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
     @. A[block(3, 1)] = g[2,1]v₁⁺v₂
     @. A[block(3, 2)] = g[2,1]v₁v₂
     @. A[block(3, 3)] = xh.H[block(2, 2)] + 2g[2,2]V₂² + g[2,1]V₁²
-    A[block(3, 3)] -= μ*LA.I
+    A[block(3, 3)] -= μs[2]*LA.I
     @. A[block(3, 4)] = g[2,2]v₂²
     @. A[block(4, 1)] = -g[2,1]v₁⁺v₂⁺
     @. A[block(4, 2)] = -g[2,1]v₁v₂⁺

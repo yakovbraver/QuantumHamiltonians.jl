@@ -104,19 +104,19 @@ end
 Base.size(lm::BdGMap) = lm.size
 
 "Construct a `BdGMap` object for analysing stability of x-space discretised state `f`."
-function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::AbstractMatrix{R}, μ::R) where {Storage, R, S}
+function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::AbstractMatrix{R}, μ::AbstractVector{R}) where {Storage, R, S}
     # eltype of map: real if Hamiltonian is real in x-space and f is real; complex otherwise
     T = all(isnothing.(xh.𝐴)) && S <: Real ? R : Complex{R} # TODO determination of whether Hamiltonian is real in incorrect because off-diagonal blocks can be complex
 
     # (𝐻𝑐)₁ + (2𝑔₁₁|𝑓₁|² + 𝑔₁₂|𝑓₂|² - 𝜇)𝑎₁ + 𝑔₁₂𝑓₁𝑓₂⁺𝑎₂ + 𝑔₁₁𝑓₁²𝑏₁ + 𝑔₁₂𝑓₁𝑓₂𝑏₂ = iλ𝑎₁ 
     @views f₁, f₂ = f[1:end÷2], f[end÷2+1:end]
     G = [similar(f₁, T) for _ in 1:4, _ in 1:4]
-    @. G[1, 1] = 2g[1,1]abs2(f₁) + g[1,2]abs2(f₂) - μ
+    @. G[1, 1] = 2g[1,1]abs2(f₁) + g[1,2]abs2(f₂) - μ[1]
     @. G[1, 2] = g[1,2] * f₁ * conj(f₂)
     @. G[1, 3] = g[1,1] * f₁^2
     @. G[1, 4] = g[1,2] * f₁ * f₂
     @. G[2, 1] = conj(G[1, 2]) # assumes g[1,2] = g[2,1]
-    @. G[2, 2] = 2g[2,2]abs2(f₂) + g[2,1]abs2(f₁) - μ
+    @. G[2, 2] = 2g[2,2]abs2(f₂) + g[2,1]abs2(f₁) - μ[2]
     @. G[2, 3] = G[1, 4]       # assumes g[1,2] = g[2,1]
     @. G[2, 4] = g[2,2] * f₂^2
     @. G[3, 1] = -conj(G[1, 3])
@@ -190,12 +190,15 @@ end
 Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (1-component case).
 Calculate `nev` eigenvalues of of type `whichvals`. Default is all eigenalues and `:LI` = largest imaginary.
 `ψ` can be a vector or a N×1 matrix (where N is the number of x points).
+The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components.
 """
-function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::R; nev::Integer=2size(xh.H, 1), whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
+function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::Union{R, AbstractVector{<:R}};
+                      nev::Integer=2size(xh.H, 1), whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
     if xh.nc == 1
         bdg_map = BdGMap1comp(μ, g, xh, ψ)
     else
-        bdg_map = BdGMap(xh, ψ, g, μ)
+        μ_input = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values
+        bdg_map = BdGMap(xh, ψ, g, μ_input)
     end
     ps, info = partialschur(bdg_map; nev, which=whichvals);
     verbose && @show info

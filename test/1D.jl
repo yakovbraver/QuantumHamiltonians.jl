@@ -57,19 +57,19 @@ end
         𝜓₀(x) = sech(x)
         g = -1 |> Float64
         μ₀ = -1 |> Float64
-        sol = find_stationary(xh, [𝜓₀], μ₀, [g;;])
+        _, sol = find_stationary(xh, [𝜓₀], μ₀, [g;;])
         E, μ = get_E_μ(xh, sol.u, [g;;], v_is_pspace=false) .|> real
-        @test E ≈ -0.1581185113871 atol=1e-12
+        @test E ≈ -0.1581185113871 atol=1e-12 # default NonlinearSolve tolerance for Float64 is ≈ 3e-13
 
         # Calculate BdG and test relevant eigenvalues (calculating all eigenvalues here)
-        vals, vecs = bdg_spectrum(xh, sol.u, g, μ₀, nev=2size(xh.H, 1))
-        @test maximum(imag, vals) ≈ 0.3306185 atol=1e-7 # default ArnoldiMethod tolerance is √eps ≈ 1.5e-8 for Float64
+        vals, vecs = bdg_spectrum(xh, sol.u, g, μ₀)
+        @test maximum(imag, vals) ≈ 0.3306185 atol=1e-7 # default ArnoldiMethod tolerance for Float64 is √eps ≈ 1.5e-8
 
-        # also test BdG in p-space. Skip sin case because that requires 2M+1 harmonics for dimesions to match, but the result is then inaccurate
+        # also test BdG in p-space. Skip sin case because that requires 2M+1 harmonics for dimensions to match, but the result is then inaccurate
         if basis != :sin
             xh_double = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M=2M, δ)
-            sol = find_stationary(xh_double, [𝜓₀], μ₀, [g;;])
-            vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh, sol.u, g, μ₀; nev=2size(xh.H, 1), ψ_iseven=true)
+            _, sol = find_stationary(xh_double, [𝜓₀], μ₀, [g;;])
+            vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh, sol.u, g, μ₀; ψ_iseven=true)
             @test maximum(imag, vals) ≈ 0.3306185 atol=1e-7
         end
     end
