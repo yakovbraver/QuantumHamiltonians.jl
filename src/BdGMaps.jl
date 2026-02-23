@@ -187,20 +187,70 @@ function LM._unsafe_mul!(ψ_out, bdg_map::BdGMap{T}, ψ_in::AbstractVector) wher
 end
 
 """
-Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (1-component case).
-Calculate `nev` eigenvalues of of type `whichvals`. Default is all eigenalues and `:LI` = largest imaginary.
+Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ`.
+By default, calculate all eigenvalues using a dense map.
+Alternatively, pass `nev` number of smallest-magnitude eigenvalues to calculate.
+Additionally, `storage=:sparse` or `storage=:lazy` will use sparse or matrix-free representations respectively.
 `ψ` can be a vector or a N×1 matrix (where N is the number of x points).
 The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components.
 """
 function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::Union{R, AbstractVector{<:R}};
-                      nev::Integer=2size(xh.H, 1), whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
+                      storage=:dense, nev::Integer=0, verbose::Bool=false) where {Storage, R}
     if xh.nc == 1
         bdg_map = BdGMap1comp(μ, g, xh, ψ)
     else
         μ_input = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values
         bdg_map = BdGMap(xh, ψ, g, μ_input)
     end
-    ps, info = partialschur(bdg_map; nev, which=whichvals);
-    verbose && @show info
-    return partialeigen(ps)
+    if storage == :lazy
+        if nev > 0
+            # Here we do shift-invert. "Inversion" is actually solution of a linear system. But `LS.LinearProblem` does not work with LinearMaps, so we wrap `bdg_map` in a SciMLOperator
+            bdg_op = SciMLOperators.FunctionOperator(BdGMap!, similar(ψ, 2length(ψ)); p=bdg_map, isconstant=true)
+            prob = LS.LinearProblem(bdg_op, similar(ψ, 2length(ψ)))
+            linsolve = LS.init(prob, LS.KrylovJL_BICGSTAB())
+            linmap = LinSolveLinMap{eltype(xh.H), typeof(linsolve)}(linsolve, size(bdg_map))
+            ps, info = partialschur(linmap; nev, which=:LM)
+            verbose && @show info
+            vals, vecs = partialeigen(ps)
+            return inv.(vals), vecs
+        else
+            ps, info = partialschur(bdg_map; nev, which=:LM);
+            verbose && @show info
+            return partialeigen(ps)
+        end
+    elseif storage == :sparse
+        bdg_map_sparse = sparse(bdg_map)
+        if nev > 0
+            prob = LS.LinearProblem(bdg_map_sparse, similar(bdg_map_sparse, size(bdg_map_sparse, 1)))
+            linsolve = LS.init(prob, LS.UMFPACKFactorization())
+            linmap = LinSolveLinMap{eltype(xh.H), typeof(linsolve)}(linsolve, size(bdg_map_sparse))
+            ps, info = partialschur(linmap; nev, which=:LM)
+            verbose && @show info
+            vals, vecs = partialeigen(ps)
+            return inv.(vals), vecs
+        else
+            ps, info = partialschur(linmap; nev, which=:LM)
+            verbose && @show info
+            return partialeigen(ps)
+        end
+    else # dense
+        bdg_map_dense = Matrix(bdg_map)
+        if nev > 0
+            prob = LS.LinearProblem(bdg_map_dense, similar(bdg_map_dense, size(bdg_map_dense, 1)))
+            linsolve = LS.init(prob, LS.LUFactorization())
+            linmap = LinSolveLinMap{eltype(xh.H), typeof(linsolve)}(linsolve, size(bdg_map_dense))
+            ps, info = partialschur(linmap; nev, which=:LM)
+            verbose && @show info
+            vals, vecs = partialeigen(ps)
+            return inv.(vals), vecs
+        else
+            F = eigen(bdg_map_dense)
+            return F.values, F.vectors
+        end
+    end
+end
+
+"Helepr function for wrapping `BdGMap` in a SciMLOperator. `params` will be a `BdGMap` object."
+function BdGMap!(w, v, u, params, t)
+    mul!(w, params, v)
 end
