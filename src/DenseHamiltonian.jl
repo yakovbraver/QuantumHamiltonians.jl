@@ -638,14 +638,15 @@ Find the stationary state of the Gross-Pitaevskii equation (with nonlinearity ma
 The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components.
 `solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodifferentiation will fail because it doesn't work with FFT, which we are using.
 Therefore, when passing the solver, always turn off concrete Jacobian and set linear solving to an iterative method.
+Default solver is `NewtonRaphson(;concrete_jac=false, linsolve=KrylovJL_BICGSTAB(), forcing=EisenstatWalkerForcing2())`. `EisenstatWalkerForcing2` is crucial for fast solving since otherwise linear system is solved to the same accuracy as the nonlinear system, which is reundant.
+You can turn it off for comparison. Regarding `linsolve`, you can also try `KrylovJL_GMRES`, which is sometimes faster.
 By default, `abstol` is set to the default of NonlinearSolvers.
 Note that the chemical potential rather than the wave function norm is fixed.
 Return the NonlinearSolution object. 
 """
 function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, μ::Union{R, AbstractVector{<:R}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
-                        solver=NLS.NewtonRaphson(;concrete_jac=false, linsolve=LS.KrylovJL_GMRES()), abstol=real(oneunit(T))*(eps(real(one(T))))^(4//5)) where {Storage, R, T}
+                         solver=NLS.NewtonRaphson(;concrete_jac=false, linsolve=LS.KrylovJL_BICGSTAB(), forcing=NLS.EisenstatWalkerForcing2()), abstol=real(oneunit(T))*(eps(real(one(T))))^(4//5)) where {Storage, R, T}
     (;xlims, M, basis, nc) = xh
-    D = length(xlims)
 
     # determine if equation is real
     if ψ₀ isa AbstractVector{<:Function} # `ψ₀` is a vector of analytic functions: need to sample them
@@ -703,8 +704,8 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
     end
     
-    # LinearSolve uses (in KrylovJL_GMRES) abstol ≈ 1.5e-8 (for Float64) which is enough because it's only a subproblem
-    return ft_forward.xs, NLS.solve(prob, solver; abstol, termination_condition=NLS.AbsTerminationMode())
+    # If forcing is not passed, the LinearSolve uses the global abstol (https://docs.sciml.ai/NonlinearSolve/stable/native/solvers/#NonlinearSolveFirstOrder.NewtonRaphson)
+    return ft_forward.xs, NLS.solve(prob, solver; abstol, termination_condition=NLS.AbsTerminationMode(), verbose=false)
 end
 
 """
@@ -1117,13 +1118,13 @@ end
 
 """
 Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (2-component case).
-If `nev > 0`, calculate only `nev` eigenvalues of type `whichvals` (`:LI` = largest imaginary by default).
+If `nev > 0`, calculate only `nev` eigenvalues of smallest magnitude.
 `xh` must contain half the number of harmonics of `ψ`.
 `ψ` must be a N×nc matrix, where `N` is the number of x points and `nc` is the number of components.
 The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components.
 """
 function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::Union{R, AbstractVector{<:R}};
-                             nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
+                             nev::Integer=0, verbose::Bool=false) where {Storage, R}
     (;xlims, M, basis) = xh
     μs = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values
     ψ_isreal = eltype(ψ) <: Real
@@ -1186,9 +1187,13 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
     if nev == 0
         vals, vecs = eigen(A)
     else
-        ps, info = partialschur(A; nev, which=whichvals, restarts=200)
+        prob = LS.LinearProblem(A, similar(A, size(A, 1)))
+        linsolve = LS.init(prob, LS.LUFactorization())
+        linmap = LinSolveLinMap{Complex{R}, typeof(linsolve)}(linsolve, size(A))
+        ps, info = partialschur(linmap; nev, which=:LM)
         verbose && @show info
         vals, vecs = partialeigen(ps)
+        return inv.(vals), vecs
     end
 
     return vals, vecs
