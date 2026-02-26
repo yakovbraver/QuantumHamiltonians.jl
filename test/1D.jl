@@ -44,7 +44,7 @@ end
     B = 0.3 |> Float64
     β = 0.5 |> Float64
     δ = √0.5 |> Float64
-
+basis = :sin
     for basis in (:cis, :sin, :cos)
         p = 8
         M = basis == :cis ? (p == 7 ? 62 : p == 8 ? 122 : 247) :
@@ -57,7 +57,12 @@ end
         𝜓₀(x) = sech(x)
         g = -1 |> Float64
         μ₀ = -1 |> Float64
-        _, sol = find_stationary(xh, [𝜓₀], μ₀, [g;;])
+        if basis == :sin # for sin, default solver (BICGSTAB + EisenstatWalkerForcing2) fails (converges to some noise). Must either remove forcing and/or change to GMRES
+            _, sol = find_stationary(xh, [𝜓₀], [g;;], μ₀; solver=XSpaceHamiltonians.NLS.NewtonRaphson(;linsolve=XSpaceHamiltonians.LS.KrylovJL_BICGSTAB()))
+        else
+            _, sol = find_stationary(xh, [𝜓₀], [g;;], μ₀)
+        end
+        @test Int(sol.retcode) == 1 # test for success
         E, μ = get_E_μ(xh, sol.u, [g;;], v_is_pspace=false) .|> real
         @test E ≈ -0.1581185113871 atol=1e-12 # default NonlinearSolve tolerance for Float64 is ≈ 3e-13
 
@@ -94,7 +99,7 @@ end
     μs = [μ₀, (μ₀+η^2)/2] # actual chemical potentials of the two components
 
     # Get stationary state starting from a basic tanh-sech trial
-    xs, sol = find_stationary(xh, [tanh, sech], μs, g; abstol=1e-9)
+    xs, sol = find_stationary(xh, [tanh, sech], g, μs; abstol=1e-9)
     @test Int(sol.retcode) == 1 # test for success
     ψ_db = sol.u
 

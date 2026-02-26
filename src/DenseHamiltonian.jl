@@ -632,20 +632,22 @@ end
 
 """
 Find the stationary state of the Gross-Pitaevskii equation (with nonlinearity matrix `g`) starting from the trial function `ψ₀`.
+Namely, solve the system
+    (𝐻𝑢)ᵢ + (∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² - 𝜇ᵢ) 𝑢ᵢ = 0
 `ψ₀` can be:
     * a vector of x-space analytic functions (one for each component)
     * a vector of vectors (one for each component) representing discretised x-space functions
-The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components.
+The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components. Note that the chemical potential rather than the wave function norm is fixed.
 `solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodifferentiation will fail because it doesn't work with FFT, which we are using.
-Therefore, when passing the solver, always turn off concrete Jacobian and set linear solving to an iterative method.
-Default solver is `NewtonRaphson(;concrete_jac=false, linsolve=KrylovJL_BICGSTAB(), forcing=EisenstatWalkerForcing2())`. `EisenstatWalkerForcing2` is crucial for fast solving since otherwise linear system is solved to the same accuracy as the nonlinear system, which is reundant.
-You can turn it off for comparison. Regarding `linsolve`, you can also try `KrylovJL_GMRES`, which is sometimes faster.
-By default, `abstol` is set to the default of NonlinearSolvers.
-Note that the chemical potential rather than the wave function norm is fixed.
-Return the NonlinearSolution object. 
+Therefore, when passing the solver, always turn off concrete Jacobian and/or set linear solving to an iterative method.
+Default solver is `NewtonRaphson(;linsolve=KrylovJL_BICGSTAB(), forcing=EisenstatWalkerForcing2())`.
+`EisenstatWalkerForcing2` is crucial for fast solving since otherwise linear system is solved to the same accuracy as the nonlinear system, which is often (but not always!) reundant.
+Try turning it off if you encounter problems. Regarding `linsolve`, you can also try `KrylovJL_GMRES`, which is sometimes faster.
+Any additional keyword arguments will be passed directly to `NonlinearSolve.solve()`.
+Return the tuple consisting of the coordinates and the NonlinearSolution object.
 """
-function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, μ::Union{R, AbstractVector{<:R}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
-                         solver=NLS.NewtonRaphson(;concrete_jac=false, linsolve=LS.KrylovJL_BICGSTAB(), forcing=NLS.EisenstatWalkerForcing2()), abstol=real(oneunit(T))*(eps(real(one(T))))^(4//5)) where {Storage, R, T}
+function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, g::AbstractMatrix{R}, μ::Union{R, AbstractVector{<:R}};
+                         solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_BICGSTAB(), forcing=NLS.EisenstatWalkerForcing2()), kwargs...) where {Storage, R, T}
     (;xlims, M, basis, nc) = xh
 
     # determine if equation is real
@@ -703,9 +705,11 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         nlfunction = NLS.NonlinearFunction(gpe_real_xspace!; jvp=jvp_gpe_real_xspace!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
     end
-    
-    # If forcing is not passed, the LinearSolve uses the global abstol (https://docs.sciml.ai/NonlinearSolve/stable/native/solvers/#NonlinearSolveFirstOrder.NewtonRaphson)
-    return ft_forward.xs, NLS.solve(prob, solver; abstol, termination_condition=NLS.AbsTerminationMode(), verbose=false)
+
+    # we will pass on user's kwargs to NLS.solve, but we override some of NLS's defaults. User's kwargs will in turn override ours.
+    finalkwargs = (;verbose=false, termination_condition=NLS.AbsTerminationMode(), kwargs...)
+        
+    return ft_forward.xs, NLS.solve(prob, solver; finalkwargs...)
 end
 
 """
@@ -748,7 +752,7 @@ end
 
 """
 Update the x-space 𝑢′ vector of the multi-component GPE
-    𝑢′ᵢ = (𝐻𝑢)ᵢ + (∑ⱼ 𝑔ᵢⱼ𝑢ⱼ² - 𝜇)𝑢ᵢ
+    𝑢′ᵢ = (𝐻𝑢)ᵢ + (∑ⱼ 𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ)𝑢ᵢ
 Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝑢 is real in x-space.
 """
@@ -789,7 +793,7 @@ end
 
 """
 Describes the action of the Jacobian of the multi-component GPE on an x-space vector 𝑣:
-    (𝐽𝑣)ᵢ = (𝐻𝑢)ᵢ + 2𝑢ᵢ∑ⱼ𝑔ᵢⱼ𝑢ⱼ𝑣ⱼ + (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇)𝑣ᵢ   [∑ⱼ excludes i]
+    (𝐽𝑣)ᵢ = (𝐻𝑢)ᵢ + 2𝑢ᵢ∑ⱼ𝑔ᵢⱼ𝑢ⱼ𝑣ⱼ + (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ)𝑣ᵢ   [∑ⱼ excludes i]
 Used for finding the steady state with nonlinear solve.
 """
 function jvp_gpe_real_xspace!(Jv, v, u, params)
