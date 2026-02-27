@@ -51,7 +51,9 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
         H_isreal &= all(𝑈_iseven[𝑈 .!== nothing])
     end
 
-    B = basis == :cis ? (2M+1)^D : M^D # size of each Hamiltonian block
+    # size of each Hamiltonian block
+    B = basis == :cis ? (2M+1)^D :
+        basis == :sin ?      M^D : (M+1)^D
 
     T = H_isreal ? R : Complex{R} # type of elements of the Hamiltonian
     H_blocks = Matrix{SparseMatrixCSC{T, Int64}}(undef, nc, nc) # temporary Hamiltonian as an `nc`-by-`nc` matrix of sparse blocks

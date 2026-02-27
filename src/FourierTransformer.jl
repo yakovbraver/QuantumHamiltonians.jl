@@ -231,7 +231,7 @@ function fft_to_matrix(ft::FourierTransformer{R,T}; makesparse::Bool=false, make
             fft_to_matrix_sparse!(rows, cols, vals, ft)
             A = sparse(rows, cols, vals)
         else
-            error("Sparse not available for basis = $basis. Only available for basis = :cis.")
+            error("Sparse fft_to_matrix not available for basis = $basis. Only available for basis = :cis.")
         end
     else # dense
         A = Matrix{A_type}(undef, B, B)

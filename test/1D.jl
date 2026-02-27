@@ -44,7 +44,7 @@ end
     B = 0.3 |> Float64
     β = 0.5 |> Float64
     δ = √0.5 |> Float64
-basis = :sin
+
     for basis in (:cis, :sin, :cos)
         p = 8
         M = basis == :cis ? (p == 7 ? 62 : p == 8 ? 122 : 247) :
