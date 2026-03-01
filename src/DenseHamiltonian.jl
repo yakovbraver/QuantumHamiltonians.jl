@@ -225,7 +225,7 @@ end
 "Convenience caller for the 1-component case, where `ψ₀` is an analytic function or a vector representing discretised functions, `g` is a number, and `ψ₀_iseven` is a Bool."
 function propagate(xh::XSpaceHamiltonian{Storage, R}, ψ₀::Union{Function, AbstractVector}, g::R=zero(R);
                    ψ₀_iseven::Bool=false, T_max::R, dt::R, itime::Bool=false,
-                   solver=(iszero(g) ? DE.LinearExponential() : itime ? DE.LawsonEuler() : DE.ETDRK4()), nsaves::Integer=0) where {Storage, R}
+                   solver=(iszero(g) ? ODE.LinearExponential() : itime ? ODE.LawsonEuler() : ODE.ETDRK4()), nsaves::Integer=0) where {Storage, R}
     propagate(xh, [ψ₀], [g;;]; ψ₀_iseven=[ψ₀_iseven], T_max, dt, itime, solver, nsaves)
 end
 
@@ -246,7 +246,7 @@ Return the DifferentialEquations solution object.
 """
 function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
                    ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), T_max::R, dt::R, itime::Bool=false,
-                   solver=(iszero(g) ? DE.LinearExponential() : itime ? DE.LawsonEuler() : DE.ETDRK4()), nsaves::Integer=0) where {Storage, R, T}
+                   solver=(iszero(g) ? ODE.LinearExponential() : itime ? ODE.LawsonEuler() : ODE.ETDRK4()), nsaves::Integer=0) where {Storage, R, T}
     (;xlims, L, M, basis, nc) = xh
     D = length(xlims)
     # size of each Hamiltonian block
@@ -315,7 +315,7 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
     H_op = all(isnothing.(xh.𝑈)) && all(isnothing.(xh.𝐴)) ? SciMLOperators.MatrixOperator(Diagonal(H)) : SciMLOperators.MatrixOperator(H)
 
     if iszero(g) # nonlinearity absent
-        prob = DE.ODEProblem(H_op, ψ₀ₚ, tspan)
+        prob = ODE.ODEProblem(H_op, ψ₀ₚ, tspan)
     else # nonlinearity present
         ψ₀ₚ_block = @view ψ₀ₚ[1:B] # for constructing FFT plans and various buffers
         if basis == :cis
@@ -324,11 +324,11 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
             fft_plan! = FFTW.plan_fft!(ψ₀ₚ_block) # then will use this in-place on `du`
             if nc == 1 # the 1-component case can be treated more efficiently
                 params = (G_input, bfft_plan, fft_plan!)
-                prob = DE.SplitODEProblem(H_op, gpe_cis_realsin_1comp!, ψ₀ₚ, tspan, params)
+                prob = ODE.SplitODEProblem(H_op, gpe_cis_realsin_1comp!, ψ₀ₚ, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
             else
                 buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
                 params = (G, B, nc, buff, similar(ψ₀ₚ_block), bfft_plan, fft_plan!, basis)
-                prob = DE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
+                prob = ODE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
             end
         else # basis == :sin || basis == :cos
             ft_type = basis == :sin ? FFTW.RODFT00 : FFTW.REDFT00
@@ -338,28 +338,28 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
                 if nc == 1 # the 1-component case can be treated more efficiently
                     if basis == :sin
                         params = (G_input, rft_plan, rft_plan!)
-                        prob = DE.SplitODEProblem(H_op, gpe_cis_realsin_1comp!, ψ₀ₚ, tspan, params)
+                        prob = ODE.SplitODEProblem(H_op, gpe_cis_realsin_1comp!, ψ₀ₚ, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
                     else # basis == :cos
                         params = (G_input, similar(ψ₀ₚ_block), rft_plan, rft_plan!)
-                        prob = DE.SplitODEProblem(H_op, gpe_realcos_1comp!, ψ₀ₚ, tspan, params)
+                        prob = ODE.SplitODEProblem(H_op, gpe_realcos_1comp!, ψ₀ₚ, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
                     end
                 else # arbitrary number of components
                     buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
                     params = (G, B, nc, buff, similar(ψ₀ₚ_block), rft_plan, rft_plan!, basis)
-                    prob = DE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
+                    prob = ODE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
                 end
             else # solving complex equation
                 rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type)
                 if nc == 1
                     params = (G_input, similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
-                    prob = DE.SplitODEProblem(H_op, gpe_complexsincos_1comp!, ψ₀ₚ, tspan, params)
+                    prob = ODE.SplitODEProblem(H_op, gpe_complexsincos_1comp!, ψ₀ₚ, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
                 else
                     # using vectors of vectors instead of contiguous vectors is ~10% faster and x1000 less memory
                     u_re = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
                     u_im = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
                     u² = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
                     params = (G_input, B, nc, u_re, u_im, u², similar(ψ₀ₚ_block, R), rft_plan!, basis)
-                    prob = DE.SplitODEProblem(H_op, gpe_complexsincos!, ψ₀ₚ, tspan, params)
+                    prob = ODE.SplitODEProblem(H_op, gpe_complexsincos!, ψ₀ₚ, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
                 end
             end
         end
@@ -369,14 +369,14 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
         # prepare the callback that remormalises wf at every step
         condition = Returns(true) # condition is checked at the end of each time step; we want this to be always true
         affect!(integrator) = normalize!(integrator.u)
-        cb = DE.DiscreteCallback(condition, affect!) # will save every step before and after the callback (`save_positions=(true, true)`); docs say this is mandatory when change of `u` is discontinuous
-        sol = DE.solve(prob, solver; callback=cb, save_everystep=false, save_start=true, dt)
+        cb = ODE.DiscreteCallback(condition, affect!) # will save every step before and after the callback (`save_positions=(true, true)`); docs say this is mandatory when change of `u` is discontinuous
+        sol = ODE.solve(prob, solver; callback=cb, save_everystep=false, save_start=true, dt)
         normalize!(sol.u[end]) # the final step is saved only before the callback, so normalise manually
         return sol
     else
         # when `saveat` is set, saving happens at points `tspan[1]:saveat:tspan[2]`
         saveat = nsaves == 0 ? T_max+1 : (tspan[2] - tspan[1]) / nsaves
-        return DE.solve(prob, solver; save_everystep=false, save_start=true, dt, saveat)
+        return ODE.solve(prob, solver; save_everystep=false, save_start=true, dt, saveat)
     end
 end
 
@@ -704,12 +704,12 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         μ_input = μ isa R ? fill(μ, nc) : μ # if only one μ is passed, then construct a vector of same values
         params = (xh.H, μ_input, g, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward)
         nlfunction = NLS.NonlinearFunction(gpe_real_xspace!; jvp=jvp_gpe_real_xspace!)
-        prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
+        prob = NLS.NonlinearProblem(nlfunction, ψ_input, params) # use sepcialisation `NonlinearProblem{true, SciMLBase.FullSpecialize}` for production!
     end
 
     # we will pass on user's kwargs to NLS.solve, but we override some of NLS's defaults. User's kwargs will in turn override ours.
     finalkwargs = (;verbose=false, termination_condition=NLS.AbsNormSafeBestTerminationMode(Base.Fix1(maximum, abs)), kwargs...)
-        
+    
     return ft_forward.xs, NLS.solve(prob, solver; finalkwargs...)
 end
 
@@ -933,7 +933,7 @@ function find_stationary_pspace(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Uni
         else
             buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
             params = (G, B, nc, buff, similar(ψ₀ₚ_block), bfft_plan!, fft_plan!, basis)
-            # prob = DE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
+            # prob = ODE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
         end
     else # basis == :sin || basis == :cos
         ft_type = basis == :sin ? FFTW.RODFT00 : FFTW.REDFT00
@@ -947,25 +947,25 @@ function find_stationary_pspace(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Uni
                     prob = NLS.NonlinearProblem(nlfunction, ψ₀ₚ, params)
                 else # basis == :cos
                     params = (G_input, similar(ψ₀ₚ_block), rft_plan, rft_plan!)
-                    # prob = DE.SplitODEProblem(H_op, gpe_realcos_1comp!, ψ₀ₚ, tspan, params)
+                    # prob = ODE.SplitODEProblem(H_op, gpe_realcos_1comp!, ψ₀ₚ, tspan, params)
                 end
             else # arbitrary number of components
                 buff = [similar(ψ₀ₚ_block) for _ in 1:nc]
                 params = (G, B, nc, buff, similar(ψ₀ₚ_block), rft_plan, rft_plan!, basis)
-                # prob = DE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
+                # prob = ODE.SplitODEProblem(H_op, gpe_cis_realsincos!, ψ₀ₚ, tspan, params)
             end
         else # solving complex equation
             rft_plan! = FFTW.plan_r2r!(real(ψ₀ₚ_block), ft_type)
             if nc == 1
                 params = (G_input, similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), similar(ψ₀ₚ_block, R), rft_plan!, basis)
-                # prob = DE.SplitODEProblem(H_op, gpe_complexsincos_1comp!, ψ₀ₚ, tspan, params)
+                # prob = ODE.SplitODEProblem(H_op, gpe_complexsincos_1comp!, ψ₀ₚ, tspan, params)
             else
                 # using vectors of vectors instead of contiguous vectors is ~10% faster and x1000 less memory
                 u_re = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
                 u_im = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
                 u² = [similar(ψ₀ₚ_block, R) for _ in 1:nc]
                 params = (G_input, B, nc, u_re, u_im, u², similar(ψ₀ₚ_block, R), rft_plan!, basis)
-                # prob = DE.SplitODEProblem(H_op, gpe_complexsincos!, ψ₀ₚ, tspan, params)
+                # prob = ODE.SplitODEProblem(H_op, gpe_complexsincos!, ψ₀ₚ, tspan, params)
             end
         end
     end

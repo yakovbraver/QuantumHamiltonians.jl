@@ -1,7 +1,7 @@
 module XSpaceHamiltonians
 
 import FFTW
-import DifferentialEquations as DE
+import OrdinaryDiffEq as ODE
 import SciMLOperators
 using ArnoldiMethod: partialschur, partialeigen
 using LinearAlgebra: Hermitian, Diagonal, diag, diagind, diagview, factorize, eigen, ldiv!, dot, mul!, normalize!, copy_adjoint!

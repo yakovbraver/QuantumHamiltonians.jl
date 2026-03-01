@@ -118,7 +118,7 @@ end
     nsaves = 2
     T_max = 50 |> Float
     dt = 1e-3 |> Float
-    sol = propagate(xh, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.DE.ETDRK2())
+    sol = propagate(xh, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.ODE.ETDRK2())
     @test Int(sol.retcode) == 1 # test for success
 
     # test energy conservation
