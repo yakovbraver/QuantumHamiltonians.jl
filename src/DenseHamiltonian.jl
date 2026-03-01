@@ -829,14 +829,14 @@ function jvp_gpe_real_xspace!(Jv, v, u, params)
         j′ = i == 1 ? 2 : 1 # determine the first allowed index of the sum (1 by default, but 2 if i is 1)
         @turbo @. u²_sum = g[i,j′] * uⱼvⱼ[j′] # treat the first term of the sum separately to initialise `u²_sum`
         for j in j′+1:nc # add the remaining terms
-            j == i || g[i,j] == 0 && continue
+            (j == i || g[i,j] == 0) && continue
             @turbo @. u²_sum += g[i,j] * uⱼvⱼ[j]
         end
         @turbo @. Jvᵢ += 2uᵢ * u²_sum
         # add (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇)𝑣ᵢ to `Jvᵢ`
         @turbo @. u²_sum = 3g[i,i] * u²[i]
         for j in 1:nc
-            j == i || g[i,j] == 0 && continue
+            (j == i || g[i,j] == 0) && continue
             @turbo @. u²_sum += g[i,j] * u²[j]
         end
         @turbo @. Jvᵢ += (u²_sum - μ[i]) * vᵢ
