@@ -638,11 +638,12 @@ Namely, solve the system
     * a vector of x-space analytic functions (one for each component)
     * a vector of vectors (one for each component) representing discretised x-space functions
 The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components. Note that the chemical potential rather than the wave function norm is fixed.
-`solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodifferentiation will fail because it doesn't work with FFT, which we are using.
+`solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodiff will fail because it doesn't work with FFT, which we are using.
 Therefore, when passing the solver, always turn off concrete Jacobian and/or set linear solving to an iterative method.
 Default solver is `NewtonRaphson(;linsolve=KrylovJL_BICGSTAB(), forcing=EisenstatWalkerForcing2())`.
 `EisenstatWalkerForcing2` is crucial for fast solving since otherwise linear system is solved to the same accuracy as the nonlinear system, which is often (but not always!) reundant.
 Try turning it off if you encounter problems. Regarding `linsolve`, you can also try `KrylovJL_GMRES`, which is sometimes faster.
+Default termination mode is `AbsNormSafeBestTerminationMode` with L-inf norm.
 Any additional keyword arguments will be passed directly to `NonlinearSolve.solve()`.
 Return the tuple consisting of the coordinates and the NonlinearSolution object.
 """
@@ -707,7 +708,7 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
     end
 
     # we will pass on user's kwargs to NLS.solve, but we override some of NLS's defaults. User's kwargs will in turn override ours.
-    finalkwargs = (;verbose=false, termination_condition=NLS.AbsTerminationMode(), kwargs...)
+    finalkwargs = (;verbose=false, termination_condition=NLS.AbsNormSafeBestTerminationMode(Base.Fix1(maximum, abs)), kwargs...)
         
     return ft_forward.xs, NLS.solve(prob, solver; finalkwargs...)
 end

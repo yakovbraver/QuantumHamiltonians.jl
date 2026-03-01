@@ -103,10 +103,10 @@ end
     @test Int(sol.retcode) == 1 # test for success
     ψ_db = sol.u
 
-    # Test against analytical solution
-    𝛹 = [x -> √μ₀ * tanh(D*x), x -> η * sech(D*x)]
+    # Test against analytical solution (testing against abs because might converge to a different sign)
+    𝛹 = [x -> abs( √μ₀ * tanh(D*x) ), x -> abs( η * sech(D*x) )]
     Ψ_exact = [𝛹[1].(xs); 𝛹[2].(xs)] |> vec
-    @test sum(abs, Ψ_exact - ψ_db) / length(ψ_db) < 1e-8
+    @test sum(abs, Ψ_exact - abs.(ψ_db)) / length(ψ_db) < 1e-8
 
     # Calculate BdG spectrum
     vals, vecs = bdg_spectrum(xh, ψ_db, g, μs)
