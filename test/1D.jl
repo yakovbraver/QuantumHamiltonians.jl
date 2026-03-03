@@ -58,12 +58,12 @@ end
         g = -1 |> Float64
         μ₀ = -1 |> Float64
         if basis == :sin # for sin, default solver (BICGSTAB + EisenstatWalkerForcing2) fails (converges to some noise). Must either remove forcing and/or change to GMRES
-            _, sol = find_stationary(xh, [𝜓₀], [g;;], μ₀; solver=XSpaceHamiltonians.NLS.NewtonRaphson(;linsolve=XSpaceHamiltonians.LS.KrylovJL_BICGSTAB()))
+            _, sol = find_stationary(xh, [𝜓₀], [g;;], [μ₀]; solver=XSpaceHamiltonians.NLS.NewtonRaphson(;linsolve=XSpaceHamiltonians.LS.KrylovJL_BICGSTAB()), abstol=5e-13)
         else
-            _, sol = find_stationary(xh, [𝜓₀], [g;;], μ₀)
+            _, sol = find_stationary(xh, [𝜓₀], [g;;], [μ₀]; abstol=5e-13)
         end
         @test Int(sol.retcode) == 1 # test for success
-        E, μ = get_E_μ(xh, sol.u, [g;;], v_is_pspace=false) .|> real
+        E = get_Eμη(xh, sol.u, [g;;], v_is_pspace=false)[1]
         @test E ≈ -0.1581185113871 atol=1e-12 # default NonlinearSolve tolerance for Float64 is ≈ 3e-13
 
         # Calculate BdG and test relevant eigenvalues (calculating all eigenvalues here)
@@ -98,6 +98,8 @@ end
     g = ones(Float, 2, 2)
     μs = [μ₀, (μ₀+η^2)/2] # actual chemical potentials of the two components
 
+    ### Testing for fixed 𝜇's
+
     # Get stationary state starting from a basic tanh-sech trial
     xs, sol = find_stationary(xh, [tanh, sech], g, μs; abstol=1e-9)
     @test Int(sol.retcode) == 1 # test for success
@@ -106,6 +108,20 @@ end
     # Test against analytical solution (testing against abs because might converge to a different sign)
     𝛹 = [x -> abs( √μ₀ * tanh(D*x) ), x -> abs( η * sech(D*x) )]
     Ψ_exact = [𝛹[1].(xs); 𝛹[2].(xs)] |> vec
+    @test sum(abs, Ψ_exact - abs.(ψ_db)) / length(ψ_db) < 1e-8
+
+    ### Testing for fixed 𝑁ᵢ's
+
+    natoms = get_Eμη(xh, ψ_db, [g;;], v_is_pspace=false)[3] # get numbers of atoms from the above state
+    # Get stationary state starting from a basic tanh-sech trial, this time for fixed number of atoms and using a guess for 𝜇 given by [2, 1]
+    xs, sol = find_stationary(xh, [tanh, sech], [g;;], [2.0, 1.0], natoms; abstol=1e-9)
+    @test Int(sol.retcode) == 1 # test for success
+    # check chemical potentials contained in the last two elements of sol.u
+    @test sol.u[end-1] ≈ μs[1] atol=1e-9
+    @test sol.u[end] ≈ μs[2] atol=1e-9
+    ψ_db = sol.u[1:end-2]
+
+    # Again test against analytical solution (testing against abs because might converge to a different sign)
     @test sum(abs, Ψ_exact - abs.(ψ_db)) / length(ψ_db) < 1e-8
 
     # Calculate BdG spectrum
@@ -122,8 +138,8 @@ end
     @test Int(sol.retcode) == 1 # test for success
 
     # test energy conservation
-    E1, _ = get_E_μ(xh, sol.u[1], g)
-    E2, _ = get_E_μ(xh, sol.u[end], g)
+    E1 = get_Eμη(xh, sol.u[1], g)[1]
+    E2 = get_Eμη(xh, sol.u[end], g)[1]
     @test abs(E2 - E1) < 1e-5
 
     # test that density remains the same

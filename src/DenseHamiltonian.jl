@@ -571,9 +571,9 @@ end
 For a state `v`, return `E, μ, η`, where `E` is mean energy per particle, μ is a vector of chemical potentials of each compoenent,
 and `η` is a vector of relative particle numbers of each compoenent.
 `v_is_pspace=true` means that `v` is given in p-space, and x-space otherwise.
-By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider the decaying state, whereby imaginary part is important.
+By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider a decaying state, whereby imaginary part is important.
 """
-function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc);
+function get_Eμη(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc);
                  v_is_pspace=true, makereal=true) where {Storage, R}
     (;xlims, M, nc, basis) = xh
     B = size(xh.H, 1) ÷ nc  
@@ -640,11 +640,19 @@ end
 
 """
 Find the stationary state of the Gross-Pitaevskii equation (with nonlinearity matrix `g`) starting from the initial guess `ψ₀`.
-Namely, solve the system
+Namely, solve the 𝑛-component system
     (𝐻𝑢)ᵢ + (∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² - 𝜇ᵢ) 𝑢ᵢ = 0
-By default, `natoms=nothing` meaning that number of atoms is not fixed, and `μ` is treated as a vector of fixed 𝜇ᵢ's.
-Alternatively, you can set `natoms` to a vector of number of atoms in each component. Then `μ` will be treated as the initial guesses of 𝜇ᵢ's, and the system will be augmented with equations
-    ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ = 0
+The solver support 3 modes:
+    1. (Default). Number of atoms is not fixed, chemical potentials are fixed.
+        Then `natoms=nothing`, while `μ` is a vector of 𝜇ᵢ's of each component.
+    2. Number of atoms in each component is fixed, chemical potentials are not fixed.
+        Then `natoms` is a vector of number of atoms in each component, while `μ` is a vector of guesses of 𝜇ᵢ of each component.
+        The system is augmented with 𝑛 equations
+            ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ = 0
+    3. Total number of atoms is fixed, chemical potentials are not fixed (but will be the same for all components).
+        Then `natoms` is the total number of atoms (a scalar), while `μ` is an initial guess of 𝜇 (also a scalar).
+        The system is augmented with the equation
+            ∑ᵢ∫𝑢ᵢ²d𝑥 - 𝑁 = 0
 `ψ₀` can be:
     * a vector of x-space analytic functions (one for each component)
     * a vector of vectors (one for each component) representing discretised x-space functions
@@ -658,7 +666,7 @@ Any additional keyword arguments will be passed directly to `NonlinearSolve.solv
 Return the tuple consisting of the coordinates and the NonlinearSolution object.
 """
 function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}},
-                         g::AbstractMatrix{R}, μ::AbstractVector{<:R}, natoms::Union{Nothing, AbstractVector{<:R}}=nothing;
+                         g::AbstractMatrix{R}, μ::Union{R, AbstractVector{<:R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing;
                          solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_BICGSTAB(), forcing=NLS.EisenstatWalkerForcing2()), kwargs...) where {Storage, R, T}
     (;xlims, M, basis, nc) = xh
 
@@ -673,7 +681,8 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
     ft_backward = FourierTransformer(xlims, M; basis, target_real=eq_isreal, target_rank=1, isforward=false) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
     nx = length(ft_forward.xs)
     
-    # prepare the input wf `ψ_input`. By default, its length is `nc*nx`, but if `natoms` is passed then we need additional `nc` elements to represent the μ's that are being optimised
+    # Prepare the input wf `ψ_input`. By default, its length is `nc*nx`, but if `natoms` is passed then we need additional `nc` elements to represent the μ's that are being optimised.
+    # Even if only total 𝑁 is fixed (and hence there is only one 𝜇 to be optimised), we still add `nc` elements to keep the general structure
     if ψ₀ isa AbstractVector{<:Function} # `ψ₀` is a vector of analytic functions: need to sample them
         if eq_isreal
             # sample each function in ψ₀ at points `ft_forward.xs`
@@ -694,7 +703,7 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         end
     end
     if !isnothing(natoms)
-        ψ_input[end-nc+1:end] .= μ # use the passed `μ` as the initial guess
+        ψ_input[end-nc+1:end] .= μ # use the passed `μ` as the initial guess (a single number if total 𝑁 is fixed or a vector otherwise; broadcast handles both cases)
     end
 
     # prepare the buffers needed in momentum space
@@ -715,7 +724,11 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         u²_sum = Vector{R}(undef, B)
         u² = [similar(u²_sum) for _ in 1:nc]
         uⱼvⱼ = [similar(u²_sum) for _ in 1:nc]
-        μs_or_Ns = isnothing(natoms) ? μ : natoms # `isnothing(natoms)` means number of atoms is not fixed, but chemical potentials are; pass them. Otherwise, pass the fixed numbers of atoms
+        if isnothing(natoms) # = number of atoms are not fixed, but chemical potentials are
+            μs_or_Ns = μ # so just pass the fixed chemical potentials
+        else # total number of atoms or number of atoms in each component is fixed
+            μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
+        end
         params = (xh.H, g, μs_or_Ns, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward)
         nlfunction = NLS.NonlinearFunction(gpe_real_xspace!; jvp=jvp_gpe_real_xspace!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params) # use sepcialisation `NonlinearProblem{true, SciMLBase.FullSpecialize}` for production!
@@ -774,9 +787,9 @@ Suitable for the case when 𝑢 is real in x-space.
 """
 function gpe_real_xspace!(du, u, params)
     H, g, μs_or_Ns, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward = params
-    # make μ point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
-    μs_arefixed = length(u) == B*nc
-    μ = μs_arefixed ? μs_or_Ns : @view u[end-nc+1:end]
+    # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
+    μs_arefixed = length(u) == B*nc # is 𝜇's are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇's
+    μ = μs_arefixed ? μs_or_Ns : @view u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
     ### Linear part
     # transform `u` to p-space, write into `uₚ_buff`
     @views for i in 1:nc
@@ -809,9 +822,18 @@ function gpe_real_xspace!(du, u, params)
     end
     if !μs_arefixed # then update last `nc` elements of `du` representing residuals ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ. In this case, `μs_or_Ns` contains 𝑁ᵢ's.
         dx = ft_forward.xs[2] - ft_forward.xs[1]
-        for i in 1:nc
-            du[end-nc+i] = sum(u²[i])*dx - μs_or_Ns[i]
-            ft_forward.basis == :cos && (du[end-nc+i] -= (u²[i][end] + u²[i][1])*dx/2)
+        if μs_or_Ns isa Number # then only total number of atoms is fixed
+            u²_sum = zero(μs_or_Ns) # for storing the sum ∑ᵢ∫𝑢ᵢ²d𝑥
+            for i in 1:nc
+                u²_sum += sum(u²[i])*dx
+                ft_forward.basis == :cos && (u²_sum[end-nc+i] -= (u²[i][end] + u²[i][1])*dx/2)
+            end
+            du[end-nc+1:end] .= u²_sum - μs_or_Ns # place the sum in the residuals array; we have `nc` identical elements to keep the general structure
+        else # numbers of atoms in each compoenent are fixed
+            for i in 1:nc
+                du[end-nc+i] = sum(u²[i])*dx - μs_or_Ns[i]
+                ft_forward.basis == :cos && (du[end-nc+i] -= (u²[i][end] + u²[i][1])*dx/2)
+            end
         end
     end
     return
@@ -824,13 +846,16 @@ If the numbers of atoms in each component are fixed, then last 𝑛 elements of 
     (𝐽𝑣)ᵢ = (𝐻𝑣)ᵢ + 2𝑢ᵢ∑ⱼ𝑔ᵢⱼ𝑢ⱼ𝑣ⱼ - 𝑀ᵢ𝑢ᵢ + (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ)𝑣ᵢ   [∑ⱼ excludes i]
 where 𝑀ᵢ are 𝑛 last elements of `v`, 𝜇ᵢ's are 𝑛 last elements of `u`, and additional 𝑛 equations read
     𝐽𝑀ᵢ = 2∫d𝑥 𝑢ᵢ𝑣ᵢ
+If the total number of atoms is fixed, then there is a single 𝜇, so that 𝑛 last elements of `v` are indentical, and 𝑛 last elements of `u` also.
+Equations (𝐽𝑣)ᵢ are the same, while the additional 𝑛 (identical) equations read
+    𝐽𝑀ᵢ = 2∑ᵢ∫d𝑥 𝑢ᵢ𝑣ᵢ
 Used for finding the steady state with nonlinear solve.
 """
 function jvp_gpe_real_xspace!(Jv, v, u, params)
     H, g, μs_or_Ns, B, nc, vₚ_buff, vₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward = params
     # make μ point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
-    μs_arefixed = length(u) == B*nc
-    μ = μs_arefixed ? μs_or_Ns : @view u[end-nc+1:end]
+    μs_arefixed = length(u) == B*nc # is 𝜇's are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇's
+    μ = μs_arefixed ? μs_or_Ns : @view u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
     ### Linear part
     # transform `v` to p-space, write into `vₚ_buff`
     @views for i in 1:nc
@@ -877,9 +902,18 @@ function jvp_gpe_real_xspace!(Jv, v, u, params)
     end
     if !μs_arefixed # then update last `nc` elements of `Jv` corresponding to the chemical potentials. In this case, `μs_or_Ns` contains 𝑁ᵢ's.
         dx = ft_forward.xs[2] - ft_forward.xs[1]
-        for i in 1:nc
-            Jv[end-nc+i] = 2sum(uⱼvⱼ[i])*dx
-            ft_forward.basis == :cos && (Jv[end-nc+i] -= (uⱼvⱼ[i][end] + uⱼvⱼ[i][1])*dx) # no division by 2 because of the overall factor in the line above
+        if μs_or_Ns isa Number # then only total number of atoms is fixed
+            uᵢvᵢ_sum = zero(μs_or_Ns) # for storing the sum 2∑ᵢ∫𝑢ᵢvᵢd𝑥
+            for i in 1:nc
+                uᵢvᵢ_sum += 2sum(uⱼvⱼ[i])*dx
+                ft_forward.basis == :cos && (uᵢvᵢ_sum -= (uⱼvⱼ[i][end] + uⱼvⱼ[i][1])*dx) # no division by 2 because of the overall factor in the line above
+            end
+            Jv[end-nc+1:end] .= uᵢvᵢ_sum # put the sum into place; we have `nc` identical elements to keep the general structure
+        else # numbers of atoms in each compoenent are fixed
+            for i in 1:nc
+                Jv[end-nc+i] = 2sum(uⱼvⱼ[i])*dx
+                ft_forward.basis == :cos && (Jv[end-nc+i] -= (uⱼvⱼ[i][end] + uⱼvⱼ[i][1])*dx) # no division by 2 because of the overall factor in the line above
+            end
         end
     end
     return
