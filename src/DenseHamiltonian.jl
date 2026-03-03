@@ -568,12 +568,15 @@ function u∑gu²_real!(u_re, u_im, u², u²_sum, g::Number, nc) # `u²_sum` is 
 end
 
 """
-Return mean energy (per particle) and chemical potential for a state `v`.
+For a state `v`, return `E, μ, η`, where `E` is mean energy per particle, μ is a vector of chemical potentials of each compoenent,
+and `η` is a vector of relative particle numbers of each compoenent.
 `v_is_pspace=true` means that `v` is given in p-space, and x-space otherwise.
+By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider the decaying state, whereby imaginary part is important.
 """
-function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc); v_is_pspace=true) where {Storage, R}
+function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc);
+                 v_is_pspace=true, makereal=true) where {Storage, R}
     (;xlims, M, nc, basis) = xh
-    B = length(v) ÷ nc  
+    B = size(xh.H, 1) ÷ nc  
      
     if v_is_pspace # if `v` is in p-space, then make `vₚ` point to `v`
         vₚ = v
@@ -588,15 +591,20 @@ function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}
             fft_to_vector!(vₚ[window], ft)
         end
     end
-    E = dot(vₚ, xh.H, vₚ)
-    μ = E
+
+    η = [@views sum(abs2, vₚ[(c-1)B+1:c*B]) for c in 1:nc]
+    η_total = sum(η)
+    e = [@views dot(vₚ[(c-1)B+1:c*B], xh.H[(c-1)B+1:c*B, :], vₚ[1:nc*B]) for c in 1:nc] # using `vₚ[1:nc*B]` instead of just `vₚ` because it might contain chemical potentials as the last `nc` elements
+    E = sum(e) / η_total
+    μ = e ./ η
+    
     if !iszero(g)
         # we need `ft` object to get the coordinates
         v_isreal = eltype(v) <: Real
         ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, isforward=false)
         dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
         if v_is_pspace # if `v` is in p-space, then perform FT to x-space
-            # create an array of arrays holding squared x-space wfs |𝜓(𝑥)|² for each component
+            # create an array of arrays holding squared x-space densities |𝜓(𝑥)|² for each component
             ψ² = map(1:nc) do c
                 @views transform!(ft, v[(c-1)B+1:c*B])
                 ψ = fft_to_vector(ft)
@@ -608,8 +616,8 @@ function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}
                 @views abs2.(v[(c-1)B+1:c*B])
             end
         end
-        ψ²_sum = similar(ψ²[1])
         # for each `i`th component: calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝜓ⱼ|², then multiply by |𝜓ᵢ|², then integrate
+        ψ²_sum = similar(ψ²[1])
         for i in 1:nc
             ψ²_sum .= 0
             for j in 1:nc
@@ -617,27 +625,29 @@ function get_E_μ(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}
                 @. ψ²_sum += g[i, j] * ψ²[j]
             end
             ψ²_sum .*= ψ²[i]
-            if basis == :cos # 𝑥 is discretised with both endpoints included
-                U = (sum(ψ²_sum) - ψ²_sum[end]) * dV # so final point is redundant (assuming rectangle rule)
-            else
-                U = sum(ψ²_sum) * dV # for sin, endpoints are not included but are zero, so this is equivalent to the trapezoid rule. For cis, rectangle rule is more appropriate because there is no boundary
-            end
-            μ += U
-            E += U / 2
+            U = sum(ψ²_sum) * dV # for sin, endpoints are not included but are zero, so this is equivalent to the trapezoid rule. For cis, rectangle rule is more appropriate because there is no boundary
+            basis == :cos && (U -= (ψ²_sum[1] + ψ²_sum[end])/2 * dV)
+            μ[i] += U / η[i]
+            E += U / 2η_total
         end
     end
-    nrm = sum(abs2, vₚ) # `v` might not be normalised to unity if it's the result of nonlinear solve, so take this into account
-    return E/nrm, μ/nrm
+    if makereal
+        return real(E), real(μ), η
+    else
+        return E, μ, η
+    end
 end
 
 """
-Find the stationary state of the Gross-Pitaevskii equation (with nonlinearity matrix `g`) starting from the trial function `ψ₀`.
+Find the stationary state of the Gross-Pitaevskii equation (with nonlinearity matrix `g`) starting from the initial guess `ψ₀`.
 Namely, solve the system
     (𝐻𝑢)ᵢ + (∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² - 𝜇ᵢ) 𝑢ᵢ = 0
+By default, `natoms=nothing` meaning that number of atoms is not fixed, and `μ` is treated as a vector of fixed 𝜇ᵢ's.
+Alternatively, you can set `natoms` to a vector of number of atoms in each component. Then `μ` will be treated as the initial guesses of 𝜇ᵢ's, and the system will be augmented with equations
+    ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ = 0
 `ψ₀` can be:
     * a vector of x-space analytic functions (one for each component)
     * a vector of vectors (one for each component) representing discretised x-space functions
-The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components. Note that the chemical potential rather than the wave function norm is fixed.
 `solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodiff will fail because it doesn't work with FFT, which we are using.
 Therefore, when passing the solver, always turn off concrete Jacobian and/or set linear solving to an iterative method.
 Default solver is `NewtonRaphson(;linsolve=KrylovJL_BICGSTAB(), forcing=EisenstatWalkerForcing2())`.
@@ -647,7 +657,8 @@ Default termination mode is `AbsNormSafeBestTerminationMode` with L-inf norm.
 Any additional keyword arguments will be passed directly to `NonlinearSolve.solve()`.
 Return the tuple consisting of the coordinates and the NonlinearSolution object.
 """
-function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, g::AbstractMatrix{R}, μ::Union{R, AbstractVector{<:R}};
+function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}},
+                         g::AbstractMatrix{R}, μ::AbstractVector{<:R}, natoms::Union{Nothing, AbstractVector{<:R}}=nothing;
                          solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_BICGSTAB(), forcing=NLS.EisenstatWalkerForcing2()), kwargs...) where {Storage, R, T}
     (;xlims, M, basis, nc) = xh
 
@@ -662,25 +673,28 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
     ft_backward = FourierTransformer(xlims, M; basis, target_real=eq_isreal, target_rank=1, isforward=false) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
     nx = length(ft_forward.xs)
     
-    # prepare the input wf
+    # prepare the input wf `ψ_input`. By default, its length is `nc*nx`, but if `natoms` is passed then we need additional `nc` elements to represent the μ's that are being optimised
     if ψ₀ isa AbstractVector{<:Function} # `ψ₀` is a vector of analytic functions: need to sample them
         if eq_isreal
             # sample each function in ψ₀ at points `ft_forward.xs`
-            ψ_input = Vector{R}(undef, nc*nx)
+            ψ_input = Vector{R}(undef, nc*(nx + !isnothing(natoms)))
             for c in 1:nc
                 ψ_input[(c-1)*nx+1:c*nx] .= ψ₀[c].(ft_forward.xs)
             end
         else # equations in x-space are complex
-            ψ_input = Vector{R}(undef, nc*2nx)
+            ψ_input = Vector{R}(undef, nc*(2nx+!isnothing(natoms)))
             for c in 1:nc, ix in 1:nx
                 ψ_input[(c-1)*2nx + ix], ψ_input[(c-1)*2nx + nx+ix] = reim(ψ₀[c].(ft_forward.xs[ix]))
             end
         end
     else # `ψ₀` is a vector of vectors of discretised functions: put them into a contiguous vector
-        ψ_input = Vector{eq_isreal ? R : Complex{R}}(undef, nc*nx)
+        ψ_input = Vector{eq_isreal ? R : Complex{R}}(undef, nc*(nx+!isnothing(natoms)))
         for c in 1:nc
             ψ_input[(c-1)*nx+1:c*nx] .= ψ₀[c]
         end
+    end
+    if !isnothing(natoms)
+        ψ_input[end-nc+1:end] .= μ # use the passed `μ` as the initial guess
     end
 
     # prepare the buffers needed in momentum space
@@ -692,17 +706,17 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         uₚ_buff2 = similar(ft_forward.buff, Complex{R}, nc*length(ft_forward.buff))
     end
     if nc == 1 # the 1-component case can be treated more efficiently
-        params = (xh.H, μ, g[1], uₚ_buff, uₚ_buff2, ft_forward, ft_backward)
+        params = (xh.H, μ[1], g[1], uₚ_buff, uₚ_buff2, ft_forward, ft_backward)
         nlfunction = NLS.NonlinearFunction(nls_gpe_1comp!; jvp=jvp_gpe_1comp!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
     else
         B = length(ft_forward.buff)
-        # initialise the buffer for holding all double products
+        # initialise the buffers for holding all double products
         u²_sum = Vector{R}(undef, B)
         u² = [similar(u²_sum) for _ in 1:nc]
         uⱼvⱼ = [similar(u²_sum) for _ in 1:nc]
-        μ_input = μ isa R ? fill(μ, nc) : μ # if only one μ is passed, then construct a vector of same values
-        params = (xh.H, μ_input, g, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward)
+        μs_or_Ns = isnothing(natoms) ? μ : natoms # `isnothing(natoms)` means number of atoms is not fixed, but chemical potentials are; pass them. Otherwise, pass the fixed numbers of atoms
+        params = (xh.H, g, μs_or_Ns, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward)
         nlfunction = NLS.NonlinearFunction(gpe_real_xspace!; jvp=jvp_gpe_real_xspace!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params) # use sepcialisation `NonlinearProblem{true, SciMLBase.FullSpecialize}` for production!
     end
@@ -754,11 +768,15 @@ end
 """
 Update the x-space 𝑢′ vector of the multi-component GPE
     𝑢′ᵢ = (𝐻𝑢)ᵢ + (∑ⱼ 𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ)𝑢ᵢ
+    ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ = 0     [present if the number of atoms are fixed]
 Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝑢 is real in x-space.
 """
 function gpe_real_xspace!(du, u, params)
-    H, μ, g, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward = params
+    H, g, μs_or_Ns, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward = params
+    # make μ point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
+    μs_arefixed = length(u) == B*nc
+    μ = μs_arefixed ? μs_or_Ns : @view u[end-nc+1:end]
     ### Linear part
     # transform `u` to p-space, write into `uₚ_buff`
     @views for i in 1:nc
@@ -789,16 +807,30 @@ function gpe_real_xspace!(du, u, params)
         duᵢ = du[window] # must create a view separately for @turbo to work in the next line
         @turbo @. duᵢ += (u²_sum - μ[i]) * u[window]
     end
+    if !μs_arefixed # then update last `nc` elements of `du` representing residuals ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ. In this case, `μs_or_Ns` contains 𝑁ᵢ's.
+        dx = ft_forward.xs[2] - ft_forward.xs[1]
+        for i in 1:nc
+            du[end-nc+i] = sum(u²[i])*dx - μs_or_Ns[i]
+            ft_forward.basis == :cos && (du[end-nc+i] -= (u²[i][end] + u²[i][1])*dx/2)
+        end
+    end
     return
 end
 
 """
 Describes the action of the Jacobian of the multi-component GPE on an x-space vector 𝑣:
-    (𝐽𝑣)ᵢ = (𝐻𝑢)ᵢ + 2𝑢ᵢ∑ⱼ𝑔ᵢⱼ𝑢ⱼ𝑣ⱼ + (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ)𝑣ᵢ   [∑ⱼ excludes i]
+    (𝐽𝑣)ᵢ = (𝐻𝑣)ᵢ + 2𝑢ᵢ∑ⱼ𝑔ᵢⱼ𝑢ⱼ𝑣ⱼ + (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ)𝑣ᵢ   [∑ⱼ excludes i]
+If the numbers of atoms in each component are fixed, then last 𝑛 elements of `v` and `u` are assumed to contain the chemical potentials. Then, equations are
+    (𝐽𝑣)ᵢ = (𝐻𝑣)ᵢ + 2𝑢ᵢ∑ⱼ𝑔ᵢⱼ𝑢ⱼ𝑣ⱼ - 𝑀ᵢ𝑢ᵢ + (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ)𝑣ᵢ   [∑ⱼ excludes i]
+where 𝑀ᵢ are 𝑛 last elements of `v`, 𝜇ᵢ's are 𝑛 last elements of `u`, and additional 𝑛 equations read
+    𝐽𝑀ᵢ = 2∫d𝑥 𝑢ᵢ𝑣ᵢ
 Used for finding the steady state with nonlinear solve.
 """
 function jvp_gpe_real_xspace!(Jv, v, u, params)
-    H, μ, g, B, nc, vₚ_buff, vₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward = params
+    H, g, μs_or_Ns, B, nc, vₚ_buff, vₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward = params
+    # make μ point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
+    μs_arefixed = length(u) == B*nc
+    μ = μs_arefixed ? μs_or_Ns : @view u[end-nc+1:end]
     ### Linear part
     # transform `v` to p-space, write into `vₚ_buff`
     @views for i in 1:nc
@@ -833,6 +865,7 @@ function jvp_gpe_real_xspace!(Jv, v, u, params)
             (j == i || g[i,j] == 0) && continue
             @turbo @. u²_sum += g[i,j] * uⱼvⱼ[j]
         end
+        !μs_arefixed && (@. u²_sum -= v[end-nc+i]/2) # additional term if μ's are not fixed; divide by 2 to compensate the overall factor in the next line
         @turbo @. Jvᵢ += 2uᵢ * u²_sum
         # add (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇)𝑣ᵢ to `Jvᵢ`
         @turbo @. u²_sum = 3g[i,i] * u²[i]
@@ -841,6 +874,13 @@ function jvp_gpe_real_xspace!(Jv, v, u, params)
             @turbo @. u²_sum += g[i,j] * u²[j]
         end
         @turbo @. Jvᵢ += (u²_sum - μ[i]) * vᵢ
+    end
+    if !μs_arefixed # then update last `nc` elements of `Jv` corresponding to the chemical potentials. In this case, `μs_or_Ns` contains 𝑁ᵢ's.
+        dx = ft_forward.xs[2] - ft_forward.xs[1]
+        for i in 1:nc
+            Jv[end-nc+i] = 2sum(uⱼvⱼ[i])*dx
+            ft_forward.basis == :cos && (Jv[end-nc+i] -= (uⱼvⱼ[i][end] + uⱼvⱼ[i][1])*dx) # no division by 2 because of the overall factor in the line above
+        end
     end
     return
 end
