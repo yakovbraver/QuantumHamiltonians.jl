@@ -826,7 +826,7 @@ function gpe_real_xspace!(du, u, params)
             u²_sum = zero(μs_or_Ns) # for storing the sum ∑ᵢ∫𝑢ᵢ²d𝑥
             for i in 1:nc
                 u²_sum += sum(u²[i])*dx
-                ft_forward.basis == :cos && (u²_sum[end-nc+i] -= (u²[i][end] + u²[i][1])*dx/2)
+                ft_forward.basis == :cos && (u²_sum -= (u²[i][end] + u²[i][1])*dx/2)
             end
             du[end-nc+1:end] .= u²_sum - μs_or_Ns # place the sum in the residuals array; we have `nc` identical elements to keep the general structure
         else # numbers of atoms in each compoenent are fixed
