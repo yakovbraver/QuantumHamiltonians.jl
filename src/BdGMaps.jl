@@ -223,8 +223,8 @@ function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:
     diagonalize(bdg_map, ψ; storage, nev, verbose)
 end
 
-"Diagonalise the `bdg_map`."
-function diagonalize(bdg_map::BdGMap, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}; storage=:dense, nev::Integer=0, verbose::Bool=false) where R
+"Diagonalise the `bdg_map`, which is either a `BdGMap` or `BdGMap1comp`."
+function diagonalize(bdg_map, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}; storage=:dense, nev::Integer=0, verbose::Bool=false) where R
     if storage == :lazy
         if nev > 0
             # Here we do shift-invert. "Inversion" is actually solution of a linear system. But `LS.LinearProblem` does not work with LinearMaps, so we wrap `bdg_map` in a SciMLOperator
