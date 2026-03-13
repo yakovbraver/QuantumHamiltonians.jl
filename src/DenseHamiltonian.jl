@@ -1201,10 +1201,12 @@ If `nev > 0`, calculate only `nev` eigenvalues of smallest magnitude.
 `xh` must contain half the number of harmonics of `ψ`.
 `ψ` must be a N×nc matrix, where `N` is the number of x points and `nc` is the number of components.
 The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components.
+`q` is the quasimomentum vector [qx, qy, …], zero by default.
+Note that the off-diagonal blocks of `xh.H` are not taken into account at all (because one needs to figure out conjugation).
 """
-function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::Union{R, AbstractVector{<:R}};
+function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::Union{R, AbstractVector{<:R}}, q=zeros(R, length(xh.xlimits));
                              nev::Integer=0, verbose::Bool=false) where {Storage, R}
-    (;xlims, M, basis) = xh
+    (;xlims, M, basis, H, nc) = xh
     μs = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values
     ψ_isreal = eltype(ψ) <: Real
     ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2, isforward=true) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
@@ -1244,24 +1246,36 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
     B = size(v₁², 1) # our usual blocksize -- number of points corresponding to each (of the two) components -- of xh_half
     A = Matrix{eltype(v₁²)}(undef, 4B, 4B)
     block(a, b) = CartesianIndices(((a-1)B+1:a*B, (b-1)B+1:b*B))
-    @. A[block(1, 1)] = xh.H[block(1, 1)] + 2g[1,1]V₁² + g[1,2]V₂²
-    A[block(1, 1)] -= μs[1]*LA.I # do this separately because cannot use broadcast
+
+    # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
+    U_diags = [H[(c-1)B + B÷2+1, (c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
+
+    copyto!(A, block(1, 1), H, block(1, 1))
+    p² = make_p²(xh.L, xh.M, xh.δ, :cis, q) |> parent
+    A₁₁ = @view A[block(1, 1)]
+    A₁₁[diagind(A₁₁)] .= p² .+ U_diags[1] .- μs[1]
+    @. A₁₁ += 2g[1,1]V₁² + g[1,2]V₂²
+
     @. A[block(1, 2)] = g[1,1]v₁²
     @. A[block(1, 3)] = g[1,2]v₁v₂⁺
     @. A[block(1, 4)] = g[1,2]v₁v₂
     @. A[block(2, 1)] = -g[1,1]v₁⁺²
-    @. A[block(2, 2)] = -A[block(1, 1)] # assumes real `xh.H`
+    @. A[block(2, 2)] = -A₁₁ # assumes real `xh.H`
     @. A[block(2, 3)] = -g[1,2]v₁⁺v₂⁺
     @. A[block(2, 4)] = -g[1,2]v₁⁺v₂
     @. A[block(3, 1)] = g[2,1]v₁⁺v₂
     @. A[block(3, 2)] = g[2,1]v₁v₂
-    @. A[block(3, 3)] = xh.H[block(2, 2)] + 2g[2,2]V₂² + g[2,1]V₁²
-    A[block(3, 3)] -= μs[2]*LA.I
+
+    copyto!(A, block(3, 3), H, block(2, 2))
+    A₃₃ = @view A[block(3, 3)]
+    A₃₃[diagind(A₃₃)] .= p² .+ U_diags[2] .- μs[2]
+    @. A₃₃ += 2g[2,2]V₂² + g[2,1]V₁²
+
     @. A[block(3, 4)] = g[2,2]v₂²
     @. A[block(4, 1)] = -g[2,1]v₁⁺v₂⁺
     @. A[block(4, 2)] = -g[2,1]v₁v₂⁺
     @. A[block(4, 3)] = -g[2,2]v₂⁺²
-    @. A[block(4, 4)] = -A[block(3, 3)] # assumes real `xh.H`
+    @. A[block(4, 4)] = -A₃₃ # assumes real `xh.H`
 
     if nev == 0
         vals, vecs = eigen(A)
@@ -1274,6 +1288,5 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
         vals, vecs = partialeigen(ps)
         return inv.(vals), vecs
     end
-
     return vals, vecs
 end
