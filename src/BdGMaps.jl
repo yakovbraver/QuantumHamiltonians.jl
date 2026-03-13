@@ -94,8 +94,8 @@ struct BdGMap{T,R,H,FT_FORWARD,FT_BACKWARD} <: LM.LinearMap{T}
     B::Int # block size
     ψₚ_buff1_real::Vector{R} # real buffer for storing ψₚ, needed in the sin/cos cases when acting on real vectors
     ψₚ_buff2_real::Vector{R} # real buffer for storing Hₚ*ψₚ, needed in the sin/cos cases when acting on real vectors
-    ψₚ_buff1_complex::Vector{Complex{R}} # complex buffer for storing ψₚ, needed in when acting on complex vectors
-    ψₚ_buff2_complex::Vector{Complex{R}} # complex buffer for storing Hₚ*ψₚ, needed in when acting on complex vectors
+    ψₚ_buff1_complex::Vector{Complex{R}} # complex buffer for storing ψₚ, needed when acting on complex vectors
+    ψₚ_buff2_complex::Vector{Complex{R}} # complex buffer for storing Hₚ*ψₚ, needed when acting on complex vectors
     ft_forward::FT_FORWARD
     ft_backward::FT_BACKWARD
     size::Dims{2} # size that the map would have were it a concrete matrix. For us it's double the size of `Hₚ`
@@ -137,9 +137,10 @@ function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
     ψₚ_buff1_complex = similar(f, Complex{R})
     ψₚ_buff2_complex = similar(f, Complex{R})
 
-    H⁺ₚ = xh.H # reference the same Hamiltonian for now: TODO implement conjugation
+    Hₚ = copy(xh.H) # could be a reference, but we modify it when scanning quasimomenta
+    H⁺ₚ = copy(xh.H) # reference the same Hamiltonian for now: TODO implement conjugation
     B = size(xh.H, 1) ÷ xh.nc # block size
-    return BdGMap(xh.H, H⁺ₚ, G, xh.nc, B, ψₚ_buff1_real, ψₚ_buff2_real, ψₚ_buff1_complex, ψₚ_buff2_complex, ft_forward, ft_backward, size(xh.H) .* 2)
+    return BdGMap(Hₚ, H⁺ₚ, G, xh.nc, B, ψₚ_buff1_real, ψₚ_buff2_real, ψₚ_buff1_complex, ψₚ_buff2_complex, ft_forward, ft_backward, size(xh.H) .* 2)
 end
 
 """
@@ -187,6 +188,22 @@ function LM._unsafe_mul!(ψ_out, bdg_map::BdGMap{T}, ψ_in::AbstractVector) wher
 end
 
 """
+Update the Hamiltonians `bdg_map.H` and `bdg_map.H` using quasimomenta `q` and the reference Hamiltonian `xh.H`.
+Currently, assumes that Hamiltonian is just the Laplacian. The body is to be replaced with something as in q-diagonalisation function.
+"""
+function update_H!(bdg_map::BdGMap{T, R}, xh::XSpaceHamiltonian, q::AbstractVector{<:R}) where {T, R}
+    Hₚ_diag  = diagview(bdg_map.Hₚ)
+    H⁺ₚ_diag = diagview(bdg_map.H⁺ₚ)
+    p²  = make_p²(xh.L, xh.M, xh.δ, :cis, q) |> parent # `parent` returns the diagonal as a vector
+    B = size(xh.H, 2)÷xh.nc # block size
+    for c in 1:xh.nc
+        Hₚ_diag[(c-1)B+1:c*B]  .= p²
+        H⁺ₚ_diag[(c-1)B+1:c*B] .= p²
+    end
+    return
+end
+
+"""
 Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ`.
 By default, calculate all eigenvalues using a dense map.
 Alternatively, pass `nev` number of smallest-magnitude eigenvalues to calculate.
@@ -202,19 +219,25 @@ function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:
         μ_input = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values
         bdg_map = BdGMap(xh, ψ, g, μ_input)
     end
+    
+    diagonalize(bdg_map, ψ; storage, nev, verbose)
+end
+
+"Diagonalise the `bdg_map`."
+function diagonalize(bdg_map::BdGMap, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}; storage=:dense, nev::Integer=0, verbose::Bool=false) where R
     if storage == :lazy
         if nev > 0
             # Here we do shift-invert. "Inversion" is actually solution of a linear system. But `LS.LinearProblem` does not work with LinearMaps, so we wrap `bdg_map` in a SciMLOperator
             bdg_op = SciMLOperators.FunctionOperator(BdGMap!, similar(ψ, 2length(ψ)); p=bdg_map, isconstant=true)
             prob = LS.LinearProblem(bdg_op, similar(ψ, 2length(ψ)))
             linsolve = LS.init(prob, LS.KrylovJL_BICGSTAB())
-            linmap = LinSolveLinMap{eltype(xh.H), typeof(linsolve)}(linsolve, size(bdg_map))
+            linmap = LinSolveLinMap{eltype(bdg_map.Hₚ), typeof(linsolve)}(linsolve, size(bdg_map))
             ps, info = partialschur(linmap; nev, which=:LM)
             verbose && @show info
             vals, vecs = partialeigen(ps)
             return inv.(vals), vecs
         else
-            ps, info = partialschur(bdg_map; nev, which=:LM);
+            ps, info = partialschur(bdg_map; nev=size(bdg_map, 1), which=:LM);
             verbose && @show info
             return partialeigen(ps)
         end
@@ -223,13 +246,13 @@ function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:
         if nev > 0
             prob = LS.LinearProblem(bdg_map_sparse, similar(bdg_map_sparse, size(bdg_map_sparse, 1)))
             linsolve = LS.init(prob, LS.UMFPACKFactorization())
-            linmap = LinSolveLinMap{eltype(xh.H), typeof(linsolve)}(linsolve, size(bdg_map_sparse))
+            linmap = LinSolveLinMap{eltype(bdg_map.Hₚ), typeof(linsolve)}(linsolve, size(bdg_map_sparse))
             ps, info = partialschur(linmap; nev, which=:LM)
             verbose && @show info
             vals, vecs = partialeigen(ps)
             return inv.(vals), vecs
         else
-            ps, info = partialschur(linmap; nev, which=:LM)
+            ps, info = partialschur(bdg_map_sparse; nev=size(bdg_map, 1), which=:LM)
             verbose && @show info
             return partialeigen(ps)
         end
@@ -238,11 +261,11 @@ function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:
         if nev > 0
             prob = LS.LinearProblem(bdg_map_dense, similar(bdg_map_dense, size(bdg_map_dense, 1)))
             linsolve = LS.init(prob, LS.LUFactorization())
-            linmap = LinSolveLinMap{eltype(xh.H), typeof(linsolve)}(linsolve, size(bdg_map_dense))
+            linmap = LinSolveLinMap{eltype(bdg_map.Hₚ), typeof(linsolve)}(linsolve, size(bdg_map_dense))
             ps, info = partialschur(linmap; nev, which=:LM)
             verbose && @show info
             vals, vecs = partialeigen(ps)
-            return inv.(vals), vecs
+            return @views inv.(vals[1:nev]), vecs[:, 1:nev]
         else
             F = eigen(bdg_map_dense)
             return F.values, F.vectors
@@ -253,4 +276,39 @@ end
 "Helepr function for wrapping `BdGMap` in a SciMLOperator. `params` will be a `BdGMap` object."
 function BdGMap!(w, v, u, params, t)
     mul!(w, params, v)
+end
+
+"""
+Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` for quasimomenta `qs = [qxs, qys, …]`.
+By default, calculate all eigenvalues using a dense map.
+Alternatively, pass `nev` number of smallest-magnitude eigenvalues to calculate.
+Additionally, `storage=:sparse` or `storage=:lazy` will use sparse or matrix-free representations respectively.
+`ψ` can be a vector or a N×1 matrix (where N is the number of x points).
+The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components.
+"""
+function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::Union{R, AbstractVector{<:R}}, qs::AbstractVector{<:AbstractVector{<:Real}};
+                      storage=:dense, nev::Integer=0, verbose::Bool=false) where {Storage, R}
+    if xh.nc == 1
+        bdg_map = BdGMap1comp(μ, g, xh, ψ)
+    else
+        μ_input = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values
+        bdg_map = BdGMap(xh, ψ, g, μ_input)
+    end
+    (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
+    D = length(xlims)
+    B = (2M + 1)^D # block size
+    nsaves = nev == 0 ? 2B*nc : nev # number of eigenvalues and eigenvectors to store: if `nev` is zero (or not passed), then store all
+    vals = Array{Complex{R}}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # vals[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
+    vecs = Array{Complex{R}}(undef, 2B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # vecs[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
+    
+    QS = Vector{R}(undef, length(qs)) # at each iteration will contain the values of quasimomenta, e.g. in 2D it will contain [qx, qy], where we defined qx ≡ qs[1], qy ≡ qs[2]
+    for IQ in Iterators.product(eachindex.(qs)...) # example in 2D: IQ = (iqx, iqy), where iqx is an index of qx and iqy is an index of qy
+        for i in eachindex(QS)
+            QS[i] = qs[i][IQ[i]]
+        end
+        update_H!(bdg_map, xh, QS)
+        vals[:, IQ...], vecs[:, :, IQ...] = diagonalize(bdg_map, ψ; storage, nev, verbose)
+    end
+    
+    return vals, vecs
 end
