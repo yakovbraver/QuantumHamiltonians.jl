@@ -105,20 +105,37 @@ function make_eigenfunctions(xh::XSpaceHamiltonian{Storage,R}; statenos::Abstrac
     return xs .+ xlims[1][1], ψ # return "normal" coordinates, in `x ∈ xlims`
 end
 
-# TODO tweak ψ a bit to generalise to any D
+# TODO tweak ψ and padding a bit to generalise to any D
 """
 Construct a 1D x-space wave function using its p-space representation `v`.
+Pass integer `pad` to pad `v` with zeros, interpolating the x-space function as if reconstructed using `2^pad*xh.M` harmonics (instead of `xh.M`).
 Return (`xs`, `ψ`) where `ψ[x, components]`.
 """
-function make_wavefunction(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}) where {Storage, R}
-    (;xlims, M, basis, nc) = xh
-    v_isreal = eltype(v) <: Real
+function make_wavefunction(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{T}; pad::Integer=0) where {Storage, R, T<:Number}
+    (;xlims, basis, nc) = xh
+    v_isreal = T <: Real
+    M = 2^pad * xh.M
     ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, isforward=false)
     ψ_type = basis != :cis && v_isreal ? R : complex(R)  # `ψ` are real if elements of `v` are real and if the basis is real (sin/cos). If basis is real but `v` are complex, this will yield complex function as expected.
-    B = size(ft.xs, 1) # component-block size (= number of x points in each dimension)
-    ψ = Matrix{ψ_type}(undef, B, nc)
+    D = length(xlims) # number of spatial dimensions
+    # component-block size for the padded array (= number of x points in each dimension)
+    B_padded = basis == :cis ? (2M+1)^D :
+               basis == :sin ?      M^D : (M+1)^D
+    B = length(v) ÷ nc # original block-size
+    ψ = Matrix{ψ_type}(undef, B_padded, nc)
+    pad > 0 && (v_padded = zeros(T, B_padded))
     @views for c in 1:nc
-        transform!(ft, v[(c-1)B+1:c*B])
+        if pad > 0
+            if basis == :cis
+                nadd = B_padded - B # number of points that will be added
+                v_padded[nadd÷2+1:end-nadd÷2] .= v[(c-1)B+1:c*B]
+            else
+                v_padded[1:B] .= v[(c-1)B+1:c*B]
+            end
+            transform!(ft, v_padded)
+        else
+            transform!(ft, v[(c-1)B+1:c*B])
+        end
         fft_to_vector!(ψ[:, c], ft)
     end
     return ft.xs, ψ
