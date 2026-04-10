@@ -644,13 +644,13 @@ Namely, solve the 𝑛-component system
     (𝐻𝑢)ᵢ + (∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|² - 𝜇ᵢ) 𝑢ᵢ = 0
 The solver support 3 modes:
     1. (Default). Number of atoms is not fixed, chemical potentials are fixed.
-        Then `natoms=nothing`, while `μ` is a vector of 𝜇ᵢ's of each component.
-    2. Number of atoms in each component is fixed, chemical potentials are not fixed.
+        Then `natoms=nothing`, while `μ` is a vector of 𝜇ᵢ's of each component. In the 1-component case, `μ` is a scalar (a vector of one element will also work, but scalar is preferred).
+    2. Number of atoms in each component is fixed, chemical potentials are not fixed. In the 1-component case, this is not applicable -- use mode 3 instead.
         Then `natoms` is a vector of number of atoms in each component, while `μ` is a vector of guesses of 𝜇ᵢ of each component.
         The system is augmented with 𝑛 equations
             ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ = 0
     3. Total number of atoms is fixed, chemical potentials are not fixed (but will be the same for all components).
-        Then `natoms` is the total number of atoms (a scalar), while `μ` is an initial guess of 𝜇 (also a scalar).
+        Then `natoms` is the total number of atoms (a scalar), while `μ` is an initial guess of 𝜇 (also a scalar). This works in the 1-component case as well.
         The system is augmented with the equation
             ∑ᵢ∫𝑢ᵢ²d𝑥 - 𝑁 = 0
 `ψ₀` can be:
@@ -665,7 +665,7 @@ Default termination mode is `AbsNormSafeBestTerminationMode` with L-inf norm.
 Any additional keyword arguments will be passed directly to `NonlinearSolve.solve()`.
 Return the tuple consisting of the coordinates and the NonlinearSolution object.
 """
-function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}},
+function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{<:R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing;
                          solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_BICGSTAB(), forcing=NLS.EisenstatWalkerForcing2()), kwargs...) where {Storage, R, T}
     (;xlims, M, basis, nc) = xh
@@ -714,21 +714,23 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         uₚ_buff = similar(ft_forward.buff, Complex{R}, nc*length(ft_forward.buff))
         uₚ_buff2 = similar(ft_forward.buff, Complex{R}, nc*length(ft_forward.buff))
     end
+
+    if isnothing(natoms) # = number of atoms are not fixed, but chemical potentials are
+        μs_or_Ns = μ # so just pass the fixed chemical potentials
+    else # total number of atoms or number of atoms in each component is fixed
+        μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
+    end
+
+    B = length(ft_forward.buff)
     if nc == 1 # the 1-component case can be treated more efficiently
-        params = (xh.H, μ[1], g[1], uₚ_buff, uₚ_buff2, ft_forward, ft_backward)
+        params = (xh.H, g[1], μs_or_Ns, B, uₚ_buff, uₚ_buff2, ft_forward, ft_backward)
         nlfunction = NLS.NonlinearFunction(nls_gpe_1comp!; jvp=jvp_gpe_1comp!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
     else
-        B = length(ft_forward.buff)
         # initialise the buffers for holding all double products
         u²_sum = Vector{R}(undef, B)
         u² = [similar(u²_sum) for _ in 1:nc]
         uⱼvⱼ = [similar(u²_sum) for _ in 1:nc]
-        if isnothing(natoms) # = number of atoms are not fixed, but chemical potentials are
-            μs_or_Ns = μ # so just pass the fixed chemical potentials
-        else # total number of atoms or number of atoms in each component is fixed
-            μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
-        end
         params = (xh.H, g, μs_or_Ns, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward)
         nlfunction = NLS.NonlinearFunction(gpe_real_xspace!; jvp=jvp_gpe_real_xspace!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params) # use sepcialisation `NonlinearProblem{true, SciMLBase.FullSpecialize}` for production!
@@ -743,45 +745,68 @@ end
 """
 Update the x-space 𝑢′ vector of the 1-component GPE
     𝑢′ = 𝐻𝑢 + 𝑔𝑢²𝑢 - 𝜇𝑢
+    ∫𝑢²d𝑥 - 𝑁 = 0     [present if the number of atoms is fixed]
 Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝑢 is real in x-space.
 """
 function nls_gpe_1comp!(du, u, params)
-    H, μ, g, uₚ_buff, uₚ_buff2, ft_forward, ft_backward = params
+    H, g, μ_or_N, B, uₚ_buff, uₚ_buff2, ft_forward, ft_backward = params
+    # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
+    μ_isfixed = length(u) == B # is 𝜇's are not fixed, then `length(u)` exceeds `B` because `u` then also contains 𝜇
+    μ = μ_isfixed ? μ_or_N : u[end] # if 𝜇 is fixed, the `μ_or_N` contains the fixed chemical potential
     # transform `u` to p-space, multiply by `H` and transform back
-    transform!(ft_forward, u)
+    transform!(ft_forward, @view u[1:B])
     fft_to_vector!(uₚ_buff, ft_forward)
     mul!(uₚ_buff2, H, uₚ_buff)
     transform!(ft_backward, uₚ_buff2)
-    fft_to_vector!(du, ft_backward; makereal=true) # we assume that `u` is real, so the result here must be real: pass `make_real=true` to drop imaginary part in the cis case
+    @views fft_to_vector!(du[1:B], ft_backward; makereal=true) # we assume that `u` is real, so the result here must be real: pass `make_real=true` to drop imaginary part in the cis case
     # add g and μ terms
-    @. du += (g * abs2(u) - μ) * u
+    @views @. du[1:B] += (g * abs2(u[1:B]) - μ) * u[1:B]
+    if !μ_isfixed # then update the last element of `du` representing the residual ∫𝑢²d𝑥 - 𝑁. In this case, `μ_or_N` contains 𝑁.
+        dx = ft_forward.xs[2] - ft_forward.xs[1]
+        @views du[end] = sum(abs2, u[1:B])*dx - μ_or_N
+        ft_forward.basis == :cos && (du[end] -= (u[1]^2 + u[B]^2)*dx/2)
+    end
     return
 end
 
 """
 Describes the action of the Jacobian of the 1-component GPE on an x-space vector 𝑣:
     𝐽𝑣 = 𝐻𝑣 + 3𝑔𝑢²𝑣 - 𝜇𝑣
+If the number of atoms is fixed, then the last element of `v` and `u` is assumed to contain the chemical potential. Then, equation is
+    𝐽𝑣 = 𝐻𝑣 + 3𝑔𝑢²𝑣 - 𝜇𝑣 - 𝑀𝑢
+where 𝑀 is the last elements of `v`, 𝜇 is the last elements of `u`, and an additional equation reads
+    𝐽𝑀 = 2∫d𝑥 𝑢𝑣
 Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝑢 and 𝑣 are real in x-space.
 """
 function jvp_gpe_1comp!(Jv, v, u, params)
-    H, μ, g, vₚ_buff, vₚ_buff2, ft_forward, ft_backward = params
+    H, g, μ_or_N, B, vₚ_buff, vₚ_buff2, ft_forward, ft_backward = params
+    # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
+    μ_isfixed = length(u) == B # is 𝜇's are not fixed, then `length(u)` exceeds `B` because `u` then also contains 𝜇
+    μ = μ_isfixed ? μ_or_N : u[end] # if 𝜇 is fixed, the `μ_or_N` contains the fixed chemical potential
     # transform `v` to p-space, multiply by `H` and transform back
-    transform!(ft_forward, v)
+    transform!(ft_forward, @view v[1:B])
     fft_to_vector!(vₚ_buff, ft_forward)
     mul!(vₚ_buff2, H, vₚ_buff)
     transform!(ft_backward, vₚ_buff2)
-    fft_to_vector!(Jv, ft_backward; makereal=true)
+    @views fft_to_vector!(Jv[1:B], ft_backward; makereal=true)
     # add g and μ terms
-    @. Jv += (3g * abs2(u) - μ) * v
+    @views @. Jv[1:B] += (3g * abs2(u[1:B]) - μ) * v[1:B]
+    if !μ_isfixed # then subtract the additional term 𝑀𝑢 and update the last element of `Jv` representing the additional equation. In this case, `μ_or_N` contains 𝑁.
+        @views @. Jv[1:B] -= v[end] * u[1:B] # subtract 𝑀𝑢
+        # set 𝐽𝑀 = 2∫d𝑥 𝑢𝑣
+        dx = ft_forward.xs[2] - ft_forward.xs[1]
+        @views Jv[end] = 2dot(u[1:B], v[1:B]) * dx
+        ft_forward.basis == :cos && (Jv[end] -= (u[1]*v[1] + u[B]*v[B])*dx)
+    end
     return
 end
 
 """
 Update the x-space 𝑢′ vector of the multi-component GPE
     𝑢′ᵢ = (𝐻𝑢)ᵢ + (∑ⱼ 𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ)𝑢ᵢ
-    ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ = 0     [present if the number of atoms are fixed]
+    ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ = 0     [present if the numbers of atoms are fixed]
 Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝑢 is real in x-space.
 """

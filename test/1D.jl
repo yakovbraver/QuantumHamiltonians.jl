@@ -58,9 +58,9 @@ end
         g = -1 |> Float64
         μ₀ = -1 |> Float64
         if basis == :sin # for sin, default solver (BICGSTAB + EisenstatWalkerForcing2) fails (converges to some noise). Must either remove forcing and/or change to GMRES
-            _, sol = find_stationary(xh, [𝜓₀], [g;;], [μ₀]; solver=XSpaceHamiltonians.NLS.NewtonRaphson(;linsolve=XSpaceHamiltonians.LS.KrylovJL_BICGSTAB()), abstol=5e-13)
+            _, sol = find_stationary(xh, [𝜓₀], [g;;], μ₀; solver=XSpaceHamiltonians.NLS.NewtonRaphson(;linsolve=XSpaceHamiltonians.LS.KrylovJL_BICGSTAB()), abstol=5e-13)
         else
-            _, sol = find_stationary(xh, [𝜓₀], [g;;], [μ₀]; abstol=5e-13)
+            _, sol = find_stationary(xh, [𝜓₀], [g;;], μ₀; abstol=5e-13)
         end
         @test Int(sol.retcode) == 1 # test for success
         E = get_Eμη(xh, sol.u, [g;;], v_is_pspace=false)[1]
