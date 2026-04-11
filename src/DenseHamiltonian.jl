@@ -654,20 +654,20 @@ The solver support 3 modes:
         The system is augmented with the equation
             ∑ᵢ∫𝑢ᵢ²d𝑥 - 𝑁 = 0
 `ψ₀` can be:
-    * a vector of x-space analytic functions (one for each component)
-    * a vector of vectors (one for each component) representing discretised x-space functions
+    * a vector of x-space analytic functions (one for each component);
+    * a vector of vectors (one for each component) representing discretised x-space functions.
 `solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodiff will fail because it doesn't work with FFT, which we are using.
 Therefore, when passing the solver, always turn off concrete Jacobian and/or set linear solving to an iterative method.
-Default solver is `NewtonRaphson(;linsolve=KrylovJL_BICGSTAB(), forcing=EisenstatWalkerForcing2())`.
-`EisenstatWalkerForcing2` is crucial for fast solving since otherwise linear system is solved to the same accuracy as the nonlinear system, which is often (but not always!) reundant.
-Try turning it off if you encounter problems. Regarding `linsolve`, you can also try `KrylovJL_GMRES`, which is sometimes faster.
-Default termination mode is `AbsNormSafeBestTerminationMode` with L-inf norm.
+Default solver is `NewtonRaphson(;linsolve=KrylovJL_GMRES())`.
+You can also try using BICSTAB and/or Eisenstat-Walker forcing as in `NewtonRaphson(;linsolve=KrylovJL_BICGSTAB(), forcing=EisenstatWalkerForcing2())`.
+Forcing might fail to converge, but it accelerates solving since otherwise the linear system is solved to the same accuracy as the nonlinear system, which is often (but not always!) reundant.
+Default termination mode is `AbsNormSafeBestTerminationMode` with L-inf norm with `abstol` defined in NonlinearSolve.
 Any additional keyword arguments will be passed directly to `NonlinearSolve.solve()`.
 Return the tuple consisting of the coordinates and the NonlinearSolution object.
 """
 function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{<:R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing;
-                         solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_BICGSTAB(), forcing=NLS.EisenstatWalkerForcing2()), kwargs...) where {Storage, R, T}
+                         solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
     (;xlims, M, basis, nc) = xh
 
     # determine if equation is real
@@ -715,7 +715,7 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         uₚ_buff2 = similar(ft_forward.buff, Complex{R}, nc*length(ft_forward.buff))
     end
 
-    if isnothing(natoms) # = number of atoms are not fixed, but chemical potentials are
+    if isnothing(natoms) # = numbers of atoms are not fixed, but chemical potentials are
         μs_or_Ns = μ # so just pass the fixed chemical potentials
     else # total number of atoms or number of atoms in each component is fixed
         μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
@@ -878,7 +878,7 @@ Used for finding the steady state with nonlinear solve.
 """
 function jvp_gpe_real_xspace!(Jv, v, u, params)
     H, g, μs_or_Ns, B, nc, vₚ_buff, vₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward = params
-    # make μ point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
+    # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
     μs_arefixed = length(u) == B*nc # is 𝜇's are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇's
     μ = μs_arefixed ? μs_or_Ns : @view u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
     ### Linear part
