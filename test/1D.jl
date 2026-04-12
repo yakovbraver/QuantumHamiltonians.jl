@@ -1,11 +1,11 @@
-@testset "Dense 1D 1-component diagonalisation" begin
+@testset "1-component dense diagonalisation" begin
     # Quantum harmonic oscillator: 𝐻 = -Δ/2 + 𝑥²/2 
 
     𝑈(x) = x^2 / 2
     xlimits = (-5, 5) .|> Float32
 
     ### Periodic
-    xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M=10, δ=(√0.5f0)) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
+    xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M=10, δ=√0.5f0) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
     @test xh isa XSpaceHamiltonians.DenseHamiltonian{Float32,Float32,Float32,2,3}
 
     # test 5 lowest eigenvalues
@@ -22,7 +22,7 @@
     @test abs.(ψ) ≈ abs.(ψ_true) atol=1e-2 # test abs because a sign difference is possible
 
     ### Nonperiodic
-    xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, M=15, δ=(√0.5f0)) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
+    xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, M=15, δ=√0.5f0) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
     @test xh isa XSpaceHamiltonians.DenseHamiltonian{Float32,Float32,Float32,2,3}
 
     # test 5 lowest eigenvalues
@@ -35,7 +35,7 @@
     @test abs.(ψ) ≈ abs.(ψ_true) atol=1e-2 # test abs because a sign difference is possible
 end
 
-@testset "Dense 1D 1-component nlsolve stationary state and BdG" begin
+@testset "1-component nonlinear stationary state and BdG" begin
     # Bright soliton in a "parabolic + bump at the centre" potential -- "Soliton on a hill" from https://doi.org/10.1093/oso/9780192843234.001.0001, Section 22.5
 
     𝑈(x::Real) = (Ω*x)^2 / 2 + B*sech(β*x)^2
@@ -79,7 +79,7 @@ end
     end
 end
 
-@testset "Dense 1D 2-component nlsolve stationary state, BdG, and time evolution" begin
+@testset "2-component nonlinear stationary state, BdG, and time evolution" begin
     # Stationary Manakov dark-bright soliton, see e.g. https://doi.org/10.1093/oso/9780192843234.001.0001, Section 27.1
 
     Float = Float64 # operating type
@@ -153,4 +153,45 @@ end
     xs, Ψ1 = make_wavefunction(xh, sol.u[1])
     xs, Ψ2 = make_wavefunction(xh, sol.u[end])
     @test sum(abs2, abs2.(Ψ1) - abs2.(Ψ2)) < 5e-8
+end
+
+@testset "2-component nonlinear Floquet-BdG" begin
+    # DB lattices from http://dx.doi.org/10.1103/PhysRevA.91.023619 (https://arxiv.org/abs/1402.1895)
+
+    Float = Float64 # operating type
+
+    basis = :cis
+    M = 62
+
+    # trial
+    nT = 1 # number of periods
+    Ψ₀ = [x -> sin(2π/(2R/nT)*x), x -> cos(2π/(2R/nT)*x)]
+
+    R = 20*nT |> Float
+    xlimits = (-R, R)
+
+    xh = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5);
+    xh_half = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
+
+    μs = [1.5, 1.23]
+    g = [1   0.8
+         0.8 0.95] .|> Float
+
+    xs, sol = find_stationary(xh, Ψ₀, g, μs, abstol=1e-11, show_trace=Val(true)) 
+    ψ_lattice = sol.u
+
+    qs = [π/4R] # quasimomentum chosen for the test
+    vals_true = [0.009, 0.016, 0.031, 0.029].*im # true values of the imaginary parts of the unstable modes
+    
+    # BdG in x-space
+    vals, _ = bdg_spectrum(xh, ψ_lattice, g, μs, [qs], nev=100)
+    indx = findall(x -> imag(x) > 0.005, vals)
+    @test length(indx) == 4 # there should be 4 unstable eigenvalues
+    @test isapprox.(sort(vals[indx]; by=imag), vals_true; atol=1e-2) |> all
+
+    # BdG in p-space
+    vals, _ = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_lattice[1:end÷2] ψ_lattice[end÷2+1:end]], g, μs, qs; nev=100)
+    indx = findall(x -> imag(x) > 0.005, vals)
+    @test length(indx) == 4 # there should be 4 unstable eigenvalues
+    @test isapprox.(sort(vals[indx]; by=imag), vals_true; atol=1e-2) |> all
 end
