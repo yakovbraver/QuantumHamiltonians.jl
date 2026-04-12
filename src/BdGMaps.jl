@@ -158,14 +158,14 @@ function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:
 end
 
 "Diagonalise `bdg_map`."
-function diagonalize(bdg_map::BdGMap, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}; storage=:dense, nev::Integer=0, verbose::Bool=false) where R
+function diagonalize(bdg_map::BdGMap{T}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}; storage=:dense, nev::Integer=0, verbose::Bool=false) where {T, R}
     if storage == :lazy
         if nev > 0
             # Here we do shift-invert. "Inversion" is actually solution of a linear system. But `LS.LinearProblem` does not work with LinearMaps, so we wrap `bdg_map` in a SciMLOperator
             bdg_op = SciMLOperators.FunctionOperator(BdGMap!, similar(ψ, 2length(ψ)); p=bdg_map, isconstant=true)
             prob = LS.LinearProblem(bdg_op, similar(ψ, 2length(ψ)))
             linsolve = LS.init(prob, LS.KrylovJL_BICGSTAB())
-            linmap = LinSolveLinMap{eltype(bdg_map.Hₚ), typeof(linsolve)}(linsolve, size(bdg_map))
+            linmap = LinSolveLinMap{T, typeof(linsolve)}(linsolve, size(bdg_map))
             ps, info = partialschur(linmap; nev, which=:LM)
             verbose && @show info
             vals, vecs = partialeigen(ps)
@@ -180,7 +180,7 @@ function diagonalize(bdg_map::BdGMap, ψ::AbstractVecOrMat{<:Union{R, Complex{R}
         if nev > 0
             prob = LS.LinearProblem(bdg_map_sparse, similar(bdg_map_sparse, size(bdg_map_sparse, 1)))
             linsolve = LS.init(prob, LS.UMFPACKFactorization())
-            linmap = LinSolveLinMap{eltype(bdg_map.Hₚ), typeof(linsolve)}(linsolve, size(bdg_map_sparse))
+            linmap = LinSolveLinMap{T, typeof(linsolve)}(linsolve, size(bdg_map_sparse))
             ps, info = partialschur(linmap; nev, which=:LM)
             verbose && @show info
             vals, vecs = partialeigen(ps)
@@ -195,7 +195,7 @@ function diagonalize(bdg_map::BdGMap, ψ::AbstractVecOrMat{<:Union{R, Complex{R}
         if nev > 0
             prob = LS.LinearProblem(bdg_map_dense, similar(bdg_map_dense, size(bdg_map_dense, 1)))
             linsolve = LS.init(prob, LS.LUFactorization())
-            linmap = LinSolveLinMap{eltype(bdg_map.Hₚ), typeof(linsolve)}(linsolve, size(bdg_map_dense))
+            linmap = LinSolveLinMap{T, typeof(linsolve)}(linsolve, size(bdg_map_dense))
             ps, info = partialschur(linmap; nev, which=:LM)
             verbose && @show info
             vals, vecs = partialeigen(ps)
@@ -220,6 +220,7 @@ Additionally, `storage=:sparse` or `storage=:lazy` will use sparse or matrix-fre
 `ψ` can be a vector or a N×1 matrix (where N is the number of x points).
 The interaction strength `g` can be passed as a scalar number in the 1-component case.
 The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components (including the 1-component case).
+Return a tuple `vals, vecs` in the format `vals[n, iqx, iqy, ...]`, `vecs[:, n, iqx, iqy, ...]`.
 """
 function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::Union{R, AbstractVector{<:R}}, qs::AbstractVector{<:AbstractVector{<:Real}};
                       storage=:dense, nev::Integer=0, verbose::Bool=false) where {Storage, R}
@@ -231,8 +232,8 @@ function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:
     D = length(xlims)
     B = (2M + 1)^D # block size
     nsaves = nev == 0 ? 2B*nc : nev # number of eigenvalues and eigenvectors to store: if `nev` is zero (or not passed), then store all
-    vals = Array{Complex{R}}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # vals[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
-    vecs = Array{Complex{R}}(undef, 2B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # vecs[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
+    vals = Array{Complex{R}}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # vals[n, iqx, iqy, ...] = `n`th eigenvalue at momentum at indices (`iqx`, `iqy`)
+    vecs = Array{Complex{R}}(undef, 2B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # vecs[:, n, iqx, iqy, ...] = `n`th eigenvector at momentum at indices (`iqx`, `iqy`)
     
     QS = Vector{R}(undef, length(qs)) # at each iteration will contain the values of quasimomenta, e.g. in 2D it will contain [qx, qy], where we defined qx ≡ qs[1], qy ≡ qs[2]
     for IQ in Iterators.product(eachindex.(qs)...) # example in 2D: IQ = (iqx, iqy), where iqx is an index of qx and iqy is an index of qy
