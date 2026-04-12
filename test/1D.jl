@@ -124,8 +124,15 @@ end
     # Again test against analytical solution (testing against abs because might converge to a different sign)
     @test sum(abs, Ψ_exact - abs.(ψ_db)) / length(ψ_db) < 1e-8
 
-    # Calculate BdG spectrum
+    # Calculate BdG spectrum in x-space
     vals, vecs = bdg_spectrum(xh, ψ_db, g, μs)
+    smallindx = findall(x -> abs(x) < 1e-2, vals) # find indices of very small values
+    @test length(smallindx) == 6 # there should be exactly 6 values "close to zero"
+    @test all(x -> abs(x) < 5e-5, vals[smallindx]) # those values should be ≲ 5e-5
+
+    # Calculate BdG spectrum in p-space
+    xh_half = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
+    vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_db[1:end÷2] ψ_db[end÷2+1:end]], g, μs)
     smallindx = findall(x -> abs(x) < 1e-2, vals) # find indices of very small values
     @test length(smallindx) == 6 # there should be exactly 6 values "close to zero"
     @test all(x -> abs(x) < 5e-5, vals[smallindx]) # those values should be ≲ 5e-5
