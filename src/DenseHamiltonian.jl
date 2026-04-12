@@ -1213,7 +1213,7 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecO
     if nev == 0
         vals, vecs = eigen(A)
     else
-        ps, info = partialschur(A; nev, which=whichvals, restarts=200)
+        ps, info = partialschur(A; nev, which=whichvals, restarts=200) # note: no shift-invert
         verbose && @show info
         vals, vecs = partialeigen(ps)
     end
@@ -1229,10 +1229,10 @@ The chemical potential `μ` can be passed as a vector, or a number if it is the 
 `q` is the quasimomentum vector [qx, qy, …], zero by default.
 Note that the off-diagonal blocks of `xh.H` are not taken into account at all (because one needs to figure out conjugation).
 """
-function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::Union{R, AbstractVector{<:R}}, q=zeros(R, length(xh.xlimits));
+function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::Union{R, AbstractVector{<:R}}, q=zeros(R, length(xh.xlims));
                              nev::Integer=0, verbose::Bool=false) where {Storage, R}
     (;xlims, M, basis, H, nc) = xh
-    μs = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values
+    μs = μ isa R ? fill(μ, nc) : μ # if only one μ is passed, then construct a vector of same values
     ψ_isreal = eltype(ψ) <: Real
     ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2, isforward=true) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
     transform!(ft, ψ[:, 1].^2)
@@ -1272,42 +1272,54 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
     A = Matrix{eltype(v₁²)}(undef, 4B, 4B)
     block(a, b) = CartesianIndices(((a-1)B+1:a*B, (b-1)B+1:b*B))
 
-    # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
-    U_diags = [H[(c-1)B + B÷2+1, (c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
-
-    copyto!(A, block(1, 1), H, block(1, 1))
-    p² = make_p²(xh.L, xh.M, xh.δ, :cis, q) |> parent
+    # Blocks (1, 1) and (3, 3) require special treatment if quasimomenta are passed
     A₁₁ = @view A[block(1, 1)]
-    A₁₁[diagind(A₁₁)] .= p² .+ U_diags[1] .- μs[1]
-    @. A₁₁ += 2g[1,1]V₁² + g[1,2]V₂²
+    A₃₃ = @view A[block(3, 3)]
+    if basis == :cis && !iszero(q) # then need to include quasimomentum on the diagonal of `A`
+        # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
+        U_diags = [H[(c-1)B + B÷2+1, (c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
+
+        # block (1, 1)
+        copyto!(A, block(1, 1), H, block(1, 1))
+        p² = make_p²(xh.L, xh.M, xh.δ, basis, q) |> parent
+        A₁₁[diagind(A₁₁)] .= p² .+ U_diags[1] .- μs[1]
+        @. A₁₁ += 2g[1,1]V₁² + g[1,2]V₂²
+
+        # block (3, 3)
+        copyto!(A, block(3, 3), H, block(2, 2))
+        A₃₃[diagind(A₃₃)] .= p² .+ U_diags[2] .- μs[2]
+        @. A₃₃ += 2g[2,2]V₂² + g[2,1]V₁²
+    else
+        # block (1, 1)
+        @. A₁₁ = H[block(1, 1)] + 2g[1,1]V₁² + g[1,2]V₂²
+        A₁₁[diagind(A₁₁)] .-= μs[1]
+
+        # block (3, 3)
+        @. A₃₃ = H[block(2, 2)] + 2g[2,2]V₂² + g[2,1]V₁²
+        A₃₃[diagind(A₃₃)] .-= μs[2]
+    end
 
     @. A[block(1, 2)] = g[1,1]v₁²
     @. A[block(1, 3)] = g[1,2]v₁v₂⁺
     @. A[block(1, 4)] = g[1,2]v₁v₂
     @. A[block(2, 1)] = -g[1,1]v₁⁺²
-    @. A[block(2, 2)] = -A₁₁ # assumes real `xh.H`
+    @. A[block(2, 2)] = -A₁₁ # assumes `xh.H` is real in x-space
     @. A[block(2, 3)] = -g[1,2]v₁⁺v₂⁺
     @. A[block(2, 4)] = -g[1,2]v₁⁺v₂
     @. A[block(3, 1)] = g[2,1]v₁⁺v₂
     @. A[block(3, 2)] = g[2,1]v₁v₂
-
-    copyto!(A, block(3, 3), H, block(2, 2))
-    A₃₃ = @view A[block(3, 3)]
-    A₃₃[diagind(A₃₃)] .= p² .+ U_diags[2] .- μs[2]
-    @. A₃₃ += 2g[2,2]V₂² + g[2,1]V₁²
-
     @. A[block(3, 4)] = g[2,2]v₂²
     @. A[block(4, 1)] = -g[2,1]v₁⁺v₂⁺
     @. A[block(4, 2)] = -g[2,1]v₁v₂⁺
     @. A[block(4, 3)] = -g[2,2]v₂⁺²
-    @. A[block(4, 4)] = -A₃₃ # assumes real `xh.H`
+    @. A[block(4, 4)] = -A₃₃ # assumes `xh.H` is real in x-space
 
     if nev == 0
         vals, vecs = eigen(A)
     else
         prob = LS.LinearProblem(A, similar(A, size(A, 1)))
         linsolve = LS.init(prob, LS.LUFactorization())
-        linmap = LinSolveLinMap{Complex{R}, typeof(linsolve)}(linsolve, size(A))
+        linmap = LinSolveLinMap{eltype(A), typeof(linsolve)}(linsolve, size(A))
         ps, info = partialschur(linmap; nev, which=:LM)
         verbose && @show info
         vals, vecs = partialeigen(ps)
