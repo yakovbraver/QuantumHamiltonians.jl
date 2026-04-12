@@ -2,10 +2,10 @@
 A lazy linear map describing the action of the BdG operator on an x-space vector
     𝑐 = (𝑎₁(x), …, 𝑎ₙ(x), 𝑏₁(x), …, 𝑏ₙ(x))
 """
-struct BdGMap{T,R,H,FT_FORWARD,FT_BACKWARD} <: LM.LinearMap{T}
+struct BdGMap{T,H,P,R,FT_FORWARD,FT_BACKWARD} <: LM.LinearMap{T}
     Hₚ::H
     H⁺ₚ::H
-    G::Matrix{Vector{T}} # An analogue of the BdG matrix
+    G::Matrix{Vector{P}} # An analogue of the BdG matrix
     nc::Int # number of components 
     B::Int # block size
     ψₚ_buff1_real::Vector{R} # real buffer for storing ψₚ, needed in the sin/cos cases when acting on real vectors
@@ -21,15 +21,18 @@ Base.size(lm::BdGMap) = lm.size
 
 """
 Construct a `BdGMap` object for analysing stability of x-space discretised state `f`, containing all components in a contiguous vector.
+Pass `floquet=true` if map is to be used for a periodic problem. This affects the resulting type of the map.
 """
-function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::AbstractMatrix{R}, μ::AbstractVector{R}) where {Storage, R, S}
-    # eltype of map: real if Hamiltonian is real in x-space and f is real; complex otherwise
-    T = all(isnothing.(xh.𝐴)) && S <: Real ? R : Complex{R} # TODO determination of whether Hamiltonian is real in incorrect because off-diagonal blocks can be complex
+function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::AbstractMatrix{R}, μ::AbstractVector{R}; floquet=false) where {Storage, R, S}
+    # eltype of the `G` matrix: real if Hamiltonian is real in x-space and `f` is real; complex otherwise
+    P = all(isnothing.(xh.𝐴)) && S <: Real ? R : Complex{R} # TODO determination of whether Hamiltonian is real in incorrect because off-diagonal blocks can be complex
+    # eltype of the `G` matrix: real if Hamiltonian is real in x-space and `f` is real; complex otherwise
+    T = floquet ? Complex{R} : P # in the Floquet case, map is always complex in the coordinate space (because of (-i∇ + q)²); otherwise, the type is `P`
 
     if xh.nc == 1
         #  (𝐻  - 𝜇 + 2𝑔|𝑓|²)𝑎 + 𝑔𝑓²𝑏  = i𝜆𝑎
         # -(𝐻⁺ - 𝜇 + 2𝑔|𝑓|²)𝑏 - 𝑔𝑓⁺²𝑎 = i𝜆𝑏
-        G = [similar(f, T) for _ in 1:2, _ in 1:2]
+        G = [similar(f, P) for _ in 1:2, _ in 1:2]
         @. G[1, 1] = 2g[1] * abs2(f) - μ[1]
         @. G[1, 2] = g[1] * f^2
         @. G[2, 1] = -conj(G[1, 2])
@@ -37,7 +40,7 @@ function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
     elseif xh.nc == 2
         # (𝐻𝑐)₁ + (2𝑔₁₁|𝑓₁|² + 𝑔₁₂|𝑓₂|² - 𝜇)𝑎₁ + 𝑔₁₂𝑓₁𝑓₂⁺𝑎₂ + 𝑔₁₁𝑓₁²𝑏₁ + 𝑔₁₂𝑓₁𝑓₂𝑏₂ = i𝜆𝑎₁ 
         @views f₁, f₂ = f[1:end÷2], f[end÷2+1:end]
-        G = [similar(f₁, T) for _ in 1:4, _ in 1:4]
+        G = [similar(f₁, P) for _ in 1:4, _ in 1:4]
         @. G[1, 1] = 2g[1,1]abs2(f₁) + g[1,2]abs2(f₂) - μ[1]
         @. G[1, 2] = g[1,2] * f₁ * conj(f₂)
         @. G[1, 3] = g[1,1] * f₁^2
@@ -70,7 +73,9 @@ function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
     Hₚ = copy(xh.H) # could be a reference, but we modify it when scanning quasimomenta
     H⁺ₚ = copy(xh.H) # reference the same Hamiltonian for now: TODO implement conjugation
     B = size(xh.H, 1) ÷ xh.nc # block size
-    return BdGMap(Hₚ, H⁺ₚ, G, xh.nc, B, ψₚ_buff1_real, ψₚ_buff2_real, ψₚ_buff1_complex, ψₚ_buff2_complex, ft_forward, ft_backward, size(xh.H) .* 2)
+    return BdGMap{T, typeof(Hₚ), P, R, typeof(ft_forward), typeof(ft_backward)}(
+        Hₚ, H⁺ₚ, G, xh.nc, B, ψₚ_buff1_real, ψₚ_buff2_real, ψₚ_buff1_complex, ψₚ_buff2_complex, ft_forward, ft_backward, size(xh.H) .* 2
+    )
 end
 
 """
@@ -121,7 +126,7 @@ end
 Update the Hamiltonians `bdg_map.H` and `bdg_map.H` using quasimomenta `q` and the reference Hamiltonian `xh.H`.
 Currently, assumes that Hamiltonian is just the Laplacian. The body is to be replaced with something as in q-diagonalisation function.
 """
-function update_H!(bdg_map::BdGMap{T, R}, xh::XSpaceHamiltonian, q::AbstractVector{<:R}) where {T, R}
+function update_H!(bdg_map::BdGMap{T}, xh::XSpaceHamiltonian, q::AbstractVector{<:Real}) where {T}
     Hₚ_diag  = diagview(bdg_map.Hₚ)
     H⁺ₚ_diag = diagview(bdg_map.H⁺ₚ)
     p²  = make_p²(xh.L, xh.M, xh.δ, :cis, q) |> parent # `parent` returns the diagonal as a vector
@@ -142,7 +147,7 @@ Additionally, `storage=:sparse` or `storage=:lazy` will use sparse or matrix-fre
 The interaction strength `g` can be passed as a scalar number in the 1-component case.
 The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components (including the 1-component case).
 """
-function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::Union{R, AbstractVector{<:R}};
+function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::Union{R, AbstractVector{R}};
                       storage=:dense, nev::Integer=0, verbose::Bool=false) where {Storage, R}
 
     μ_input = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values; also, 1-component case needs a vector
@@ -220,7 +225,7 @@ function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:
                       storage=:dense, nev::Integer=0, verbose::Bool=false) where {Storage, R}
     μ_input = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values; also, 1-component case needs a vector
     g_input = g isa R ? [g;;] : g # constructor needs a vector, so make one in the 1-component case
-    bdg_map = BdGMap(xh, ψ, g_input, μ_input)
+    bdg_map = BdGMap(xh, ψ, g_input, μ_input; floquet=true)
 
     (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
     D = length(xlims)
