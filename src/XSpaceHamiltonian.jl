@@ -317,13 +317,14 @@ function diagonalize(xh::XSpaceHamiltonian{:dense}; nev::Integer, verbose::Bool=
             ps, info = partialschur(dense_linear_map(Hermitian(xh.H)); nev, which=:LM)
             verbose && @show info
             ps.eigenvalues .= inv.(real.(ps.eigenvalues)) # invert back
-            return ps.eigenvalues, ps.Q # here `ps.eigenvalues` is Copmlex, but once returned it will copied into real `xh.ε` with no error because imaginary part is zeroed out
+            return ps.eigenvalues, ps.Q # here `ps.eigenvalues` is Complex, but once returned it will be copied into real `xh.ε` with no error because imaginary part is zeroed out
         else
             ps, info = partialschur(dense_linear_map(xh.H); nev, which=:LM)
             verbose && @show info
             ε, V = partialeigen(ps)
             ε .= inv.(ε)
             reverse!(ε) # we want final eigenvalues in ascending order (by abs)
+            reverse!(V; dims=2) # reverse the eigenvectors accordingly. Takes ~10⁵ less time than diagonalisation itself, so is negligible
             return ε, V
         end
     end
