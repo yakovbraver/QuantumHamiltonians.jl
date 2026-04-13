@@ -4,7 +4,11 @@ using Plots
 plotlyjs()
 theme(:dark, size=(600, 500))
 
-########## Harmonic potential
+#=
+╔════════════════════╗
+║ Harmonic potential ║
+╚════════════════════╝
+=#
 
 function 𝑈(x::Real)
     x^2 / 2
@@ -30,7 +34,7 @@ plot(xs, 𝑈)
 plot!(xs, part(ψ[:, 1, 1]) .+ xh.ε[stateno])
 
 # Or we can solve using the sine basis, yielding real coordinate-space eigenfunctions
-xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cos, M, δ=Float(√0.5))
+xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, M, δ=Float(√0.5))
 @time diagonalize!(xh, nev=5);
 xh.ε
 
@@ -40,7 +44,11 @@ plot(xs, 𝑈)
 plot!(xs, ψ[:, 1, 1] .+ xh.ε[stateno])
 
 
-########## Lattice potential (repeating TTSC.jl/SineModel/spatial.jl)
+#=
+╔═════════════════════════════════════════════════════════════════╗
+║ Sine-lattice potential (repeating TTSC.jl/SineModel/spatial.jl) ║
+╚═════════════════════════════════════════════════════════════════╝
+=#
 
 function 𝑈(x::Real)
     gₗ*cos(2x)^2 + Vₗ*cos(x)^2
@@ -93,10 +101,10 @@ xh_q = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, 
 qlimits = (0, 2)
 dq = qlimits[2]/ncells
 qs = range(qlimits[1], qlimits[2]-dq, ncells)
-@time diagonalize!(xh_q, qs; nev=0)
+@time diagonalize!(xh_q, [qs]; nev=0)
 fig = plot();
 for iq in 1:ncells
-    scatter!(xh.ε_q[1:M÷ncells, iq], c=iq, legend=false)
+    scatter!(xh_q.ε_q[1:M÷ncells, iq], c=iq, legend=false)
 end
 fig
 
