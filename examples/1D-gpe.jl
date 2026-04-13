@@ -1,20 +1,12 @@
 using XSpaceHamiltonians, AppleAccelerate
 
-using Plots
+using Plots, LaTeXStrings
 plotlyjs()
 theme(:dark, size=(600, 500))
 CMAP = cgrad(:Spectral, rev=true);
+include("helpers.jl")
 
-Float = Float32 # operating type
-
-"Return a 2D evolution map using the solution."
-function make_map(sol)
-    U = Matrix{eltype(sol.u[1])}(undef, length(sol.u[1]), length(sol.u))
-    for i in axes(U, 2)
-        xs, U[:, i] = make_wavefunction(xh, sol.u[i])
-    end
-    return vec(xs), U
-end
+Float = Float64 # operating type
 
 ################ Linear ################
 
@@ -29,7 +21,8 @@ end
 ϵ::Float = 0.1
 
 # plot potential
-M = 62
+basis = :cis
+M = get_M(basis)
 xlimits = (-π, π) .|> Float
 xs = range(xlimits..., 100)
 plot(xs, 𝑈)
@@ -41,87 +34,99 @@ xh.ε
 
 stateno = 1
 xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=100)
-plot(xs, real(ψ[:, 1, 1]))
+plot(xs, -real(ψ[:, 1, 1]))
 plot(xs, imag(ψ[:, 1, 1]))
 plot(xs, abs2.(ψ[:, 1, 1]))
 
 ######## Use imaginary time to get eigenstates
 
 # will converge to the first 3 lowest states in 𝑈, respectively:
-guesses = [Returns(0.1), sin, cos]
+guesses = [one, sin, cos]
 guesses_iseven = [true, false, true]
 # we use DE.LinearExponential, which is an exact solver (equivalent to diagonalisation) so a few large steps is enough to converge to full precision
 T_max = 2 |> Float
 dt = 1 |> Float
-gs = 3 # guess number
+gs = 1 # guess number
 @time sol = propagate(xh, guesses[gs]; ψ₀_iseven=guesses_iseven[gs], T_max, dt, itime=true)
 v = sol.u[end]
-get_ε_μ(xh, v)
+get_Eμη(xh, v)
 
 xs, ψ = make_wavefunction(xh, v)
 plot(xs, real(ψ[:, 1]))
 
+################ Nonlinear ################
 
-################ nonlinear ################
+######## GPE ground state in dark-state potential ########
+
+g = 100 |> Float # nonlinearity
+
+T_max = 5 |> Float
+dt = 1e-4 |> Float
+@time sol = propagate(xh, one, g; T_max, dt, itime=true)
+V = sol.u[end]
+get_Eμη(xh, V, [g;;])
+
+xs, ψD = make_wavefunction(xh, V)
+plot(xs, real(ψD[:, 1]), ylims=(-0.5, 0.5))
+plot!(xs, imag(ψD[:, 1]), ylims=(-0.5, 0.5))
 
 ######## Free system ########
 
-M = 128 # maximum harmonic number. Good choices: cis -- 62 (125-point fft); sin -- 127 (127-point dst); cos -- 128 (129-point dct)
+δ = √0.5 |> Float
 R = 5
 xlimits = (-R, R) .|> Float
 
-# diagonalise to get exact eigenstates
-δ = √0.5 |> Float
-@time xh = XSpaceHamiltonian{:dense}([xlimits], nothing; basis=:cos, M, δ)
+basis = :cis
+M = get_M(basis)
+
+@time xh = XSpaceHamiltonian{:dense}([xlimits], nothing; basis, M, δ)
 @time diagonalize!(xh, nev=0);
 xh.ε
 
-stateno = 1
-xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=100)
-plot!(xs, real(ψ[:, 1, 1]))
-plot(xs, imag(ψ[:, 1, 1]))
-plot(xs, abs2.(ψ[:, 1, 1]))
+#### Noninteracting free particle dispersion ####
 
-#### Use imaginary time to get eigenstates
+L = xlimits[2] - xlimits[1]
+
+# cis
+dp = 2π / L # as in the Laplacian and the exponents of the basis functions
+ps = (-M:M) .* dp # alternatively, we can calculate `dx = L / 2M` and then `ps = range(-π/dx, π/dx, 2M+1)` 
+scatter(ps, (δ.*ps).^2, xlabel="p", label="exact")
+scatter!(ps[end÷2+1:end], xh.ε[1:2:end], label="numerics")
+
+# cos
+dp = π / L # this is the ground truth because this features in exponents of the basis functions and the Laplacian
+ps = (0:M) .* dp
+scatter(ps, (δ.*ps).^2, xlabel="p", label="exact")
+scatter!(ps, xh.ε, label="numerics")
+
+#### Interacting particle dispersion (Bogoliubov dispersion) ####
 
 g = 500 |> Float # nonlinearity
-get_ε_μ(xh, xh.V[:, 1], [g;;])
 
-𝜓₀(x) = one(Float)
-p = 1/√(2R) |> Float # value of wf in the bulk (= ground state solution for the free case)
-ξ = √(1/(p^2 * g)) |> Float # healing length
-𝜓₀(x) = p * tanh(x/ξ) # soliton trial
-# LawsonEuler NorsettEuler ETDRK2 HochOst4
-T_max = 0.1 |> Float
-dt = 1e-4 |> Float
-@time sol = propagate(xh, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true, solver=XSpaceHamiltonians.DE.HochOst4())
-V = sol.u[end]
-get_ε_μ(xh, V, [g;;])
+μ = get_Eμη(xh, xh.V[:, 1], [g;;])[2]
+xs, ψ = make_wavefunction(xh, xh.V[:, 1])
+vals, vecs = bdg_spectrum(xh, real(vec(ψ)), g, μ[1])
 
-xs, ψ = make_wavefunction(xh, V)
-plot(xs, real(ψ[:, 1]), ylims=(-0.5, 0.5))
+ω = -real(vals) |> sort
 
-#### Real time propagation
+# plotting for the cis case
+scatter(ps, ω[2:2:end], xlabel="p", label="numerics") # take every second ω to ignore degeneracy
+n₀ = real(ψ[1])^2 # ground state density
+ϵ_p = @. sqrt(2n₀*g*ps^2/2 + ps^4/4) # Pethick & Smith, (7.31)
+scatter!(ps, ϵ_p.*sign.(ps), label="exact")
 
-T_max = 1 |> Float
-dt = 1e-3 |> Float
-nsaves = 500
+# plotting for the cos case
+scatter([-reverse(ps); ps], ω, xlabel="q", label="numerics")
+ϵ_p = @. sqrt(2n₀*g*ps^2/2 + ps^4/4) # Pethick & Smith, (7.31)
+scatter!(ps, ϵ_p, label="exact")
 
-# starting from p-space functions
-@time sol = propagate(xh, V, [g;;]; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.DE.HochOst4());
+#=
+╔════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║ Soliton oscillations in a harmonic potential (https://doi.org/10.1103/PhysRevLett.84.2298, https://arxiv.org/abs/cond-mat/0001360) ║
+╚════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+=#
 
-v = sol.u[end]
-get_ε_μ(xh, v, [g;;])
-xs, ψ = make_wavefunction(xh, v)
-plot(xs, abs2.(ψ[:, 1]))
-
-xs, U = make_map(sol)
-ts = range(0, T_max, nsaves+1)
-heatmap(xs, 0:T_max/nsaves:T_max, abs2.(U)', c=CMAP, xlabel="x", ylabel="t")
-
-######## Na23 soliton in harmonic potential (https://doi.org/10.1103/PhysRevLett.87.130402, https://arxiv.org/abs/cond-mat/0104549)
-
-#### Prepare parameters
+# Na-23 parameters similar to https://doi.org/10.1103/PhysRevLett.87.130402 (https://arxiv.org/abs/cond-mat/0104549)
 
 m = 3.8165e-26
 aₛ = 2.5e-9
@@ -142,59 +147,139 @@ R = 11 # trap half-length, in units of a₀
 
 #### Imaginary time
 
-M = 300 # cis -- 62; sin -- 127; cos -- 129
+basis = :cis
+M = get_M(basis, 8)
+
 xlimits = (-R, R) .|> Float
 xs = range(xlimits..., 100)
 plot(xs, 𝑈)
 
-@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cos, 𝑈_iseven=false, M, δ)
+@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ)
 diagonalize!(xh, nev=5)
 xh.ε
 
-𝜓₀(x) = one(Float)
 p = 1/√(2R) |> Float # value of wf in the bulk (= ground state solution for the free case)
 ξ = √(1/(p^2 * g)) |> Float # healing length
 𝜓₀(x) = p * tanh(x/ξ) # soliton trial
-# LawsonEuler NorsettEuler ETDRK2 HochOst4
-T_max = 0.5 |> Float
-dt = 1e-2 |> Float
-@time sol = propagate(xh, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true, solver=XSpaceHamiltonians.DE.HochOst4())
-V = sol.u[end]
-get_ε_μ(xh, V, [g;;])
 
+T_max = 1 |> Float
+dt = 1e-4 |> Float
+@time sol = propagate(xh, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true)
+V = sol.u[end]
+E, μ₀ = get_Eμη(xh, V, [g;;])
 xs, ψ = make_wavefunction(xh, V)
 plot(xs, real(ψ[:, 1]))
 plot!(xs, imag(ψ[:, 1]))
 
-#### Real time
+# using Newton-Raphson (undef fixed total number of particles)
+natoms = 1.0
+@time xs, sol = find_stationary(xh, [𝜓₀], [g;;], μ₀, natoms; show_trace=Val(true))
+ψ = sol.u[1:end-1] # last element is the chemical potential
+E, μ = get_Eμη(xh, ψ, [g;;], v_is_pspace=false)
+plot!(xs, ψ)
 
-# ground state times soliton
-L = xlimits[2] - xlimits[1]
-dx = L / (M+1)
-xs = range(xlimits[1]+dx, xlimits[2]-dx, M)
+#### Real-time propagation of a displaced soliton
 
+# get ground state
+natoms = 1.0
+@time xs, sol = find_stationary(xh, [one], [g;;], μ₀, natoms; show_trace=Val(true))
+ψ = sol.u[1:end-1] # last element is the chemical potential
+
+# create a displaced soliton
 ψ₀ = real(ψ) .* tanh.(9 .* (xs .- 5)) |> vec
 plot(xs, ψ₀)
+plot(xs, abs2.(ψ₀))
 
-𝜓₀(x) = p * tanh(x/ξ) # soliton trial
-ψ₀ = vec(ψ)
-
-T_max = 1 |> Float
+T_max = 10 |> Float
 dt = 1e-3 |> Float
 nsaves = 500
 
-# starting from x-space functions
-@time sol = propagate(xh, real(ψ₀), g; T_max, dt, itime=false, nsaves)
-@time sol = propagate(xh, real(ψ[:, 1]), g; T_max, dt, itime=false, nsaves)
-
-# starting from p-space functions
-@time sol = propagate(xh, V, [g;;]; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.DE.ETDRK4())
+@time sol = propagate(xh, ψ₀, g; T_max, dt, itime=false, nsaves)
 
 v = sol.u[end]
-get_ε_μ(xh, v, [g;;])
+get_Eμη(xh, v, [g;;])
 xs, ψ = make_wavefunction(xh, v)
 plot(xs, abs2.(ψ[:, 1]))
 
-xs, U = make_map(sol)
+xs, U = make_map(xh, sol)
 ts = range(0, T_max, nsaves+1)
 heatmap(xs, 0:T_max/nsaves:T_max, abs2.(U)', c=CMAP, xlabel="x", ylabel="t")
+
+#=
+╔═════════════════════════════════════════════════════════════════════════════════════════╗
+║ Soliton on a hill from https://doi.org/10.1093/oso/9780192843234.001.0001, Section 22.5 ║
+╚═════════════════════════════════════════════════════════════════════════════════════════╝
+=#
+
+function 𝑈(x::Real)
+    (Ω*x)^2 / 2 + B*sech(β*x)^2
+end
+
+Ω::Float = 0.075
+B::Float = 0.3
+β::Float = 0.5
+δ = √0.5 |> Float # coefficient of the momentum term
+
+basis = :cos
+M = get_M(basis, 8)
+R = 15
+xlimits = (-R, R) .|> Float
+xs = range(xlimits..., 100)
+plot(xs, 𝑈)
+
+@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ)
+
+# check out noninteracting eigenstates if you want
+@time diagonalize!(xh, nev=5);
+xh.ε
+stateno = 1
+xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=100)
+plot!(xs, real(ψ[:, 1, 1]) ./ 5 .+ xh.ε[stateno])
+plot!(xs, imag(ψ[:, 1, 1]) ./ 5 .+ xh.ε[stateno])
+plot(xs, abs2.(ψ[:, 1, 1]))
+
+#### Get stationary state ####
+
+𝜓₀(x) = sech(x)
+g = -1 |> Float # nonlinearity
+μ₀ = -1 |> Float
+@time xs, sol = find_stationary(xh, [𝜓₀], [g;;], μ₀, show_trace=Val(true))
+ψ_nln = sol.u
+E, μ = get_Eμη(xh, sol.u, [g;;], v_is_pspace=false)
+plot(xs, ψ_nln)
+
+#### Calculate real-time dynamics ####
+
+T_max = 200 |> Float
+dt = 1e-3 |> Float
+nsaves = 500
+
+ψ_rand = ψ_nln .+ 1e-5 .* rand(length(ψ_nln))
+@time sol = propagate(xh, [ψ_rand], [g;;]; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.ODE.ETDRK4())
+
+xs, U = make_map(xh, sol)
+ts = range(0, T_max, nsaves+1)
+heatmap(xs, 0:T_max/nsaves:T_max, abs2.(U)', c=CMAP, xlabel="x", ylabel="t")
+
+#### Calculate BdG and compare with dynamics ####
+
+@time vals, vecs = bdg_spectrum(xh, ψ_nln, g, μ₀);
+scatter(vals, legend=false, markersize=2, markerstrokewidth=0)
+maximum(imag, vals)
+
+# Plot the growth of the error between the evolved state and the initial
+dx = xs[2] - xs[1]
+Δψ = map(2:size(U, 2)) do it
+    Δ = @. abs2(U[:, it]) - abs2(U[:, 1])
+    sum(abs, Δ) * dx
+end
+plot(ts[2:end], Δψ, yaxis=:log, xlabel="t")
+
+# do a linear fit
+using LinearAlgebra: \
+window = 50:100 # a window where the growth is approximately exponential (linear in log plot); this are the number of points, not the t-values
+X = ts[window]
+Y = Δψ[window] .|> log
+O = [X ones(length(X))]
+K = O \ Y # K[1] should coincide with the unstable eigenvalue
+plot!(X, @. exp(K[1]*X + K[2]))
