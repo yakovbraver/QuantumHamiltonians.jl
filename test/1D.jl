@@ -177,7 +177,7 @@ end
     g = [1   0.8
          0.8 0.95] .|> Float
 
-    xs, sol = find_stationary(xh, Ψ₀, g, μs, abstol=1e-11, show_trace=Val(true)) 
+    xs, sol = find_stationary(xh, Ψ₀, g, μs, abstol=1e-11) 
     ψ_lattice = sol.u
 
     qs = [π/4R] # quasimomentum chosen for the test
