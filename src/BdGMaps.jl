@@ -3,8 +3,8 @@ A lazy linear map describing the action of the BdG operator on an x-space vector
     𝑐 = (𝑎₁(x), …, 𝑎ₙ(x), 𝑏₁(x), …, 𝑏ₙ(x))
 """
 struct BdGMap{T,H,P,R,FT_FORWARD,FT_BACKWARD} <: LM.LinearMap{T}
-    Hₚ::H
-    H⁺ₚ::H
+    Hₚ::H # Hamiltonian matrix in p-space; can be dense or sparse
+    H⁺ₚ::H # p-space matrix corresponding to the conjugated x-space Hamiltonian; can be dense or sparse
     G::Matrix{Vector{P}} # An analogue of the BdG matrix
     nc::Int # number of components 
     B::Int # block size
@@ -22,6 +22,7 @@ Base.size(lm::BdGMap) = lm.size
 """
 Construct a `BdGMap` object for analysing stability of x-space discretised state `f`, containing all components in a contiguous vector.
 Pass `floquet=true` if map is to be used for a periodic problem. This affects the resulting type of the map.
+Currrently, only Hamiltonians that are real in x-space are supported.
 """
 function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::AbstractMatrix{R}, μ::AbstractVector{R}; floquet=false) where {Storage, R, S}
     # eltype of the `G` matrix: real if Hamiltonian is real in x-space and `f` is real; complex otherwise
@@ -29,16 +30,20 @@ function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
     # eltype of the `G` matrix: real if Hamiltonian is real in x-space and `f` is real; complex otherwise
     T = floquet ? Complex{R} : P # in the Floquet case, map is always complex in the coordinate space (because of (-i∇ + q)²); otherwise, the type is `P`
 
+    # Fill the `G` matrix. The Hamiltonian part is treated separately.
     if xh.nc == 1
-        #  (𝐻  - 𝜇 + 2𝑔|𝑓|²)𝑎 + 𝑔𝑓²𝑏  = i𝜆𝑎
-        # -(𝐻⁺ - 𝜇 + 2𝑔|𝑓|²)𝑏 - 𝑔𝑓⁺²𝑎 = i𝜆𝑏
+        #  (𝜇 + 2𝑔|𝑓|²)𝑎 + 𝑔𝑓²𝑏  = i𝜆𝑎
+        # -(𝜇 + 2𝑔|𝑓|²)𝑏 - 𝑔𝑓⁺²𝑎 = i𝜆𝑏
         G = [similar(f, P) for _ in 1:2, _ in 1:2]
         @. G[1, 1] = 2g[1] * abs2(f) - μ[1]
         @. G[1, 2] = g[1] * f^2
         @. G[2, 1] = -conj(G[1, 2])
         @. G[2, 2] = -G[1, 1]
     elseif xh.nc == 2
-        # (𝐻𝑐)₁ + (2𝑔₁₁|𝑓₁|² + 𝑔₁₂|𝑓₂|² - 𝜇)𝑎₁ + 𝑔₁₂𝑓₁𝑓₂⁺𝑎₂ + 𝑔₁₁𝑓₁²𝑏₁ + 𝑔₁₂𝑓₁𝑓₂𝑏₂ = i𝜆𝑎₁ 
+        #  (2𝑔₁₁|𝑓₁|² + 𝑔₁₂|𝑓₂|² - 𝜇₁)𝑎₁ + 𝑔₁₂𝑓₁𝑓₂⁺𝑎₂ + 𝑔₁₁𝑓₁²𝑏₁ + 𝑔₁₂𝑓₁𝑓₂𝑏₂    = i𝜆𝑎₁
+        #  𝑔₂₁𝑓₁⁺𝑓₂𝑎₁ + (2𝑔₂₂|𝑓₂|² + 𝑔₂₁|𝑓₁|² - 𝜇₂)𝑎₂ + 𝑔₂₁𝑓₁𝑓₂𝑏₁ + 𝑔₂₂𝑓₂²𝑏₂    = i𝜆𝑎₂
+        # -𝑔₁₁𝑓₁⁺²𝑎₁ - 𝑔₁₂𝑓₁⁺𝑓₂⁺𝑎₂ - (2𝑔₁₁|𝑓₁|² + 𝑔₁₂|𝑓₂|² - 𝜇₁)𝑏₁ - 𝑔₁₂𝑓₁⁺𝑓₂𝑏₂ = i𝜆𝑏₁
+        # -𝑔₂₁𝑓₁⁺𝑓₂⁺𝑎₁ - 𝑔₂₂𝑓₂⁺²𝑎₂ - 𝑔₂₁𝑓₁𝑓₂⁺𝑏₁ - (2𝑔₂₂|𝑓₂|² + 𝑔₂₁|𝑓₁|² - 𝜇₂)𝑏₂ = i𝜆𝑏₂
         @views f₁, f₂ = f[1:end÷2], f[end÷2+1:end]
         G = [similar(f₁, P) for _ in 1:4, _ in 1:4]
         @. G[1, 1] = 2g[1,1]abs2(f₁) + g[1,2]abs2(f₂) - μ[1]
@@ -71,7 +76,7 @@ function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
     ψₚ_buff2_complex = similar(f, Complex{R})
 
     Hₚ = copy(xh.H) # could be a reference, but we modify it when scanning quasimomenta
-    H⁺ₚ = copy(xh.H) # reference the same Hamiltonian for now: TODO implement conjugation
+    H⁺ₚ = copy(xh.H) # copy the same Hamiltonian for now: TODO implement conjugation
     B = size(xh.H, 1) ÷ xh.nc # block size
     return BdGMap{T, typeof(Hₚ), P, R, typeof(ft_forward), typeof(ft_backward)}(
         Hₚ, H⁺ₚ, G, xh.nc, B, ψₚ_buff1_real, ψₚ_buff2_real, ψₚ_buff1_complex, ψₚ_buff2_complex, ft_forward, ft_backward, size(xh.H) .* 2
@@ -85,8 +90,6 @@ The format of `ψ_in` is (𝑎₁, …, 𝑎ₙ, 𝑏₁, …, 𝑏ₙ) where �
 function LM._unsafe_mul!(ψ_out, bdg_map::BdGMap{T}, ψ_in::AbstractVector) where T
     (;Hₚ, H⁺ₚ, G, nc, B, ft_forward, ft_backward) = bdg_map
     block(i) = (i-1)B+1:i*B
-    # c_in = [@view ψ_in[(i-1)q+1:i*q] for i in 1:4] # holds (𝑎₁, 𝑎₂, 𝑏₁, 𝑏₂)
-    # c_out = [@view ψ_out[(i-1)q+1:i*q] for i in 1:4]
     
     ψ_in_isreal = eltype(ψ_in) <: Real
     if ft_forward.basis == :cis || !ψ_in_isreal || T <: Complex # then dealing with complex functions, so will be using the complex buffers `ψₚ_buff1`, `ψₚ_buff2`
