@@ -220,7 +220,7 @@ B::Float = 0.3
 β::Float = 0.5
 δ = √0.5 |> Float # coefficient of the momentum term
 
-basis = :cos
+basis = :cis
 M = get_M(basis, 8)
 R = 15
 xlimits = (-R, R) .|> Float

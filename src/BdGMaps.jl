@@ -2,7 +2,7 @@
 A lazy linear map describing the action of the BdG operator on an x-space vector
     𝑐 = (𝑎₁(x), …, 𝑎ₙ(x), 𝑏₁(x), …, 𝑏ₙ(x))
 """
-struct BdGMap{T,H,P,R,FT_FORWARD,FT_BACKWARD} <: LM.LinearMap{T}
+struct BdGMap{T,H,P,R,FT} <: LM.LinearMap{T}
     Hₚ::H # Hamiltonian matrix in p-space; can be dense or sparse
     H⁺ₚ::H # p-space matrix corresponding to the conjugated x-space Hamiltonian; can be dense or sparse
     G::Matrix{Vector{P}} # An analogue of the BdG matrix
@@ -12,8 +12,7 @@ struct BdGMap{T,H,P,R,FT_FORWARD,FT_BACKWARD} <: LM.LinearMap{T}
     ψₚ_buff2_real::Vector{R} # real buffer for storing Hₚ*ψₚ, needed in the sin/cos cases when acting on real vectors
     ψₚ_buff1_complex::Vector{Complex{R}} # complex buffer for storing ψₚ, needed when acting on complex vectors
     ψₚ_buff2_complex::Vector{Complex{R}} # complex buffer for storing Hₚ*ψₚ, needed when acting on complex vectors
-    ft_forward::FT_FORWARD
-    ft_backward::FT_BACKWARD
+    ft::FT # Fourier transformer supporting both forward and backward transforms
     size::Dims{2} # size that the map would have were it a concrete matrix. For us it's double the size of `Hₚ`
 end
 
@@ -66,9 +65,8 @@ function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
         println("BdGMap not implemented for $(xh.nc) components")
     end
 
-    # prepare the plans that can transform either real or complex vectors (hence `target_real=false`), because the map might need to act on complex ones during diagonalisation
-    ft_forward  = FourierTransformer(xh.xlims, xh.M; xh.basis, target_real=false, target_rank=1, isforward=true)
-    ft_backward = FourierTransformer(xh.xlims, xh.M; xh.basis, target_real=false, target_rank=1, isforward=false)
+    # prepare the plan that can transform either real or complex vectors (hence `target_real=false`), because the map might need to act on complex ones during diagonalisation
+    ft = FourierTransformer(xh.xlims, xh.M; xh.basis, target_real=false, target_rank=1)
     
     ψₚ_buff1_real = similar(f, R)
     ψₚ_buff2_real = similar(f, R)
@@ -78,8 +76,8 @@ function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
     Hₚ = copy(xh.H) # could be a reference, but we modify it when scanning quasimomenta
     H⁺ₚ = copy(xh.H) # copy the same Hamiltonian for now: TODO implement conjugation
     B = size(xh.H, 1) ÷ xh.nc # block size
-    return BdGMap{T, typeof(Hₚ), P, R, typeof(ft_forward), typeof(ft_backward)}(
-        Hₚ, H⁺ₚ, G, xh.nc, B, ψₚ_buff1_real, ψₚ_buff2_real, ψₚ_buff1_complex, ψₚ_buff2_complex, ft_forward, ft_backward, size(xh.H) .* 2
+    return BdGMap{T, typeof(Hₚ), P, R, typeof(ft)}(
+        Hₚ, H⁺ₚ, G, xh.nc, B, ψₚ_buff1_real, ψₚ_buff2_real, ψₚ_buff1_complex, ψₚ_buff2_complex, ft, size(xh.H) .* 2
     )
 end
 
@@ -88,11 +86,11 @@ Apply the Hamiltonian and the BdG matrix to `ψ_in`, storing the result in `ψ_o
 The format of `ψ_in` is (𝑎₁, …, 𝑎ₙ, 𝑏₁, …, 𝑏ₙ) where 𝑛 is the number of components.
 """
 function LM._unsafe_mul!(ψ_out, bdg_map::BdGMap{T}, ψ_in::AbstractVector) where T
-    (;Hₚ, H⁺ₚ, G, nc, B, ft_forward, ft_backward) = bdg_map
+    (;Hₚ, H⁺ₚ, G, nc, B, ft) = bdg_map
     block(i) = (i-1)B+1:i*B
     
     ψ_in_isreal = eltype(ψ_in) <: Real
-    if ft_forward.basis == :cis || !ψ_in_isreal || T <: Complex # then dealing with complex functions, so will be using the complex buffers `ψₚ_buff1`, `ψₚ_buff2`
+    if ft.basis == :cis || !ψ_in_isreal || T <: Complex # then dealing with complex functions, so will be using the complex buffers `ψₚ_buff1`, `ψₚ_buff2`
         ψₚ_buff1, ψₚ_buff2 = bdg_map.ψₚ_buff1_complex, bdg_map.ψₚ_buff2_complex
     else
         ψₚ_buff1, ψₚ_buff2 = bdg_map.ψₚ_buff1_real, bdg_map.ψₚ_buff2_real
@@ -102,8 +100,8 @@ function LM._unsafe_mul!(ψ_out, bdg_map::BdGMap{T}, ψ_in::AbstractVector) wher
     @views for i in 1:2 # i = 1 iterates 𝑎₁, …, 𝑎ₙ; i = 2 iterates 𝑏₁, …, 𝑏ₙ
         # transform 𝑎₁, …, 𝑎ₙ to p-space, writing into appropriate parts of `ψₚ_buff1`
         for j in 1:nc
-            transform!(ft_forward, ψ_in[block((i-1)nc+j)])
-            fft_to_vector!(ψₚ_buff1[block(j)], ft_forward)
+            transform!(ft, ψ_in[block((i-1)nc+j)]; direction=:forward)
+            fft_to_vector!(ψₚ_buff1[block(j)], ft; direction=:forward)
         end
         # apply Hamiltonian
         if i == 1
@@ -114,8 +112,8 @@ function LM._unsafe_mul!(ψ_out, bdg_map::BdGMap{T}, ψ_in::AbstractVector) wher
         end
         # transform 𝑎₁, …, 𝑎ₙ back to x-space, writing into appropriate parts of `ψ_out`
         for j in 1:nc
-            transform!(ft_backward, ψₚ_buff2[block(j)])
-            fft_to_vector!(ψ_out[block((i-1)nc+j)], ft_backward; makereal=(ψ_in_isreal && T <: Real)) # if initial ψ is real and map also, then make the result real
+            transform!(ft, ψₚ_buff2[block(j)]; direction=:backward)
+            fft_to_vector!(ψ_out[block((i-1)nc+j)], ft; direction=:backward, makereal=(ψ_in_isreal && T <: Real)) # if initial ψ is real and map also, then make the result real
         end
     end
     # add G * ψ_in to `ψ_out`

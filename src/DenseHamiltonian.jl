@@ -582,13 +582,13 @@ function get_Eμη(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
         vₚ = v
     else # if `v` is in x-space, then perform FT to transition to p-space
         v_isreal = eltype(v) <: Real
-        ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, isforward=true)
+        ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1)
         v_type = !v_isreal ? Complex{R} : eltype(ft.buff) # if v in x-space is complex, then result will be complex; otherwise the same as determined in `ft`
         vₚ = Vector{v_type}(undef, length(v))
         @views for c in 1:nc
             window = (c-1)B+1:c*B
-            transform!(ft, v[window])
-            fft_to_vector!(vₚ[window], ft)
+            transform!(ft, v[window]; direction=:forward)
+            fft_to_vector!(vₚ[window], ft; direction=:forward)
         end
     end
 
@@ -601,13 +601,13 @@ function get_Eμη(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
     if !iszero(g)
         # we need `ft` object to get the coordinates
         v_isreal = eltype(v) <: Real
-        ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, isforward=false)
+        ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1)
         dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
         if v_is_pspace # if `v` is in p-space, then perform FT to x-space
             # create an array of arrays holding squared x-space densities |𝜓(𝑥)|² for each component
             ψ² = map(1:nc) do c
-                @views transform!(ft, v[(c-1)B+1:c*B])
-                ψ = fft_to_vector(ft)
+                @views transform!(ft, v[(c-1)B+1:c*B]; direction=:backward)
+                ψ = fft_to_vector(ft; direction=:backward)
                 ψ .= abs2.(ψ)
                 return ψ
             end
@@ -677,23 +677,22 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         ψ₀_arereal = all(eltype(ψ) <: Real for ψ in ψ₀)
     end
     eq_isreal = ψ₀_arereal && all(isnothing.(xh.𝐴)) # equations are real (in x-space) if Hamiltonian and wfs are real (in x-space)
-    ft_forward  = FourierTransformer(xlims, M; basis, target_real=eq_isreal, target_rank=1, isforward=true) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
-    ft_backward = FourierTransformer(xlims, M; basis, target_real=eq_isreal, target_rank=1, isforward=false) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
-    nx = length(ft_forward.xs)
+    ft = FourierTransformer(xlims, M; basis, target_real=eq_isreal, target_rank=1) # single transformer supporting both directions
+    nx = length(ft.xs)
     
     # Prepare the input wf `ψ_input`. By default, its length is `nc*nx`, but if `natoms` is passed then we need additional `nc` elements to represent the μ's that are being optimised.
     # Even if only total 𝑁 is fixed (and hence there is only one 𝜇 to be optimised), we still add `nc` elements to keep the general structure
     if ψ₀ isa AbstractVector{<:Function} # `ψ₀` is a vector of analytic functions: need to sample them
         if eq_isreal
-            # sample each function in ψ₀ at points `ft_forward.xs`
+            # sample each function in ψ₀ at points `ft.xs`
             ψ_input = Vector{R}(undef, nc*(nx + !isnothing(natoms)))
             for c in 1:nc
-                ψ_input[(c-1)*nx+1:c*nx] .= ψ₀[c].(ft_forward.xs)
+                ψ_input[(c-1)*nx+1:c*nx] .= ψ₀[c].(ft.xs)
             end
         else # equations in x-space are complex
             ψ_input = Vector{R}(undef, nc*(2nx+!isnothing(natoms)))
             for c in 1:nc, ix in 1:nx
-                ψ_input[(c-1)*2nx + ix], ψ_input[(c-1)*2nx + nx+ix] = reim(ψ₀[c].(ft_forward.xs[ix]))
+                ψ_input[(c-1)*2nx + ix], ψ_input[(c-1)*2nx + nx+ix] = reim(ψ₀[c].(ft.xs[ix]))
             end
         end
     else # `ψ₀` is a vector of vectors of discretised functions: put them into a contiguous vector
@@ -707,12 +706,12 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
     end
 
     # prepare the buffers needed in momentum space
-    if basis == :cis || eq_isreal # in the cis case, the p-space buffer must be complex, so copy `ft_forward.buff` -- it's always complex for cis. If `eq_isreal` and basis is sin/cos, then also copy `ft_forward.buff` -- it's always real for sin/cos
-        uₚ_buff  = similar(ft_forward.buff, nc*length(ft_forward.buff))
-        uₚ_buff2 = similar(ft_forward.buff, nc*length(ft_forward.buff))
+    if basis == :cis || eq_isreal # in the cis case, the p-space buffer must be complex, so copy `ft.buff` -- it's always complex for cis. If `eq_isreal` and basis is sin/cos, then also copy `ft.buff` -- it's always real for sin/cos
+        uₚ_buff  = similar(ft.buff, nc*length(ft.buff))
+        uₚ_buff2 = similar(ft.buff, nc*length(ft.buff))
     else # !eq_isreal and basis is sin/cos
-        uₚ_buff = similar(ft_forward.buff, Complex{R}, nc*length(ft_forward.buff))
-        uₚ_buff2 = similar(ft_forward.buff, Complex{R}, nc*length(ft_forward.buff))
+        uₚ_buff = similar(ft.buff, Complex{R}, nc*length(ft.buff))
+        uₚ_buff2 = similar(ft.buff, Complex{R}, nc*length(ft.buff))
     end
 
     if isnothing(natoms) # = numbers of atoms are not fixed, but chemical potentials are
@@ -721,9 +720,9 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
     end
 
-    B = length(ft_forward.buff)
+    B = length(ft.buff)
     if nc == 1 # the 1-component case can be treated more efficiently
-        params = (xh.H, g[1], μs_or_Ns, B, uₚ_buff, uₚ_buff2, ft_forward, ft_backward)
+        params = (xh.H, g[1], μs_or_Ns, B, uₚ_buff, uₚ_buff2, ft)
         nlfunction = NLS.NonlinearFunction(nls_gpe_real_1comp!; jvp=jvp_gpe_real_1comp!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
     else
@@ -731,7 +730,7 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         u²_sum = Vector{R}(undef, B)
         u² = [similar(u²_sum) for _ in 1:nc]
         uⱼvⱼ = [similar(u²_sum) for _ in 1:nc]
-        params = (xh.H, g, μs_or_Ns, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward)
+        params = (xh.H, g, μs_or_Ns, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft)
         nlfunction = NLS.NonlinearFunction(nls_gpe_real!; jvp=jvp_gpe_real!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params) # use specialisation `NonlinearProblem{true, SciMLBase.FullSpecialize}` for production!
     end
@@ -739,7 +738,7 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
     # we will pass on user's kwargs to NLS.solve, but we override some of NLS's defaults. User's kwargs will in turn override ours.
     finalkwargs = (;verbose=false, termination_condition=NLS.AbsNormSafeBestTerminationMode(Base.Fix1(maximum, abs)), kwargs...)
     
-    return ft_forward.xs, NLS.solve(prob, solver; finalkwargs...)
+    return ft.xs, NLS.solve(prob, solver; finalkwargs...)
 end
 
 """
@@ -750,22 +749,22 @@ Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝐻, and hence also 𝑢, is real in x-space.
 """
 function nls_gpe_real_1comp!(du, u, params)
-    H, g, μ_or_N, B, uₚ_buff, uₚ_buff2, ft_forward, ft_backward = params
+    H, g, μ_or_N, B, uₚ_buff, uₚ_buff2, ft = params
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
     μ_isfixed = length(u) == B # is 𝜇's are not fixed, then `length(u)` exceeds `B` because `u` then also contains 𝜇
     μ = μ_isfixed ? μ_or_N : u[end] # if 𝜇 is fixed, the `μ_or_N` contains the fixed chemical potential
     # transform `u` to p-space, multiply by `H` and transform back
-    transform!(ft_forward, @view u[1:B])
-    fft_to_vector!(uₚ_buff, ft_forward)
+    transform!(ft, @view u[1:B]; direction=:forward)
+    fft_to_vector!(uₚ_buff, ft; direction=:forward)
     mul!(uₚ_buff2, H, uₚ_buff)
-    transform!(ft_backward, uₚ_buff2)
-    @views fft_to_vector!(du[1:B], ft_backward; makereal=true) # we assume that `u` is real, so the result here must be real: pass `make_real=true` to drop imaginary part in the cis case
+    transform!(ft, uₚ_buff2; direction=:backward)
+    @views fft_to_vector!(du[1:B], ft; direction=:backward, makereal=true) # we assume that `u` is real, so the result here must be real: pass `make_real=true` to drop imaginary part in the cis case
     # add g and μ terms
     @views @. du[1:B] += (g * abs2(u[1:B]) - μ) * u[1:B]
     if !μ_isfixed # then update the last element of `du` representing the residual ∫𝑢²d𝑥 - 𝑁. In this case, `μ_or_N` contains 𝑁.
-        dx = ft_forward.xs[2] - ft_forward.xs[1]
+        dx = ft.xs[2] - ft.xs[1]
         @views du[end] = sum(abs2, u[1:B])*dx - μ_or_N
-        ft_forward.basis == :cos && (du[end] -= (u[1]^2 + u[B]^2)*dx/2)
+        ft.basis == :cos && (du[end] -= (u[1]^2 + u[B]^2)*dx/2)
     end
     return
 end
@@ -781,24 +780,24 @@ Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝐻, and hence also 𝑢 and 𝑣, is real in x-space.
 """
 function jvp_gpe_real_1comp!(Jv, v, u, params)
-    H, g, μ_or_N, B, vₚ_buff, vₚ_buff2, ft_forward, ft_backward = params
+    H, g, μ_or_N, B, vₚ_buff, vₚ_buff2, ft = params
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
     μ_isfixed = length(u) == B # is 𝜇's are not fixed, then `length(u)` exceeds `B` because `u` then also contains 𝜇
     μ = μ_isfixed ? μ_or_N : u[end] # if 𝜇 is fixed, the `μ_or_N` contains the fixed chemical potential
     # transform `v` to p-space, multiply by `H` and transform back
-    transform!(ft_forward, @view v[1:B])
-    fft_to_vector!(vₚ_buff, ft_forward)
+    transform!(ft, @view v[1:B]; direction=:forward)
+    fft_to_vector!(vₚ_buff, ft; direction=:forward)
     mul!(vₚ_buff2, H, vₚ_buff)
-    transform!(ft_backward, vₚ_buff2)
-    @views fft_to_vector!(Jv[1:B], ft_backward; makereal=true)
+    transform!(ft, vₚ_buff2; direction=:backward)
+    @views fft_to_vector!(Jv[1:B], ft; direction=:backward, makereal=true)
     # add g and μ terms
     @views @. Jv[1:B] += (3g * abs2(u[1:B]) - μ) * v[1:B]
     if !μ_isfixed # then subtract the additional term 𝑀𝑢 and update the last element of `Jv` representing the additional equation. In this case, `μ_or_N` contains 𝑁.
         @views @. Jv[1:B] -= v[end] * u[1:B] # subtract 𝑀𝑢
         # set 𝐽𝑀 = 2∫d𝑥 𝑢𝑣
-        dx = ft_forward.xs[2] - ft_forward.xs[1]
+        dx = ft.xs[2] - ft.xs[1]
         @views Jv[end] = 2dot(u[1:B], v[1:B]) * dx
-        ft_forward.basis == :cos && (Jv[end] -= (u[1]*v[1] + u[B]*v[B])*dx)
+        ft.basis == :cos && (Jv[end] -= (u[1]*v[1] + u[B]*v[B])*dx)
     end
     return
 end
@@ -811,7 +810,7 @@ Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝐻, and hence also 𝑢ᵢ, is real in x-space.
 """
 function nls_gpe_real!(du, u, params)
-    H, g, μs_or_Ns, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward = params
+    H, g, μs_or_Ns, B, nc, uₚ_buff, uₚ_buff2, u², u²_sum, uⱼvⱼ, ft = params
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
     μs_arefixed = length(u) == B*nc # is 𝜇's are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇's
     μ = μs_arefixed ? μs_or_Ns : @view u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
@@ -819,15 +818,15 @@ function nls_gpe_real!(du, u, params)
     # transform `u` to p-space, write into `uₚ_buff`
     @views for i in 1:nc
         window = (i-1)B+1:i*B
-        transform!(ft_forward, u[window])
-        fft_to_vector!(uₚ_buff[window], ft_forward)
+        transform!(ft, u[window]; direction=:forward)
+        fft_to_vector!(uₚ_buff[window], ft; direction=:forward)
     end
     mul!(uₚ_buff2, H, uₚ_buff)
     # transform `uₚ_buff2` back to x-space, write into `du`
     @views for i in 1:nc
         window = (i-1)B+1:i*B
-        transform!(ft_backward, uₚ_buff2[window])
-        fft_to_vector!(du[window], ft_backward; makereal=true)
+        transform!(ft, uₚ_buff2[window]; direction=:backward)
+        fft_to_vector!(du[window], ft; direction=:backward, makereal=true)
     end
     ### Nonlinear part
     # pre-calculate 𝑢ᵢ² for each component and store in `u²`
@@ -846,18 +845,18 @@ function nls_gpe_real!(du, u, params)
         @turbo @. duᵢ += (u²_sum - μ[i]) * u[window]
     end
     if !μs_arefixed # then update last `nc` elements of `du` representing residuals ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ. In this case, `μs_or_Ns` contains 𝑁ᵢ's.
-        dx = ft_forward.xs[2] - ft_forward.xs[1]
+        dx = ft.xs[2] - ft.xs[1]
         if μs_or_Ns isa Number # then only total number of atoms is fixed
             u²_sum = zero(μs_or_Ns) # for storing the sum ∑ᵢ∫𝑢ᵢ²d𝑥
             for i in 1:nc
                 u²_sum += sum(u²[i])*dx
-                ft_forward.basis == :cos && (u²_sum -= (u²[i][end] + u²[i][1])*dx/2)
+                ft.basis == :cos && (u²_sum -= (u²[i][end] + u²[i][1])*dx/2)
             end
             du[end-nc+1:end] .= u²_sum - μs_or_Ns # place the sum in the residuals array; we have `nc` identical elements to keep the general structure
         else # numbers of atoms in each compoenent are fixed
             for i in 1:nc
                 du[end-nc+i] = sum(u²[i])*dx - μs_or_Ns[i]
-                ft_forward.basis == :cos && (du[end-nc+i] -= (u²[i][end] + u²[i][1])*dx/2)
+                ft.basis == :cos && (du[end-nc+i] -= (u²[i][end] + u²[i][1])*dx/2)
             end
         end
     end
@@ -878,7 +877,7 @@ Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝐻, and hence also 𝑢ᵢ and 𝑣ᵢ, is real in x-space.
 """
 function jvp_gpe_real!(Jv, v, u, params)
-    H, g, μs_or_Ns, B, nc, vₚ_buff, vₚ_buff2, u², u²_sum, uⱼvⱼ, ft_forward, ft_backward = params
+    H, g, μs_or_Ns, B, nc, vₚ_buff, vₚ_buff2, u², u²_sum, uⱼvⱼ, ft = params
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if μ's are fixed, or last elements of `u` otherwise
     μs_arefixed = length(u) == B*nc # is 𝜇's are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇's
     μ = μs_arefixed ? μs_or_Ns : @view u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
@@ -886,15 +885,15 @@ function jvp_gpe_real!(Jv, v, u, params)
     # transform `v` to p-space, write into `vₚ_buff`
     @views for i in 1:nc
         window = (i-1)B+1:i*B
-        transform!(ft_forward, v[window])
-        fft_to_vector!(vₚ_buff[window], ft_forward)
+        transform!(ft, v[window]; direction=:forward)
+        fft_to_vector!(vₚ_buff[window], ft; direction=:forward)
     end
     mul!(vₚ_buff2, H, vₚ_buff)
     # transform `vₚ_buff2` back to x-space, write into `Jv`
     @views for i in 1:nc
         window = (i-1)B+1:i*B
-        transform!(ft_backward, vₚ_buff2[window])
-        fft_to_vector!(Jv[window], ft_backward; makereal=true)
+        transform!(ft, vₚ_buff2[window]; direction=:backward)
+        fft_to_vector!(Jv[window], ft; direction=:backward, makereal=true)
     end
     ### Nonlinear part
     # pre-calculate products `uⱼvⱼ` and `uⱼ²`
@@ -927,18 +926,18 @@ function jvp_gpe_real!(Jv, v, u, params)
         @turbo @. Jvᵢ += (u²_sum - μ[i]) * vᵢ
     end
     if !μs_arefixed # then update last `nc` elements of `Jv` corresponding to the chemical potentials. In this case, `μs_or_Ns` contains 𝑁ᵢ's.
-        dx = ft_forward.xs[2] - ft_forward.xs[1]
+        dx = ft.xs[2] - ft.xs[1]
         if μs_or_Ns isa Number # then only total number of atoms is fixed
             uᵢvᵢ_sum = zero(μs_or_Ns) # for storing the sum 2∑ᵢ∫𝑢ᵢvᵢd𝑥
             for i in 1:nc
                 uᵢvᵢ_sum += 2sum(uⱼvⱼ[i])*dx
-                ft_forward.basis == :cos && (uᵢvᵢ_sum -= (uⱼvⱼ[i][end] + uⱼvⱼ[i][1])*dx) # no division by 2 because of the overall factor in the line above
+                ft.basis == :cos && (uᵢvᵢ_sum -= (uⱼvⱼ[i][end] + uⱼvⱼ[i][1])*dx) # no division by 2 because of the overall factor in the line above
             end
             Jv[end-nc+1:end] .= uᵢvᵢ_sum # put the sum into place; we have `nc` identical elements to keep the general structure
         else # numbers of atoms in each compoenent are fixed
             for i in 1:nc
                 Jv[end-nc+i] = 2sum(uⱼvⱼ[i])*dx
-                ft_forward.basis == :cos && (Jv[end-nc+i] -= (uⱼvⱼ[i][end] + uⱼvⱼ[i][1])*dx) # no division by 2 because of the overall factor in the line above
+                ft.basis == :cos && (Jv[end-nc+i] -= (uⱼvⱼ[i][end] + uⱼvⱼ[i][1])*dx) # no division by 2 because of the overall factor in the line above
             end
         end
     end
@@ -956,7 +955,7 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecO
     # transform `ψ2` to p-space
     ψ_isreal = eltype(ψ) <: Real
     ψ2 = g .* ψ.^2
-    ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2, isforward=true) # the constructed matrix will correspond to `M`
+    ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `M`
     transform!(ft, ψ2)
     v2 = fft_to_matrix(ft; makereal=(ψ_iseven && ψ_isreal))
     if ψ_isreal
@@ -968,7 +967,7 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecO
         vconj2 = fft_to_matrix(ft)
         # transform `ψabs2` to p-space
         ψabs2 = abs2.(ψ)
-        ft = FourierTransformer(xlims, M; basis, target_real=true, target_rank=2, isforward=true)
+        ft = FourierTransformer(xlims, M; basis, target_real=true, target_rank=2)
         transform!(ft, ψabs2)
         vabs2 = fft_to_matrix(ft)
     end
@@ -1000,7 +999,7 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
     (;xlims, M, basis, H, nc) = xh
     μs = μ isa R ? fill(μ, nc) : μ # if only one μ is passed, then construct a vector of same values
     ψ_isreal = eltype(ψ) <: Real
-    ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2, isforward=true) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
+    ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
     transform!(ft, ψ[:, 1].^2)
     v₁² = fft_to_matrix(ft)
     transform!(ft, ψ[:, 2].^2)
@@ -1021,7 +1020,7 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
         transform!(ft, conj(ψ[:, 2]).^2)
         v₂⁺² = fft_to_matrix(ft)
         
-        ft_real = FourierTransformer(xlims, M; basis, target_real=true, target_rank=2, isforward=true)
+        ft_real = FourierTransformer(xlims, M; basis, target_real=true, target_rank=2)
         transform!(ft_real, abs2.(ψ[:, 1]))
         V₁² = fft_to_matrix(ft_real)
         transform!(ft_real, abs2.(ψ[:, 2]))

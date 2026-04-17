@@ -115,7 +115,7 @@ function make_wavefunction(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{
     (;xlims, basis, nc) = xh
     v_isreal = T <: Real
     M = 2^pad * xh.M
-    ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1, isforward=false)
+    ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1)
     ψ_type = basis != :cis && v_isreal ? R : complex(R)  # `ψ` are real if elements of `v` are real and if the basis is real (sin/cos). If basis is real but `v` are complex, this will yield complex function as expected.
     D = length(xlims) # number of spatial dimensions
     # component-block size for the padded array (= number of x points in each dimension)
@@ -132,11 +132,11 @@ function make_wavefunction(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{
             else
                 v_padded[1:B] .= v[(c-1)B+1:c*B]
             end
-            transform!(ft, v_padded)
+            transform!(ft, v_padded; direction=:backward)
         else
-            transform!(ft, v[(c-1)B+1:c*B])
+            transform!(ft, v[(c-1)B+1:c*B]; direction=:backward)
         end
-        fft_to_vector!(ψ[:, c], ft)
+        fft_to_vector!(ψ[:, c], ft; direction=:backward)
     end
     return ft.xs, ψ
 end
