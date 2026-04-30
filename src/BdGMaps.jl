@@ -23,7 +23,7 @@ Construct a `BdGMap` object for analysing stability of x-space discretised state
 Pass `floquet=true` if map is to be used for a periodic problem. This affects the resulting type of the map.
 Currrently, only Hamiltonians that are real in x-space are supported.
 """
-function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::AbstractMatrix{R}, μ::AbstractVector{R}; floquet=false) where {Storage, R, S}
+function BdGMap(xh::PSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::AbstractMatrix{R}, μ::AbstractVector{R}; floquet=false) where {Storage, R, S}
     # eltype of the `G` matrix: real if Hamiltonian is real in x-space and `f` is real; complex otherwise
     P = all(isnothing.(xh.𝐴)) && S <: Real ? R : Complex{R} # TODO determination of whether Hamiltonian is real in incorrect because off-diagonal blocks can be complex
     # eltype of the `G` matrix: real if Hamiltonian is real in x-space and `f` is real; complex otherwise
@@ -66,7 +66,7 @@ function BdGMap(xh::XSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
     end
 
     # prepare the plan that can transform either real or complex vectors (hence `target_real=false`), because the map might need to act on complex ones during diagonalisation
-    ft = FourierTransformer(xh.xlims, xh.M; xh.basis, target_real=false, target_rank=1)
+    ft = FourierTransformerP(xh.xlims, xh.M; xh.basis, target_real=false, target_rank=1)
     
     ψₚ_buff1_real = similar(f, R)
     ψₚ_buff2_real = similar(f, R)
@@ -127,7 +127,7 @@ end
 Update the Hamiltonians `bdg_map.H` and `bdg_map.H` using quasimomenta `q` and the reference Hamiltonian `xh.H`.
 Currently, assumes that Hamiltonian is just the Laplacian. The body is to be replaced with something as in q-diagonalisation function.
 """
-function update_H!(bdg_map::BdGMap{T}, xh::XSpaceHamiltonian, q::AbstractVector{<:Real}) where {T}
+function update_H!(bdg_map::BdGMap{T}, xh::PSpaceHamiltonian, q::AbstractVector{<:Real}) where {T}
     Hₚ_diag  = diagview(bdg_map.Hₚ)
     H⁺ₚ_diag = diagview(bdg_map.H⁺ₚ)
     p²  = make_p²(xh.L, xh.M, xh.δ, :cis, q) |> parent # `parent` returns the diagonal as a vector
@@ -148,7 +148,7 @@ Additionally, `storage=:sparse` or `storage=:lazy` will use sparse or matrix-fre
 The interaction strength `g` can be passed as a scalar number in the 1-component case.
 The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components (including the 1-component case).
 """
-function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::Union{R, AbstractVector{R}};
+function bdg_spectrum(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::Union{R, AbstractVector{R}};
                       storage=:dense, nev::Integer=0, verbose::Bool=false) where {Storage, R}
 
     μ_input = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values; also, 1-component case needs a vector
@@ -223,7 +223,7 @@ The interaction strength `g` can be passed as a scalar number in the 1-component
 The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components (including the 1-component case).
 Return a tuple `vals, vecs` in the format `vals[n, iqx, iqy, ...]`, `vecs[:, n, iqx, iqy, ...]`.
 """
-function bdg_spectrum(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::Union{R, AbstractVector{<:R}}, qs::AbstractVector{<:AbstractVector{<:Real}};
+function bdg_spectrum(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::Union{R, AbstractMatrix{R}}, μ::Union{R, AbstractVector{<:R}}, qs::AbstractVector{<:AbstractVector{<:Real}};
                       storage=:dense, nev::Integer=0, verbose::Bool=false) where {Storage, R}
     μ_input = μ isa R ? fill(μ, xh.nc) : μ # if only one μ is passed, then construct a vector of same values; also, 1-component case needs a vector
     g_input = g isa R ? [g;;] : g # constructor needs a vector, so make one in the 1-component case

@@ -4,7 +4,7 @@ A type representing a spatial, 𝐷-dimensional, 𝑛-component, possibly quasim
     𝐻ᵢⱼ(r) = 𝑈ᵢⱼ(r)
 as a dense matrix. Here  1 ≤ 𝑖, 𝑗 ≤ 𝑛,  r = (𝑥₁, …, 𝑥_𝐷),  Aᵢ = (𝐴ᵢ₁, …, 𝐴ᵢ_𝐷),  q = (𝑞₁, …, 𝑞_𝐷).
 """
-mutable struct DenseHamiltonian{R,T,S,D1,D2} <: XSpaceHamiltonian{:dense,R,T,S,D1,D2}
+mutable struct DenseHamiltonian{R,T,S,D1,D2} <: PSpaceHamiltonian{:dense,R,T,S,D1,D2}
     xlims::Vector{Tuple{R, R}}
     L::Vector{R}
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
@@ -56,7 +56,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     T = H_isreal ? R : Complex{R} # type of elements of the Hamiltonian
     H = zeros(T, nc*B, nc*B)
 
-    ft = FourierTransformer(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
+    ft = FourierTransformerP(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
 
     𝑈_diag_allequal = allequal(diagview(𝑈))
     𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing
@@ -223,7 +223,7 @@ function update_diag!(xh::DenseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴�
 end
 
 "Convenience caller for the 1-component case, where `ψ₀` is an analytic function or a vector representing discretised functions, `g` is a number, and `ψ₀_iseven` is a Bool."
-function propagate(xh::XSpaceHamiltonian{Storage, R}, ψ₀::Union{Function, AbstractVector}, g::R=zero(R);
+function propagate(xh::PSpaceHamiltonian{Storage, R}, ψ₀::Union{Function, AbstractVector}, g::R=zero(R);
                    ψ₀_iseven::Bool=false, T_max::R, dt::R, itime::Bool=false,
                    solver=(iszero(g) ? ODE.LinearExponential() : itime ? ODE.LawsonEuler() : ODE.ETDRK4()), nsaves::Integer=0) where {Storage, R}
     propagate(xh, [ψ₀], [g;;]; ψ₀_iseven=[ψ₀_iseven], T_max, dt, itime, solver, nsaves)
@@ -244,7 +244,7 @@ For imaginary-time GPE, the default is `LawsonEuler`, which is first order (and 
 For real-time GPE, the default is `ETDRK4`; lower order variants can also be used for quick results. `HochOst4` seems to conserve the norm even better, but is a bit slower.
 Return the DifferentialEquations solution object. 
 """
-function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
+function propagate(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
                    ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), T_max::R, dt::R, itime::Bool=false,
                    solver=(iszero(g) ? ODE.LinearExponential() : itime ? ODE.LawsonEuler() : ODE.ETDRK4()), nsaves::Integer=0) where {Storage, R, T}
     (;xlims, L, M, basis, nc) = xh
@@ -276,7 +276,7 @@ function propagate(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
         ψ₀ₚ = Vector{eq_isreal ? R : Complex{R}}(undef, nc*B)
 
         # transform each component's wf and put into ψ₀ₚ
-        ft = FourierTransformer(xlims, M; basis, target_real=all(ψ₀_arereal), target_rank=1) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
+        ft = FourierTransformerP(xlims, M; basis, target_real=all(ψ₀_arereal), target_rank=1) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
         for c in 1:nc
             transform!(ft, ψ₀[c])
             ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
@@ -573,7 +573,7 @@ and `η` is a vector of relative particle numbers of each compoenent.
 `v_is_pspace=true` means that `v` is given in p-space, and x-space otherwise.
 By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider a decaying state, whereby imaginary part is important.
 """
-function get_Eμη(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc);
+function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc);
                  v_is_pspace=true, makereal=true) where {Storage, R}
     (;xlims, M, nc, basis) = xh
     B = size(xh.H, 1) ÷ nc  
@@ -582,7 +582,7 @@ function get_Eμη(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
         vₚ = v
     else # if `v` is in x-space, then perform FT to transition to p-space
         v_isreal = eltype(v) <: Real
-        ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1)
+        ft = FourierTransformerP(xlims, M; basis, target_real=v_isreal, target_rank=1)
         v_type = !v_isreal ? Complex{R} : eltype(ft.buff) # if v in x-space is complex, then result will be complex; otherwise the same as determined in `ft`
         vₚ = Vector{v_type}(undef, length(v))
         @views for c in 1:nc
@@ -601,7 +601,7 @@ function get_Eμη(xh::XSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
     if !iszero(g)
         # we need `ft` object to get the coordinates
         v_isreal = eltype(v) <: Real
-        ft = FourierTransformer(xlims, M; basis, target_real=v_isreal, target_rank=1)
+        ft = FourierTransformerP(xlims, M; basis, target_real=v_isreal, target_rank=1)
         dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
         if v_is_pspace # if `v` is in p-space, then perform FT to x-space
             # create an array of arrays holding squared x-space densities |𝜓(𝑥)|² for each component
@@ -665,7 +665,7 @@ Default termination mode is `AbsNormSafeBestTerminationMode` with L-inf norm wit
 Any additional keyword arguments will be passed directly to `NonlinearSolve.solve()`.
 Return the tuple consisting of the coordinates and the NonlinearSolution object.
 """
-function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}},
+function find_stationary(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{<:R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing;
                          solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
     (;xlims, M, basis, nc) = xh
@@ -677,7 +677,7 @@ function find_stationary(xh::XSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
         ψ₀_arereal = all(eltype(ψ) <: Real for ψ in ψ₀)
     end
     eq_isreal = ψ₀_arereal && all(isnothing.(xh.𝐴)) # equations are real (in x-space) if Hamiltonian and wfs are real (in x-space)
-    ft = FourierTransformer(xlims, M; basis, target_real=eq_isreal, target_rank=1) # single transformer supporting both directions
+    ft = FourierTransformerP(xlims, M; basis, target_real=eq_isreal, target_rank=1) # single transformer supporting both directions
     nx = length(ft.xs)
     
     # Prepare the input wf `ψ_input`. By default, its length is `nc*nx`, but if `natoms` is passed then we need additional `nc` elements to represent the μ's that are being optimised.
@@ -950,12 +950,12 @@ If `nev > 0`, calculate only `nev` eigenvalues of of type `whichvals` (`:LI` = l
 `xh` must contain half the number of harmonics of `ψ` (because having N points in `ψ` we can only construct a p-space operator of size N/2).
 `ψ` can be a vector or a N×1 matrix (where N is the number of x points).
 """
-function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::AbstractFloat, μ::AbstractFloat; ψ_iseven=false, nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
+function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::AbstractFloat, μ::AbstractFloat; ψ_iseven=false, nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
     (;xlims, M, basis) = xh
     # transform `ψ2` to p-space
     ψ_isreal = eltype(ψ) <: Real
     ψ2 = g .* ψ.^2
-    ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `M`
+    ft = FourierTransformerP(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `M`
     transform!(ft, ψ2)
     v2 = fft_to_matrix(ft; makereal=(ψ_iseven && ψ_isreal))
     if ψ_isreal
@@ -967,7 +967,7 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractVecO
         vconj2 = fft_to_matrix(ft)
         # transform `ψabs2` to p-space
         ψabs2 = abs2.(ψ)
-        ft = FourierTransformer(xlims, M; basis, target_real=true, target_rank=2)
+        ft = FourierTransformerP(xlims, M; basis, target_real=true, target_rank=2)
         transform!(ft, ψabs2)
         vabs2 = fft_to_matrix(ft)
     end
@@ -994,12 +994,12 @@ The chemical potential `μ` can be passed as a vector, or a number if it is the 
 `q` is the quasimomentum vector [qx, qy, …], zero by default.
 Note that the off-diagonal blocks of `xh.H` are not taken into account at all (because one needs to figure out conjugation).
 """
-function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::Union{R, AbstractVector{<:R}}, q=zeros(R, length(xh.xlims));
+function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::Union{R, AbstractVector{<:R}}, q=zeros(R, length(xh.xlims));
                              nev::Integer=0, verbose::Bool=false) where {Storage, R}
     (;xlims, M, basis, H, nc) = xh
     μs = μ isa R ? fill(μ, nc) : μ # if only one μ is passed, then construct a vector of same values
     ψ_isreal = eltype(ψ) <: Real
-    ft = FourierTransformer(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
+    ft = FourierTransformerP(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
     transform!(ft, ψ[:, 1].^2)
     v₁² = fft_to_matrix(ft)
     transform!(ft, ψ[:, 2].^2)
@@ -1020,7 +1020,7 @@ function bdg_spectrum_pspace(xh::XSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
         transform!(ft, conj(ψ[:, 2]).^2)
         v₂⁺² = fft_to_matrix(ft)
         
-        ft_real = FourierTransformer(xlims, M; basis, target_real=true, target_rank=2)
+        ft_real = FourierTransformerP(xlims, M; basis, target_real=true, target_rank=2)
         transform!(ft_real, abs2.(ψ[:, 1]))
         V₁² = fft_to_matrix(ft_real)
         transform!(ft_real, abs2.(ψ[:, 2]))

@@ -1,5 +1,5 @@
 # Analysing the system in https://doi.org/10.1103/dhkv-zvwg (https://arxiv.org/abs/2506.17096)
-using XSpaceHamiltonians
+using PSpaceHamiltonians
 
 using Plots, LaTeXStrings
 plotlyjs()
@@ -130,7 +130,7 @@ plot(xs, A_abs_cut)
 
 M = 30
 ν = 0.95
-@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝜙, [𝐴ₓ, 𝐴y]; basis=:cis, M, δ, 𝑈_iseven=true);
+@time xh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝜙, [𝐴ₓ, 𝐴y]; basis=:cis, M, δ, 𝑈_iseven=true);
 
 @time diagonalize!(xh, nev=5);
 xh.ε
@@ -155,7 +155,7 @@ M = 50
      nothing nothing 𝛥] # only upper triangle is needed
 𝑈_iseven = trues(3, 3)
 
-@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, δ, 𝑈_iseven, Γ=[0, 0, Γ₃], fft_threshold=1e-3);
+@time xh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, δ, 𝑈_iseven, Γ=[0, 0, Γ₃], fft_threshold=1e-3);
 matrix_density(xh)
 
 @time diagonalize!(xh, nev=5);

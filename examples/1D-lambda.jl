@@ -3,7 +3,7 @@
 ║ Analysis of https://doi.org/10.1103/PhysRevLett.117.233001 (https://arxiv.org/abs/1607.07338) ║
 ╚═══════════════════════════════════════════════════════════════════════════════════════════════╝
 =#
-using XSpaceHamiltonians, AppleAccelerate
+using PSpaceHamiltonians, AppleAccelerate
 
 using Plots, LaTeXStrings
 plotlyjs()
@@ -26,8 +26,8 @@ M = 200
 xs = range(xlimits..., 2M+1)
 plot(xs, 𝑈)
 
-@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M); # P=2π, M=200, ncells=101, nev=8: 0.0005 s construct + 0.28 s diagonalise
-@time xh = XSpaceHamiltonian{:sparse}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, fft_threshold=1f-3); # P=2π, M=200, ncells=101, nev=8: 0.0006 s construct + 0.26 s diagonalise (fft_threshold can be increased to 1e-3)
+@time xh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M); # P=2π, M=200, ncells=101, nev=8: 0.0005 s construct + 0.28 s diagonalise
+@time xh = PSpaceHamiltonian{:sparse}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, fft_threshold=1f-3); # P=2π, M=200, ncells=101, nev=8: 0.0006 s construct + 0.26 s diagonalise (fft_threshold can be increased to 1e-3)
 matrix_density(xh)
 
 diagonalize!(xh; nev=5)
@@ -74,8 +74,8 @@ M = 200
 𝑉 = [nothing nothing 𝛺₁
      nothing nothing 𝛺₂
      nothing nothing nothing]
-@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑉; basis=:cis, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], M); # M=200, ncells=101, nev=8: 0.003 s construct + 2.6 s diagonalise
-@time xh = XSpaceHamiltonian{:sparse}([xlimits], 𝑉; basis=:cis, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], M, fft_threshold=1f-1); # M=200, ncells=101, nev=8: 0.0005 s construct + 0.33 s diagonalise
+@time xh = PSpaceHamiltonian{:dense}([xlimits], 𝑉; basis=:cis, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], M); # M=200, ncells=101, nev=8: 0.003 s construct + 2.6 s diagonalise
+@time xh = PSpaceHamiltonian{:sparse}([xlimits], 𝑉; basis=:cis, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], M, fft_threshold=1f-1); # M=200, ncells=101, nev=8: 0.0005 s construct + 0.33 s diagonalise
 matrix_density(xh)
 
 @time diagonalize!(xh; nev=5)

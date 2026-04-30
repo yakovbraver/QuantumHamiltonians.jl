@@ -3,7 +3,7 @@
 ║ Calculations for https://arxiv.org/abs/2603.28876 ║
 ╚═══════════════════════════════════════════════════╝
 =#
-using XSpaceHamiltonians, AppleAccelerate
+using PSpaceHamiltonians, AppleAccelerate
 
 using Plots, LaTeXStrings
 plotlyjs()
@@ -48,7 +48,7 @@ xlimits = (-3π, 3π) .|> Float
 
 ### Dark-state system
 
-@time xhD = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M)
+@time xhD = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M)
 
 g = 100 |> Float # nonlinearity
 
@@ -71,8 +71,8 @@ plot(xs, ψD[1:size(xhD.H, 1)])
      nothing nothing 𝛺₂
      nothing nothing nothing]
 
-# @time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑉; basis, M, Γ=[0, 0, Γ₃])
-@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑉; basis, M)
+# @time xh = PSpaceHamiltonian{:dense}([xlimits], 𝑉; basis, M, Γ=[0, 0, Γ₃])
+@time xh = PSpaceHamiltonian{:dense}([xlimits], 𝑉; basis, M)
 
 # Rb-87 case
 g = [100   98 0
@@ -97,7 +97,7 @@ plot_comps(xs, ψ_nln)
 
 ################ Fields off ################
 
-xh_2comp = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M);
+xh_2comp = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M);
 B = size(xh_2comp.H, 1) ÷ 2 # how many points belong to each component; needed to pass only the first two
 
 # quench dynamics
@@ -123,7 +123,7 @@ plot_comps(xs, ψ_2comp)
 #### BdG ####
 
 @time vals, _ = bdg_spectrum(xh_2comp, ψ_2comp, g, μ_2comp_stationary) # for a single DB-soliton (cos case), which is stable, this usually yields a real array, even in the non-Manakov case
-# vals, _ = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_2comp[1:B] ψ_2comp[B+1:2B]], g, μ_2comp_stationary)
+# vals, _ = PSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_2comp[1:B] ψ_2comp[B+1:2B]], g, μ_2comp_stationary)
 scatter(vals, legend=false, markersize=1, markerstrokewidth=0)
 
 smallindx = findall(x -> abs(x) < 1e-2, vals) # as a check, find indices of values close to zero; should be a total of 6 (=3 pairs) due to symmetries. However, in the cos case, one of the pairs (related to translational symmetry) is not small enough due to the x-domain being too small
@@ -139,10 +139,10 @@ scatter(vals[:], legend=false, markersize=1, markerstrokewidth=0, xlabel="Re", y
 
 # Cross-check with p-space BdG if you want. Partial diagonalisation is also noisy and not reliable
 using ProgressMeter
-xh_half = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2);
+xh_half = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2);
 data = Vector{Complex{Float}}(undef, 2size(xh_half.H, 1)*length(qs))
 @showprogress for (iq, q) in enumerate(qs)
-    vals, _ = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_2comp[1:B] ψ_2comp[B+1:2B]], g, μ_2comp_stationary, [q]; nev=0)
+    vals, _ = PSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_2comp[1:B] ψ_2comp[B+1:2B]], g, μ_2comp_stationary, [q]; nev=0)
     data[(iq-1)length(vals)+1:iq*length(vals)] = vals
 end
 scatter(data[:], legend=false, markersize=1, markerstrokewidth=0, xlabel="Re", ylabel="Im")

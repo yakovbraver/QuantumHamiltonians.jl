@@ -1,4 +1,4 @@
-mutable struct FourierTransformer{R,T,PlanForward,PlanBackward,D} # T is the type of buffer, real for sin and cos, complex for cis
+mutable struct FourierTransformerP{R,T,PlanForward,PlanBackward,D} # T is the type of buffer, real for sin and cos, complex for cis
     xs::Matrix{R} # coordinates matrix: 1st column contains 𝑥's, second contains 𝑦's, etc.
     M::Int # maximum harmonic number (will use -M:M for cis basis, 1:M for sin, 0:M for cos)
     norm_forward::R # normalisation factor for forward transform
@@ -16,7 +16,7 @@ end
 Set `target_rank=1` if you are making the transform for building a Fourier-space vector (using `fft_to_vector`),
 set `target_rank=2` if you are making the transform for building a Fourier-space matrix (using `fft_to_matrix`). The latter needs twice the number of harmonics.
 """
-function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_real::Bool=true, target_rank::Integer=2) where R <: AbstractFloat
+function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_real::Bool=true, target_rank::Integer=2) where R <: AbstractFloat
     D = length(xlims) # number of spatial dimensions
     L = Vector{R}(undef, D) # periods in each dimension. Only needed here, to calculate the normalisation factor
     dx = Vector{R}(undef, D) # dx's in each dimension
@@ -69,11 +69,11 @@ function FourierTransformer(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basi
     norm_backward = target_rank == 1 ? prod(inv.(sqrt.(L))) : prod(inv.(L))
     
     did_complex_rxdft = false # value does not matter before any transform is performed
-    return FourierTransformer(xs, M, norm_forward, norm_backward, basis, buff, buff_im, did_complex_rxdft, plan_forward, plan_backward)
+    return FourierTransformerP(xs, M, norm_forward, norm_backward, basis, buff, buff_im, did_complex_rxdft, plan_forward, plan_backward)
 end
 
 "Transform a callable function `𝑓` given in x-space to p-space or reverse."
-function transform!(ft::FourierTransformer, 𝑓::Function; direction::Symbol=:forward)
+function transform!(ft::FourierTransformerP, 𝑓::Function; direction::Symbol=:forward)
     (;xs, norm_forward, norm_backward, basis, buff, buff_im, plan_forward, plan_backward) = ft
     normalisation = direction == :forward ? norm_forward : norm_backward
     plan = direction == :forward ? plan_forward : plan_backward
@@ -109,7 +109,7 @@ end
 Transform a discretised function `f`, which can be either in x-space or p-space.
 The transformation is forward or backward depending on the `direction` keyword argument.
 """
-function transform!(ft::FourierTransformer, f::AbstractArray{<:Number}; direction::Symbol=:forward)
+function transform!(ft::FourierTransformerP, f::AbstractArray{<:Number}; direction::Symbol=:forward)
     (;norm_forward, norm_backward, basis, buff, buff_im, plan_forward, plan_backward) = ft
     normalisation = direction == :forward ? norm_forward : norm_backward
     plan = direction == :forward ? plan_forward : plan_backward
@@ -146,7 +146,7 @@ Use the result of the transform to construct a vector indexed by (𝑗ₓ𝑗y�
 If `makesparse=true`, a sparse vector is returned, with values below `threshold` in magnitude filtered out. By default, a dense vector is returned.
 If `makereal=true`, a real vector (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of ft.buff.
 """
-function fft_to_vector(ft::FourierTransformer{R,T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R)), direction::Symbol=:forward) where {R <: AbstractFloat, T <: Number}
+function fft_to_vector(ft::FourierTransformerP{R,T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R)), direction::Symbol=:forward) where {R <: AbstractFloat, T <: Number}
     (;M, buff, basis) = ft
     D = ndims(buff)
     if basis == :cis
@@ -184,7 +184,7 @@ end
 Use the result of the transform to fill `v` as a vector indexed by (𝑗ₓ𝑗y⋯). 
 `makereal=true` is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
-function fft_to_vector!(v::AbstractVector{<:Number}, ft::FourierTransformer; makereal=false, direction::Symbol=:forward)
+function fft_to_vector!(v::AbstractVector{<:Number}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward)
     (;buff, buff_im, basis) = ft
     D = ndims(buff)
     makereal && (buff .= real.(buff))
@@ -213,7 +213,7 @@ Use the result of the transform to construct a matrix indexed by (𝑗′ₓ𝑗
 If `makesparse=true`, a sparse matrix is returned, with values below `threshold` in magnitude filtered out. By default, a dense matrix is returned.
 If `makereal=true`, a real matrix (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
-function fft_to_matrix(ft::FourierTransformer{R,T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R))) where {R <: AbstractFloat, T <: Number}
+function fft_to_matrix(ft::FourierTransformerP{R,T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R))) where {R <: AbstractFloat, T <: Number}
     (;M, buff, basis) = ft
     D = ndims(buff)
     if basis == :cis
@@ -253,7 +253,7 @@ end
 Use the result of the transform to fill `A` as a matrix indexed by (𝑗′ₓ𝑗′y⋯, 𝑗ₓ𝑗y⋯). 
 `makereal=true` is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
-function fft_to_matrix!(A::AbstractMatrix{<:Number}, ft::FourierTransformer; makereal=false)
+function fft_to_matrix!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP; makereal=false)
     D = ndims(ft.buff)
     makereal && (ft.buff .= real.(ft.buff))
     if D == 1
@@ -268,7 +268,7 @@ end
 """
 Use the result of the 1D transform to fill `A` as a matrix indexed by (𝑗′ₓ, 𝑗ₓ).
 """
-function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
+function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
     (;M, basis, buff, buff_im) = ft
     if basis == :cis
         A[diagind(A)] .= buff[1]
@@ -319,7 +319,7 @@ end
 """
 Use the result of the 2D transform to fill `A` as a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 """
-function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer)
+function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
     (;M, basis, buff, buff_im) = ft
     if basis == :cis
         B = 2M + 1
@@ -380,7 +380,7 @@ end
 
 ################ Sparse ################
 
-function filter_count!(ft::FourierTransformer; threshold::Real=0)
+function filter_count!(ft::FourierTransformerP; threshold::Real=0)
     D = ndims(ft.buff)
     if D == 1
         n_elem = filter_count_1D!(ft; threshold)
@@ -392,7 +392,7 @@ function filter_count!(ft::FourierTransformer; threshold::Real=0)
     return n_elem
 end
 
-function fft_to_matrix_sparse!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformer)
+function fft_to_matrix_sparse!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
     D = ndims(ft.buff)
     if D == 1
         fft_to_matrix_sparse_1D!(rows, cols, vals, ft)
@@ -409,7 +409,7 @@ end
 Set to zero values of `ft.buff` that are smaller by magnitude than `threshold`.
 Based on the resulting number of nonzero elements in `ft.buff`, count and return the number of values that will be stored in the matrix indexed by (𝑗′ₓ, 𝑗ₓ).
 """
-function filter_count_1D!(ft::FourierTransformer; threshold::Real=0)
+function filter_count_1D!(ft::FourierTransformerP; threshold::Real=0)
     (;M, buff) = ft
     n_elem = 0
     B = 2M + 1 # Hamiltonian size
@@ -432,7 +432,7 @@ end
 Use the result of the transform to construct a sparse matrix indexed by (𝑗′ₓ, 𝑗ₓ).
 The type of `vals` might differ from the type of `ft.buff` since one may want to drop the imaginary part.
 """
-function fft_to_matrix_sparse_1D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformer)
+function fft_to_matrix_sparse_1D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
     B = 2ft.M + 1 # the size of Hamiltonian
     counter = 1
     for (c_u, val) in enumerate(ft.buff)
@@ -470,7 +470,7 @@ end
 Set to zero values of `ft.buff` that are smaller by magnitude than `threshold`.
 Based on the resulting number of nonzero elements in `ft.buff`, count and return the number of values that will be stored in the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 """
-function filter_count_2D!(ft::FourierTransformer; threshold::Real=0)
+function filter_count_2D!(ft::FourierTransformerP; threshold::Real=0)
     (;M, buff) = ft
     n_elem = 0
     B = 2M + 1 # the size of each block
@@ -495,7 +495,7 @@ end
 Use the result of the transform to construct a sparse matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
 The type of `vals` might differ from the type of `ft.buff` since one may want to drop the imaginary part.
 """
-function fft_to_matrix_sparse_2D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformer)
+function fft_to_matrix_sparse_2D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
     B = 2ft.M + 1 # the size of each block
     u = ft.buff
 

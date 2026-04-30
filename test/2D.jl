@@ -10,10 +10,10 @@
      32  31  35  22  21  25  12  11  15
      33  32  31  23  22  21  13  12  11]
     
-    # we need a `FourierTransformer` object to test `fft_to_matrix_2D!`
+    # we need a `FourierTransformerP` object to test `fft_to_matrix_2D!`
     u = [10i+j for i = 1:5, j=1:5]
     M = 1
-    ft = XSpaceHamiltonians.FourierTransformer([(0.0, 1.0), (0.0, 1.0)], M; basis=:cis)
+    ft = XSpaceHamiltonians.FourierTransformerP([(0.0, 1.0), (0.0, 1.0)], M; basis=:cis)
     ft.buff .= u # set as if `u` was the result of an actual fft
     H = similar(H_true)
     XSpaceHamiltonians.fft_to_matrix_2D!(H, ft)
@@ -73,7 +73,7 @@ end
     M = 5
 
     ### Nonperiodic
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
+    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
     @test dh.H isa Matrix{Float32}
     @test dh.V isa Matrix{Float32}
 
@@ -86,7 +86,7 @@ end
     @test dh.ε[1] ≈ 2.064 rtol=1e-3
 
     ### Periodic
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true)
+    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true)
     @test dh.H isa Matrix{Float32}
 
     # exact diagonalisation
@@ -105,7 +105,7 @@ end
     ylimits = (0, π) .|> Float32
 
     ### Nonperiodic
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:sin, M)
+    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:sin, M)
     
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -122,7 +122,7 @@ end
     xlimits = (0, 2π) .|> Float32
     ylimits = (0, 2π) .|> Float32
 
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true);
+    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true);
 
     # exact diagonalisation
     diagonalize!(dh, nev=0)
@@ -132,7 +132,7 @@ end
     diagonalize!(dh, nev=1)
     @test dh.ε[1] ≈ 0.571 atol=1e-3
 
-    sh = XSpaceHamiltonian{:sparse}([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true) # cast to Float64 manually to suppress info message
+    sh = PSpaceHamiltonian{:sparse}([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true) # cast to Float64 manually to suppress info message
     diagonalize!(sh, nev=1)
     @test sh.ε[1] ≈ 0.571 atol=1e-3
 end
@@ -166,7 +166,7 @@ end
     𝑈_iseven=trues(3, 3)
     
     ### Hermitian periodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
+    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
     @test dh.H isa Matrix{Float32}
     @test dh.H[1, 19] ≈ Ω₁₀ / 2
     @test dh.H[10, 23] ≈ Ω₊ / 4
@@ -181,7 +181,7 @@ end
     @test dh.ε[1] ≈ 0.039 atol=1e-3
 
     ### Hermitian nonperiodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
+    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
     @test dh.H isa Matrix{Float32}
         
     # exact diagonalisation
@@ -193,7 +193,7 @@ end
     @test dh.ε[1] ≈ 0.5 rtol=1e-3
     
     ### non-Hermitian periodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃]);
+    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃]);
     @test dh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
@@ -208,7 +208,7 @@ end
     @test dh.ε[1] ≈ 0.039 atol=1e-3
 
     ### non-Hermitian nonperiodic diagonalisation
-    dh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M, Γ=[0, 0, Γ₃]);
+    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M, Γ=[0, 0, Γ₃]);
     @test dh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
@@ -247,7 +247,7 @@ end
     𝑈_iseven = trues(3, 3)
 
     ### Hermitian periodic diagonalisation
-    sh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
+    sh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
     @test sh.H[1, 19] ≈ Ω₁₀ / 2
     @test sh.H[10, 23] ≈ Ω₊ / 4
     @test sh.H[11, 22] ≈ -Ω₊ / 4
@@ -256,7 +256,7 @@ end
     @test sh.ε[1] ≈ 0.039 atol=1e-3
 
     ### Non-Hermitian periodic diagonalisation
-    sh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
+    sh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
     @test sh.H[1, 19] ≈ Ω₁₀ / 2
     @test sh.H[10, 23] ≈ Ω₊ / 4
     @test sh.H[11, 22] ≈ -Ω₊ / 4

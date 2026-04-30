@@ -1,5 +1,5 @@
 # 3-component analysis of https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
-using XSpaceHamiltonians
+using PSpaceHamiltonians
 
 using Plots, LaTeXStrings
 plotlyjs()
@@ -57,8 +57,8 @@ M = 200
 𝑈 = [nothing nothing 𝛺₁      
      nothing nothing 𝛺₂
      nothing nothing nothing] # only upper triangle is needed
-@time xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
-@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], fft_threshold=1e-3)
+@time xh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+@time xh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], fft_threshold=1e-3)
 
 @time diagonalize!(xh, nev=5);
 xh.ε
@@ -74,8 +74,8 @@ plot_comps(xs, ys, ψ)
 ### Quasimomenta
 
 M = 50 # something like M=30 is needed to get converged lowest band
-@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
-# xh = XSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+@time xh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+# xh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 ncells = 11
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P)
@@ -112,7 +112,7 @@ M = 100
 𝑈 = [nothing nothing 𝛺₁      
      nothing nothing 𝛺₂_cis
      nothing nothing nothing] # only upper triangle is needed
-@time xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], fft_threshold=1e-3)
+@time xh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], fft_threshold=1e-3)
 @time diagonalize!(xh, nev=5);
 xh.ε
 
@@ -124,7 +124,7 @@ plot_comps(xs, ys, ψ)
 ### Quasimomenta
 
 M = 50
-xh = XSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
+xh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 ncells = 21
 P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P)

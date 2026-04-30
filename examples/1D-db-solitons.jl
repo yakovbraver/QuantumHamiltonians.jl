@@ -1,4 +1,4 @@
-using XSpaceHamiltonians, AppleAccelerate
+using PSpaceHamiltonians, AppleAccelerate
 
 using Plots, LaTeXStrings
 plotlyjs()
@@ -20,7 +20,7 @@ M = get_M(basis, 8)
 R = 10 |> Float
 xlimits = (-R, R)
 
-xh_db = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5);
+xh_db = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5);
 
 μ₀ = 4 |> Float
 η = 1 |> Float
@@ -42,8 +42,8 @@ smallindx = findall(x -> abs(x) < 1e-2, vals) # find indices of very small value
 vals[smallindx] # yields the two imaginary frequencies (~1e-8) and four real ones (~2e-7)
 
 # Side Code: Can also calculate in p-space
-# xh_half = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
-# vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_db[1:end÷2] ψ_db[end÷2+1:end]], g, μs)
+# xh_half = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
+# vals, vecs = PSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_db[1:end÷2] ψ_db[end÷2+1:end]], g, μs)
 # scatter(vals, legend=false, markersize=2, markerstrokewidth=0)
 # smallindx = findall(x -> abs(x) < 1e-2, vals) # find indices of very small values
 # vals[smallindx] # usually yields the two imaginary frequencies (~1e-8) and four real ones (~2e-7)
@@ -61,7 +61,7 @@ vals[smallindx]
 nsaves = 100
 T_max = 50 |> Float
 dt = 1e-3 |> Float
-@time sol = propagate(xh_db, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.ODE.ETDRK2())
+@time sol = propagate(xh_db, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=PSpaceHamiltonians.ODE.ETDRK2())
 V = sol.u[end]
 E, μs = get_Eμη(xh_db, V, g)
 xs, U = make_map_comps(xh_db, sol; itime=false)
@@ -105,12 +105,12 @@ function scan_gs(gs, sol, qs=nothing; whichg=12, nev=0, abstol=1e-8, bdg_verbose
                end
           else
                if isnothing(qs)
-                    vals, _ = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [sol.u[1:end÷2] sol.u[end÷2+1:end]], g, μs; nev)
+                    vals, _ = PSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [sol.u[1:end÷2] sol.u[end÷2+1:end]], g, μs; nev)
                     sp = sortperm(vals, by=abs)
                     data[:, i] = vals[sp[1:nsaves]]
                else
                     for (iq, q) in enumerate(qs[1]) # specific for 1 dimension
-                         vals, _ = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [sol.u[1:end÷2] sol.u[end÷2+1:end]], g, μs, [q]; nev)
+                         vals, _ = PSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [sol.u[1:end÷2] sol.u[end÷2+1:end]], g, μs, [q]; nev)
                          sp = sortperm(vals, by=abs)
                          data[(iq-1)nsaves+1:iq*nsaves, i] = vals[sp[1:nsaves]]
                     end
@@ -130,9 +130,9 @@ nT = 1 # number of periods
 R = 20*nT |> Float
 xlimits = (-R, R)
 
-xh = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5);
+xh = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5);
 # for calculating in momentum space (using `bdg_spectrum_pspace`) we need xh with half harmonics. Note that then M must be divisible by 2, so `get_M(basis, 9) = 247` won't work -- use 262 instead. However, the sults are then unconverged anyway -- use `get_M(basis, 10)`.
-xh_half = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
+xh_half = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
 
 xs = range(xlimits..., 100)
 plot(xs, Ψ₀[1]); plot!(xs, Ψ₀[2])
@@ -149,7 +149,7 @@ get_Eμη(xh, ψ_lattice, g, v_is_pspace=false)
 plot_comps(xs, ψ_lattice)
 
 @time vals, vecs = bdg_spectrum(xh, ψ_lattice, g, μs, verbose=true, nev=100)
-@time vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_lattice[1:end÷2] ψ_lattice[end÷2+1:end]], g, μs; verbose=true, nev=100)
+@time vals, vecs = PSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_lattice[1:end÷2] ψ_lattice[end÷2+1:end]], g, μs; verbose=true, nev=100)
 
 scatter(vals, legend=false, markersize=2, markerstrokewidth=0)
 
@@ -185,7 +185,7 @@ M = get_M(basis, 9)
 R = 30 |> Float
 xlimits = (-R, R)
 
-xh = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5);
+xh = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5);
 
 # trial from eqs. (9)-(10)
 x₀ = 1.8; D = 1; η = 0.5
@@ -234,7 +234,7 @@ plot(fig_real, fig_imag, layout=(2, 1))
 nsaves = 100
 T_max = 1000 |> Float
 dt = 1e-3 |> Float
-@time sol = propagate(xh, [ψ_lattice[1:end÷2], ψ_lattice[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.ODE.ETDRK2()) # takes ~45 seconds; the time point at which the instability set in (𝑡 = 500 in the paper) depends on the accuracy of the ODE solver and the accuracy of the initial state
+@time sol = propagate(xh, [ψ_lattice[1:end÷2], ψ_lattice[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=PSpaceHamiltonians.ODE.ETDRK2()) # takes ~45 seconds; the time point at which the instability set in (𝑡 = 500 in the paper) depends on the accuracy of the ODE solver and the accuracy of the initial state
 V = sol.u[end]
 E, μ = get_Eμη(xh, V, g)
 xs, U = make_map_comps(xh, sol; itime=false)

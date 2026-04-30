@@ -5,7 +5,7 @@
     xlimits = (-5, 5) .|> Float32
 
     ### Periodic
-    xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M=10, δ=√0.5f0) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
+    xh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M=10, δ=√0.5f0) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
     @test xh isa XSpaceHamiltonians.DenseHamiltonian{Float32,Float32,Float32,2,3}
 
     # test 5 lowest eigenvalues
@@ -22,7 +22,7 @@
     @test abs.(ψ) ≈ abs.(ψ_true) atol=1e-2 # test abs because a sign difference is possible
 
     ### Nonperiodic
-    xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, M=15, δ=√0.5f0) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
+    xh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, M=15, δ=√0.5f0) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
     @test xh isa XSpaceHamiltonians.DenseHamiltonian{Float32,Float32,Float32,2,3}
 
     # test 5 lowest eigenvalues
@@ -51,7 +51,7 @@ end
             basis == :sin ? 2^p-1 : 2^p
         R = 15
         xlimits = (-R, R) .|> Float64
-        xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ)
+        xh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ)
 
         # Calculate stationary state and test energy
         𝜓₀(x) = sech(x)
@@ -72,7 +72,7 @@ end
 
         # also test BdG in p-space. Skip sin case because that requires 2M+1 harmonics for dimensions to match, but the result is then inaccurate
         if basis != :sin
-            xh_half = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M=M÷2, δ)
+            xh_half = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M=M÷2, δ)
             vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, sol.u, g, μ₀; ψ_iseven=true)
             @test maximum(imag, vals) ≈ 0.3306185 atol=1e-5 # using larger atol because with twice less harmonics this is less accurate
         end
@@ -90,7 +90,7 @@ end
     R = 10 |> Float
     xlimits = (-R, R)
 
-    xh = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5)
+    xh = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5)
 
     μ₀ = 4 |> Float
     η = 1 |> Float
@@ -131,7 +131,7 @@ end
     @test all(x -> abs(x) < 5e-5, vals[smallindx]) # those values should be ≲ 5e-5
 
     # Calculate BdG spectrum in p-space
-    xh_half = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
+    xh_half = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
     vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_db[1:end÷2] ψ_db[end÷2+1:end]], g, μs)
     smallindx = findall(x -> abs(x) < 1e-2, vals) # find indices of very small values
     @test length(smallindx) == 6 # there should be exactly 6 values "close to zero"
@@ -170,8 +170,8 @@ end
     R = 20*nT |> Float
     xlimits = (-R, R)
 
-    xh = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5);
-    xh_half = XSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
+    xh = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M, δ=√0.5);
+    xh_half = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
 
     μs = [1.5, 1.23]
     g = [1   0.8

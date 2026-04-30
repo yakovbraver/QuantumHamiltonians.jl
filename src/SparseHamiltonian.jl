@@ -4,7 +4,7 @@ A type representing a spatial, 𝐷-dimensional, 𝑛-component, possibly quasim
     𝐻ᵢⱼ(r) = 𝑈ᵢⱼ(r)
 as a sparse matrix. Here  1 ≤ 𝑖, 𝑗 ≤ 𝑛,  r = (𝑥₁, …, 𝑥_𝐷),  Aᵢ = (𝐴ᵢ₁, …, 𝐴ᵢ_𝐷),  q = (𝑞₁, …, 𝑞_𝐷).
 """
-mutable struct SparseHamiltonian{R,T,S,D1,D2} <: XSpaceHamiltonian{:sparse,R,T,S,D1,D2}
+mutable struct SparseHamiltonian{R,T,S,D1,D2} <: PSpaceHamiltonian{:sparse,R,T,S,D1,D2}
     xlims::Vector{Tuple{R, R}}
     L::Vector{R}
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
@@ -58,7 +58,7 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     T = H_isreal ? R : Complex{R} # type of elements of the Hamiltonian
     H_blocks = Matrix{SparseMatrixCSC{T, Int64}}(undef, nc, nc) # temporary Hamiltonian as an `nc`-by-`nc` matrix of sparse blocks
 
-    ft = FourierTransformer(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
+    ft = FourierTransformerP(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
 
     𝑈_diag_allequal = allequal(diagview(𝑈))
     𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing

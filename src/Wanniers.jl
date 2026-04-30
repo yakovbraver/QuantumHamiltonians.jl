@@ -14,7 +14,7 @@ Calculate Wannier states using the energy eigenstates `targetlevels`. The vector
 `dh` is assumed to have been diagonalised, without quasimomentum.
 Implemented for the 1-component case only.
 """
-function compute_wanniers!(dh::XSpaceHamiltonian{:dense}; targetlevels::AbstractVector{<:Integer})
+function compute_wanniers!(dh::PSpaceHamiltonian{:dense}; targetlevels::AbstractVector{<:Integer})
     dh.wanniers.targetlevels = targetlevels # store the target levels
     minlevel = targetlevels[1]
     Lx = dh.L[1]
@@ -48,7 +48,7 @@ In the process, energy eigenfunctions `ψ` are also constructed.
 Return (`xs`, `ψ`, `w`).
 This assumes that wanniers have been calculated; and this is only implemented for the 1-component case.
 """
-function make_wannierfunctions(dh::XSpaceHamiltonian{:dense}; nx::Integer)
+function make_wannierfunctions(dh::PSpaceHamiltonian{:dense}; nx::Integer)
     xs, ψ = make_eigenfunctions(dh; statenos=dh.wanniers.targetlevels, nx)
     w = dropdims(ψ; dims=2) * dh.wanniers.V # drop the dimesion corresponding to the component number
     return xs, ψ, w
@@ -73,13 +73,13 @@ function make_wanniers_real(w)
 end
 
 "Compute tunnelling element ⟨𝑤ᵢ|𝐻|𝑤ⱼ⟩."
-function compute_tunneling(dh::XSpaceHamiltonian{:dense}; i::Integer=1, j::Integer=2)
+function compute_tunneling(dh::PSpaceHamiltonian{:dense}; i::Integer=1, j::Integer=2)
     wᵢ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, i] # one wannier basis vector |𝑤ᵢ⟩ = ∑ₚ |𝜓ₚ⟩ 𝑉ᵢₚ
     wⱼ = dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V[:, j]
     return dot(wᵢ, dh.H, wⱼ)
 end
 
 "Compute TB Hamiltonian matrix, with elements ⟨𝑤ᵢ|𝐻|𝑤ⱼ⟩."
-function compute_tb_hamiltonian(dh::XSpaceHamiltonian{:dense})
+function compute_tb_hamiltonian(dh::PSpaceHamiltonian{:dense})
     dh.wanniers.V' * dh.V[:, dh.wanniers.targetlevels]' * dh.H * dh.V[:, dh.wanniers.targetlevels] * dh.wanniers.V
 end

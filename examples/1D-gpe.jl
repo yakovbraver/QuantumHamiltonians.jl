@@ -1,4 +1,4 @@
-using XSpaceHamiltonians, AppleAccelerate
+using PSpaceHamiltonians, AppleAccelerate
 
 using Plots, LaTeXStrings
 plotlyjs()
@@ -28,7 +28,7 @@ xs = range(xlimits..., 100)
 plot(xs, 𝑈)
 
 # diagonalise to get exact eigenstates
-@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M);
+@time xh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M);
 @time diagonalize!(xh, nev=5);
 xh.ε
 
@@ -79,7 +79,7 @@ xlimits = (-R, R) .|> Float
 basis = :cis
 M = get_M(basis)
 
-@time xh = XSpaceHamiltonian{:dense}([xlimits], nothing; basis, M, δ)
+@time xh = PSpaceHamiltonian{:dense}([xlimits], nothing; basis, M, δ)
 @time diagonalize!(xh, nev=0);
 xh.ε
 
@@ -154,7 +154,7 @@ xlimits = (-R, R) .|> Float
 xs = range(xlimits..., 100)
 plot(xs, 𝑈)
 
-@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ)
+@time xh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ)
 diagonalize!(xh, nev=5)
 xh.ε
 
@@ -227,7 +227,7 @@ xlimits = (-R, R) .|> Float
 xs = range(xlimits..., 100)
 plot(xs, 𝑈)
 
-@time xh = XSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ)
+@time xh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ)
 
 # check out noninteracting eigenstates if you want
 @time diagonalize!(xh, nev=5);
@@ -255,7 +255,7 @@ dt = 1e-3 |> Float
 nsaves = 500
 
 ψ_rand = ψ_nln .+ 1e-5 .* rand(length(ψ_nln))
-@time sol = propagate(xh, [ψ_rand], [g;;]; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.ODE.ETDRK4())
+@time sol = propagate(xh, [ψ_rand], [g;;]; T_max, dt, itime=false, nsaves, solver=PSpaceHamiltonians.ODE.ETDRK4())
 
 xs, U = make_map(xh, sol)
 ts = range(0, T_max, nsaves+1)
