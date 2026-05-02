@@ -1,11 +1,12 @@
-mutable struct FourierTransformerP{R,T,PlanForward,PlanBackward,D} # T is the type of buffer, real for sin and cos, complex for cis
+"An object used to perform Fourier transformations for `PSpaceHamiltonian`."
+mutable struct FourierTransformerP{R, T, PlanForward, PlanBackward, D} # T is the type of buffer, real for sin and cos, complex for cis
     xs::Matrix{R} # coordinates matrix: 1st column contains 𝑥's, second contains 𝑦's, etc.
     M::Int # maximum harmonic number (will use -M:M for cis basis, 1:M for sin, 0:M for cos)
     norm_forward::R # normalisation factor for forward transform
     norm_backward::R # normalisation factor for backward transform
     basis::Symbol
-    buff::Array{T,D} # buffer for the result of the transform
-    buff_im::Array{T,D} # additional buffer for storing the DST/DCT of the imaginary part of a function
+    buff::Array{T, D} # buffer for the result of the transform
+    buff_im::Array{T, D} # additional buffer for storing the DST/DCT of the imaginary part of a function
     did_complex_rxdft::Bool # a flag that is true if the last-performed transformation was a DST/DCT ("FFTW.RODFT"/"FFTW.REDFT") of a *complex* function. The only reason why the type is mutable.
     plan_forward::PlanForward # plan for forward transform
     plan_backward::PlanBackward # plan for backward transform

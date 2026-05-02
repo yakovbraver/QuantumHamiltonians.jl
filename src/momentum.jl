@@ -84,3 +84,96 @@ function make_p_y(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where 
         return ∂_y
     end
 end
+
+"""
+Return the momentum-squared tensor (𝛿𝑝)² = -𝛿²Δ in `D = length(L)` dimensions. If `basis=:cis`, then return (𝛿𝑝 + 𝑞)² with quasimomenta provided in `qs`.
+A real rank-D tensor is returned.
+"""
+function make_p²_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zeros(R, length(L))) where R <: AbstractFloat
+    D = length(L)
+    PI = R(π) # for type stability. Otherwise 2*π*2f0 gets converted to Float64 (and so does 2f0*2π, while 2f0*2*π does not...)
+    if basis == :cis
+        cx = 2PI*δ/L[1]
+        M_range = [0:M-1; -M:-1]
+        if D == 1
+            return [(cx*jx + qs[1])^2 for jx in M_range]
+        elseif D == 2
+            cy = 2PI*δ/L[2]
+            return [((cx*jx + qs[1])^2 + (cy*jy + qs[2])^2) for jx in M_range, jy in M_range]
+        # else # arbitrary `D`
+        #     Ms = ntuple(Returns(M_range), D)
+        #     L_r = reverse(L) # because `J` will be be enumerated in "reverse" order compared to that used by us (first dimesnion is 𝑥, then 𝑦, ...)
+        #     qs_r = reverse(L)
+        #     return [sum(@. (J * 2PI*δ/L_r + qs_r)^2) for J in Iterators.product(Ms...)]
+        end
+    else # basis == :sin || basis == :cos
+        bx = PI*δ/L[1] # different name than `cx` above to prevent Core.Box
+        j₁ = basis == :sin ? 1 : 0
+        if D == 1
+            return [-(bx*jx)^2 for jx in j₁:M]
+        elseif D == 2
+            by = PI*δ/L[2]
+            return [-(bx*jx)^2 - (by*jy)^2 for jx in j₁:M, jy in j₁:M]
+        end
+    end
+    return R[] # for type stability
+end
+
+"""
+Return the tensor of 𝑝ᵢ = -iδ𝜕ᵢ if `basis=:cis` and δ𝜕ᵢ otherwise. The output is real in both cases."
+A real rank-D tensor is returned.
+"""
+function make_p_i_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, i::Integer) where R <: AbstractFloat
+    if i == 1
+        return make_p_x_tensor(L, M, δ, basis)
+    elseif i == 2
+        return make_p_y_tensor(L, M, δ, basis)
+    end
+end
+
+"""
+Return the tensor of 𝑝ₓ = -iδ𝜕ₓ if `basis=:cis` and δ𝜕ₓ otherwise. The output is real in both cases.
+A real rank-D tensor is returned.
+"""
+function make_p_x_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
+    D = length(L)
+    if basis == :cis
+        M_range = [0:M-1; -M:-1]
+        PI = R(π)
+        cx = 2PI*δ/L[1]
+        if D == 1
+            return [cx * jx for jx in M_range]
+        elseif D == 2
+            return [cx * jx for jx in M_range, jy in M_range]
+        end
+    else # basis == :sin || basis == :cos # TODO reconsider because inverse transform for sin is cos and for cos is sin
+        j₁ = basis == :sin ? 1 : 0
+        bx = (-1)^j₁ * PI*δ/L[1] # different name than `cx` above to prevent Core.Box. The prefactor is because we need a minus in the sin case.
+        if D == 1
+            return [bx*jx for jx in j₁:M] 
+        elseif D == 2
+            return [bx*jx for jx in j₁:M, jy in j₁:M]
+        end
+    end
+end
+
+"""
+Return the tensor of 𝑝ʸ = -i𝛿𝜕ʸ if `basis=:cis` and 𝛿𝜕ʸ otherwise. The output is real in both cases.
+A real rank-D tensor is returned.
+"""
+function make_p_y_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
+    D = length(L)
+    # D == 1 && @error "Only D ≥ 2 supported. For D = 1, use make_p_x."; return
+    if basis == :cis
+        M_range = [0:M-1; -M:-1]
+        PI = R(π)
+        cy = 2PI*δ/L[2]
+        return [cy * jy for jx in M_range, jy in M_range]
+    else # basis == :sin || basis == :cos # TODO reconsider because inverse transform for sin is cos and for cos is sin
+        j₁ = basis == :sin ? 1 : 0
+        by = (-1)^j₁ * PI*δ/L[2] # different name than `cx` above to prevent Core.Box. The prefactor is because we need a minus in the sin case.
+        if D == 2
+            return [by*jy for jx in j₁:M, jy in j₁:M]
+        end
+    end
+end

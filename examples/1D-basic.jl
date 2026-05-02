@@ -1,4 +1,4 @@
-using PSpaceHamiltonians
+using XSpaceHamiltonians, AppleAccelerate
 
 using Plots
 plotlyjs()
@@ -14,14 +14,14 @@ function 𝑈(x::Real)
     x^2 / 2
 end
 
-Float = Float32 # operating type
+Float = Float64 # operating type
 
-xlimits = (-5, 5) .|> Float
-M = 300
+xlimits = (-50, 50) .|> Float
+M = 256
 
-@time xh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, δ=Float(√0.5));
-@time diagonalize!(xh, nev=5);
-xh.ε
+@time ph = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, δ=Float(√0.5));
+@time diagonalize!(ph, nev=0);
+ph.ε
 
 # For real Hamiltonian matrix (in momentum space), the eigenstates can be chosen real. But since we are using a complex cis basis, the coordinate-space functions are complex.
 # However, if potential is even, the eigenstates have definite parity. E.g. ground state is even, and so can be expressed in terms of cos, i.e. the real part of cis.
@@ -29,19 +29,30 @@ xh.ε
 
 stateno = 5
 part = iseven(stateno-1) ? real : imag
-xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=50)
+xs, ψ = make_eigenfunctions(ph; statenos=[stateno], nx=2M+1)
 plot(xs, 𝑈)
-plot!(xs, part(ψ[:, 1, 1]) .+ xh.ε[stateno])
+plot!(xs, part(ψ[:, 1, 1]) .+ ph.ε[stateno])
 
 # Or we can solve using the sine basis, yielding real coordinate-space eigenfunctions
-xh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, M, δ=Float(√0.5))
-@time diagonalize!(xh, nev=5);
-xh.ε
+ph = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:sin, M, δ=Float(√0.5))
+@time diagonalize!(ph, nev=5, verbose=true);
+ph.ε
 
 stateno = 1
-@time xs, ψ = make_eigenfunctions(xh; statenos=[stateno], nx=200);
+@time xs, ψ = make_eigenfunctions(ph; statenos=[stateno], nx=200);
 plot(xs, 𝑈)
-plot!(xs, ψ[:, 1, 1] .+ xh.ε[stateno])
+plot!(xs, ψ[:, 1, 1] .+ ph.ε[stateno])
+
+### Diagonalisation in x-space
+M = 128
+xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M, δ=Float(√0.5))
+@time vals, vecs, info = diagonalize(xh; nev=5); # for large M you may need to tweak solver parameters. E.g. for M = 256, to converge to the default Float64 tolerance of 1e-12, set `krylovdim=35` (default is 30)
+vals
+info
+
+stateno = 5
+plot(xh.ft.xs, 𝑈)
+plot!(xh.ft.xs, vecs[stateno][1] .+ vals[stateno])
 
 
 #=
@@ -64,35 +75,35 @@ xlimits = (-π*ncells/2, π*ncells/2) .|> Float
 xlimits = (0, π*ncells) .|> Float
 M = 32ncells * 2
 
-xh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M)
+ph = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M)
 
-@time diagonalize!(xh, nev=0);
-scatter(xh.ε[1:M])
+@time diagonalize!(ph, nev=0);
+scatter(ph.ε[1:M])
 
 # energies of a certain band
 targetband = 27
 nsubbands = 2
 targetlevels = (targetband-1)*2ncells+1:targetband*2ncells
-scatter(xh.ε[targetlevels])
+scatter(ph.ε[targetlevels])
 
 # plot eigenfunctions
-xs, ψ = make_eigenfunctions(xh; statenos=targetlevels, nx=ncells*1000)
+xs, ψ = make_eigenfunctions(ph; statenos=targetlevels, nx=ncells*1000)
 plot(xs, 𝑈, label=false)
-plot!(xs, abs2.(ψ[:, 1, :]) .+ xh.ε[targetlevels]') 
+plot!(xs, abs2.(ψ[:, 1, :]) .+ ph.ε[targetlevels]') 
 
 # study wanniers
-@time compute_wanniers!(xh; targetlevels);
-xh.wanniers.pos
-xs, ψ, w = make_wannierfunctions(xh; nx=500ncells);
+@time compute_wanniers!(ph; targetlevels);
+ph.wanniers.pos
+xs, ψ, w = make_wannierfunctions(ph; nx=500ncells);
 plot(xs, 𝑈);
 w_real = make_wanniers_real(w)
-plot!(xs, w_real .+ xh.wanniers.E')
+plot!(xs, w_real .+ ph.wanniers.E')
 
 # visually compare real and imaginary parts
 plot(xs, real.(w[:, 3]))
 plot!(xs, imag.(w[:, 3]))
 
-H_TB = compute_tb_hamiltonian(xh)
+H_TB = compute_tb_hamiltonian(ph)
 
 # study one cell using quasimomentum
 

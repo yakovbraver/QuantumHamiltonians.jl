@@ -1,0 +1,105 @@
+"An object used to perform Fourier transformations for `XSpaceHamiltonian`."
+struct FourierTransformerX{R, D, PlanForward, PlanBackward, PlanBothways!}
+    xs::Matrix{R} # coordinates matrix: 1st column contains 𝑥's, second contains 𝑦's, etc.
+    M::Int # maximum harmonic number (will use -M:M-1 for cis basis, 1:M for sin, 0:M for cos)
+    basis::Symbol
+    buff_re::Array{R, D} # buffer for DST/DCT of the real part of a function
+    buff_im::Array{R, D} # buffer for DST/DCT of the imaginary part of a function
+    plan_forward::PlanForward # plan for forward transform
+    plan_backward::PlanBackward # plan for backward transform
+    plan_bothways!::PlanBothways! # in-place plan, used in the sin/cos case when acting on complex functions to avoid two additional buffers
+end
+
+"""
+`target_real` is only used in the sin and cos case: set to false if you plan to calculate DST or DCT for complex functions.
+"""
+function FourierTransformerX(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol) where R <: AbstractFloat
+    D = length(xlims) # number of spatial dimensions
+    L = Vector{R}(undef, D) # periods in each dimension. Only needed here, to calculate the normalisation factor
+    dx = Vector{R}(undef, D) # dx's in each dimension
+    if basis == :cis
+        N = 2M # number of points for FFT (the same for each dimension). This will yield harmonics from `-M` to `M-1`
+        xs = Matrix{R}(undef, N, D)
+        for i in 1:D
+            L[i] = xlims[i][2] - xlims[i][1]
+            dx[i] = L[i] / N
+            xs[:, i] .= range(xlims[i][1], xlims[i][2]-dx[i], N)
+        end
+        # buffers are not needed in the cis case; make them 0x0 (in `D` dimesions)
+        buff_re = Array{R}(undef, ntuple(Returns(0), D))
+        buff_im = similar(buff_re)
+        # a buffer used only for creating the plans
+        buff = Array{Complex{R}}(undef, ntuple(Returns(N), D)) 
+        plan_forward = FFTW.plan_fft(buff)
+        plan_backward = FFTW.plan_ifft(buff)
+        # in-place map is not needed in the cis case; just make a reference
+        plan_bothways! = plan_forward
+    elseif basis == :cos
+        N = M + 1
+        xs = Matrix{R}(undef, N, D)
+        for i in 1:D
+            L[i] = xlims[i][2] - xlims[i][1]
+            dx[i] = L[i] / (N-1)
+            xs[:, i] .= range(xlims[i][1], xlims[i][2], N)
+        end
+        buff_re = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
+        buff_im = similar(buff_re)
+        plan_forward = FFTW.plan_r2r(buff_re, FFTW.REDFT00) # note that `REDFT00` is its own inverse
+        plan_backward = plan_forward # same plan for backward
+        # in-place map needed when acting on a complex vector
+        plan_bothways! = FFTW.plan_r2r!(buff_re, FFTW.REDFT00) # note that `REDFT00` is its own inverse
+    else # basis == :sin
+        N = M
+        xs = Matrix{R}(undef, N, D)
+        for i in 1:D
+            L[i] = xlims[i][2] - xlims[i][1]
+            dx[i] = L[i] / (N+1)
+            xs[:, i] .= range(xlims[i][1]+dx[i], xlims[i][2]-dx[i], N)
+        end
+        buff_re = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
+        buff_im = similar(buff_re)
+        plan_forward = FFTW.plan_r2r(buff_re, FFTW.RODFT00) # note that `RODFT00` is its own inverse
+        plan_backward = plan_forward # same plan for backward
+        # in-place map needed when acting on a complex vector
+        plan_bothways! = FFTW.plan_r2r!(buff_re, FFTW.REDFT00) # note that `REDFT00` is its own inverse
+    end
+
+    return FourierTransformerX(xs, M, basis, buff_re, buff_im, plan_forward, plan_backward, plan_bothways!)
+end
+
+"""
+Transform a discretised function `f_in`, which can be either in x-space or p-space, writing the result to `f_out`.
+The transformation is forward or backward depending on the `direction` keyword argument.
+"""
+function transform!(f_out::AbstractArray{<:Number}, ft::FourierTransformerX, f_in::AbstractArray{<:Number}; normalise=false, direction::Symbol=:forward)
+    (;basis, buff_re, buff_im) = ft    
+    # transform              
+    if basis == :cis || eltype(f_in) <: Real
+        if direction == :forward
+            mul!(f_out, ft.plan_forward, f_in)
+        else
+            mul!(f_out, ft.plan_backward, f_in)
+        end
+        if basis != :cis && normalise
+            N = size(f_in, 1) # number of points in each dimension (assumed same for all dimensions)
+            normalisation = basis == :sin ? 2(N+1)^ndims(f_in) : 2(N-1)^ndims(f_in)
+            @turbo f_out .= f_in ./ normalisation
+        end
+    else # if basis is sin/cos and `f_in` is complex
+        # `FFTW.RxDFT00` can only handle real input. So we transform Re and Im separately.
+        for i in eachindex(f_in)
+            buff_re[i], buff_im[i] = reim(f_in[i])
+        end
+        if normalise
+            N = size(f_in, 1) # number of points in each dimension (assumed same for all dimensions)
+            normalisation = basis == :sin ? 2(N+1)^ndims(f_in) : 2(N-1)^ndims(f_in)
+            @turbo buff_re ./= normalisation
+            @turbo buff_im ./= normalisation
+        end
+        # apply plans; forward is same as backward
+        ft.plan_bothways! * buff_re
+        ft.plan_bothways! * buff_im
+        f_out .= Complex.(buff_re, buff_im)
+    end
+    return
+end

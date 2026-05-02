@@ -1,4 +1,4 @@
-using PSpaceHamiltonians, AppleAccelerate
+using XSpaceHamiltonians, AppleAccelerate
 
 using Plots, LaTeXStrings
 plotlyjs()
