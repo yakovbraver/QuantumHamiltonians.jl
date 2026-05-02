@@ -71,7 +71,7 @@ end
 Transform a discretised function `f_in`, which can be either in x-space or p-space, writing the result to `f_out`.
 The transformation is forward or backward depending on the `direction` keyword argument.
 """
-function transform!(f_out::AbstractArray{<:Number}, ft::FourierTransformerX, f_in::AbstractArray{<:Number}; normalise=false, direction::Symbol=:forward)
+function transform!(f_out::AbstractArray{<:Number}, ft::FourierTransformerX, f_in::AbstractArray{<:Number}; normalise::Bool=false, direction::Symbol=:forward)
     (;basis, buff_re, buff_im) = ft    
     # transform              
     if basis == :cis || eltype(f_in) <: Real
@@ -83,7 +83,7 @@ function transform!(f_out::AbstractArray{<:Number}, ft::FourierTransformerX, f_i
         if basis != :cis && normalise
             N = size(f_in, 1) # number of points in each dimension (assumed same for all dimensions)
             normalisation = basis == :sin ? 2(N+1)^ndims(f_in) : 2(N-1)^ndims(f_in)
-            @turbo f_out .= f_in ./ normalisation
+            @turbo f_out ./= normalisation
         end
     else # if basis is sin/cos and `f_in` is complex
         # `FFTW.RxDFT00` can only handle real input. So we transform Re and Im separately.
