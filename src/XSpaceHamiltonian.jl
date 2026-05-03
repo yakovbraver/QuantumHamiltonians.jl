@@ -1,10 +1,10 @@
 """
 A type representing a spatial, 𝐷-dimensional, 𝑛-component, possibly quasimomentum-dependent Hamiltonian (𝐻ᵃᵇ)
-    𝐻ᵃᵃ(𝐫) = [-i𝛿∇ + q - 𝐀ᵃ(𝐫)]² + 𝑈ᵃᵃ(𝐫) - iΓᵃ/2
-    𝐻ᵃᵇ(𝐫) = 𝑈ᵃᵇ(𝐫)
-as a matrix free 𝑥-space operator. Here  1 ≤ 𝑎, 𝑏 ≤ 𝑛,  𝐫 = (𝑥¹, …, 𝑥ᴰ),  𝐀ᵃ = (𝐴ᵃ¹, …, 𝐴ᵃᴰ),  𝐪 = (𝑞¹, …, 𝑞ᴰ). 
-`R` is underlying real scalar type -- typically `Float64` or `Float32`),
-`T` is the eltype of the Hamiltonian map -- real if 𝑈 are real and 𝐴 are not present and Γ are not present; complex otherwise
+    𝐻ᵃᵃ(𝐱) = [-i𝛿∇ + 𝐪 - 𝐀ᵃ(𝐱)]² + 𝑈ᵃᵃ(𝐱) - iΓᵃ/2
+    𝐻ᵃᵇ(𝐱) = 𝑈ᵃᵇ(𝐱)
+as a matrix-free 𝑥-space operator. Here  1 ≤ 𝑎, 𝑏 ≤ 𝑛,  𝐱 = (𝑥¹, …, 𝑥ᴰ),  𝐀ᵃ = (𝐴ᵃ¹, …, 𝐴ᵃᴰ),  𝐪 = (𝑞¹, …, 𝑞ᴰ). 
+`R` is the underlying real scalar type -- typically `Float64` or `Float32`;
+`T` is the eltype of the Hamiltonian map -- real if 𝑈 are real and 𝐴 are not present and Γ are not present; complex otherwise;
 `D` is the number of physical dimensions.
 """
 struct XSpaceHamiltonian{R, T, D, FourierTransformer}
@@ -217,8 +217,8 @@ end
 Calculate `nev` eigenvectors and eigenvalues.
 By default, if number of components is bigger than one, then smallest-magnitude eigenvalues are calculated using inversion.
 For a single component, the smallest (most negative) eigenvalues are calculated, without using inversion.
-Inversion can be set/unset manually using `invert`. Arguments `tol`, `maxiter`, and `krylovdim` will be passed to the solver.
-The package's defaults are used except that we set `tol=1e-5` for `Float32`.
+Inversion can be set/unset manually using `invert`. Arguments `tol`, `maxiter`, and `krylovdim` will be passed to the eigensolver (and linear solver in case of inversion).
+The KrylovKit package's defaults are used except that we set `tol=1e-5` for `Float32`.
 Additionally, `ishermitian` will override the default value of `xh.ishermitian`. We use this if 𝐴 is present because solver claims that the map is nonhermitian and yields wrong answer.
 Return full KrylovKit output (vals, vecs, info).
 """
@@ -227,8 +227,7 @@ function diagonalize(xh::XSpaceHamiltonian{R, T, D}; nev::Integer, linsolve_verb
                      krylovdim=KrylovKit.KrylovDefaults.krylovdim[], ishermitian=xh.ishermitian) where {R, T, D}
     verbosity = linsolve_verbose ? KrylovKit.WARN_LEVEL : KrylovKit.SILENT_LEVEL
     # initial guess, mainly needed to convey the storage type of the eigenvector. Type must be `T`: if Hamiltonian is Hermitian but complex, we need complex eigenvectors
-    v0 = StateVector([rand(T, size(xh.buff_real)...) for _ in 1:xh.nc])
-    # v0 = StateVector([[sin(T(x)) + sin(T(y)) for x in xh.ft.xs[:, 1], y in xh.ft.xs[:, 2]] for _ in 1:xh.nc])
+    v0 = StateVector{xh.basis}([rand(T, size(xh.buff_real)...) for _ in 1:xh.nc])
     if invert
         K = KrylovKit.eigsolve(v0, nev, :LM; ishermitian, tol, maxiter, krylovdim) do b # `b` is a vector on which the Hamiltonian is acting
             x, _ = KrylovKit.linsolve(xh, b; ishermitian, tol, maxiter, krylovdim, verbosity) # find 𝑥 = 𝐻⁻¹𝑏 by solving 𝐻𝑥 = 𝑏
@@ -238,7 +237,7 @@ function diagonalize(xh::XSpaceHamiltonian{R, T, D}; nev::Integer, linsolve_verb
     else
         K = KrylovKit.eigsolve(xh, v0, nev, :SR; ishermitian, tol, maxiter, krylovdim)
     end
-    # The eigenvectors come out normalised as ∑ₐ|𝜓ₐ|² = 1 (sum over components), but we want ∑ₐ|𝜓ₐ|²d𝑉 = 1.
+    # The eigenvectors come out normalised as ∑ᶜ|𝜓ᶜ|² = 1 (sum over components), but we want ∑ᶜ|𝜓ᶜ|²d𝑉 = 1.
     # So normalise by dividing by √d𝑉.
     xs = xh.ft.xs
     dV = prod(xs[2, i] - xs[1, i] for i in axes(xs, 2)) # volume element

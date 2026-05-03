@@ -10,15 +10,13 @@ struct FourierTransformerX{R, D, PlanForward, PlanBackward, PlanBothways!}
     plan_bothways!::PlanBothways! # in-place plan, used in the sin/cos case when acting on complex functions to avoid two additional buffers
 end
 
-"""
-`target_real` is only used in the sin and cos case: set to false if you plan to calculate DST or DCT for complex functions.
-"""
+"Construct a `FourierTransformerX` object."
 function FourierTransformerX(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol) where R <: AbstractFloat
     D = length(xlims) # number of spatial dimensions
     L = Vector{R}(undef, D) # periods in each dimension. Only needed here, to calculate the normalisation factor
     dx = Vector{R}(undef, D) # dx's in each dimension
     if basis == :cis
-        N = 2M # number of points for FFT (the same for each dimension). This will yield harmonics from `-M` to `M-1`
+        N = 2M # number of points for FFT (the same for each dimension). This will yield harmonics -M:M-1
         xs = Matrix{R}(undef, N, D)
         for i in 1:D
             L[i] = xlims[i][2] - xlims[i][1]
@@ -35,7 +33,7 @@ function FourierTransformerX(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
         # in-place map is not needed in the cis case; just make a reference
         plan_bothways! = plan_forward
     elseif basis == :cos
-        N = M + 1
+        N = M + 1 # User is recommended to pass M = 2ⁿ, but cos transform works best for lengths 2ⁿ+1. This will yield harmonics 0:M.
         xs = Matrix{R}(undef, N, D)
         for i in 1:D
             L[i] = xlims[i][2] - xlims[i][1]
@@ -49,7 +47,7 @@ function FourierTransformerX(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
         # in-place map needed when acting on a complex vector
         plan_bothways! = FFTW.plan_r2r!(buff_re, FFTW.REDFT00) # note that `REDFT00` is its own inverse
     else # basis == :sin
-        N = M
+        N = M # User is recommended to pass M = 2ⁿ, but sin transform works best for lengths 2ⁿ-1. This will yield harmonics 1:M-1.
         xs = Matrix{R}(undef, N, D)
         for i in 1:D
             L[i] = xlims[i][2] - xlims[i][1]
@@ -61,7 +59,7 @@ function FourierTransformerX(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
         plan_forward = FFTW.plan_r2r(buff_re, FFTW.RODFT00) # note that `RODFT00` is its own inverse
         plan_backward = plan_forward # same plan for backward
         # in-place map needed when acting on a complex vector
-        plan_bothways! = FFTW.plan_r2r!(buff_re, FFTW.REDFT00) # note that `REDFT00` is its own inverse
+        plan_bothways! = FFTW.plan_r2r!(buff_re, FFTW.RODFT00) # note that `RODFT00` is its own inverse
     end
 
     return FourierTransformerX(xs, M, basis, buff_re, buff_im, plan_forward, plan_backward, plan_bothways!)
@@ -82,7 +80,7 @@ function transform!(f_out::AbstractArray{<:Number}, ft::FourierTransformerX, f_i
         end
         if basis != :cis && normalise
             N = size(f_in, 1) # number of points in each dimension (assumed same for all dimensions)
-            normalisation = basis == :sin ? 2(N+1)^ndims(f_in) : 2(N-1)^ndims(f_in)
+            normalisation = basis == :sin ? (2(N+1))^ndims(f_in) : (2(N-1))^ndims(f_in)
             @turbo f_out ./= normalisation
         end
     else # if basis is sin/cos and `f_in` is complex
@@ -92,7 +90,7 @@ function transform!(f_out::AbstractArray{<:Number}, ft::FourierTransformerX, f_i
         end
         if normalise
             N = size(f_in, 1) # number of points in each dimension (assumed same for all dimensions)
-            normalisation = basis == :sin ? 2(N+1)^ndims(f_in) : 2(N-1)^ndims(f_in)
+            normalisation = basis == :sin ? (2(N+1))^ndims(f_in) : (2(N-1))^ndims(f_in)
             @turbo buff_re ./= normalisation
             @turbo buff_im ./= normalisation
         end
