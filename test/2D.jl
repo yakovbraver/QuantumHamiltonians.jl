@@ -47,11 +47,11 @@ end
         (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y)^2 * 2ϵ^2 * (1+ϵc^2)
     end
 
-    function 𝐴_x(x::Real, y::Real)
+    function 𝐴ˣ(x::Real, y::Real)
         sin(2y) .* ϵc .* sin(χ) ./ 𝛼(x, y)
     end
 
-    function 𝐴_y(x::Real, y::Real)
+    function 𝐴ʸ(x::Real, y::Real)
         sin(2x) .* ϵc .* sin(χ) ./ 𝛼(x, y)
     end
 
@@ -72,30 +72,30 @@ end
 
     M = 5
 
-    ### Nonperiodic
-    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
-    @test dh.H isa Matrix{Float32}
-    @test dh.V isa Matrix{Float32}
+    ### sin basis
+    qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
+    @test qh.H isa Matrix{Float32}
+    @test qh.V isa Matrix{Float32}
 
     # exact diagonalisation
-    diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ 2.064 rtol=1e-3
+    diagonalize!(qh, nev=0)
+    @test qh.ε[1] ≈ 2.064 rtol=1e-3
 
     # approximate diagonalisation
-    diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 2.064 rtol=1e-3
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 2.064 rtol=1e-3
 
-    ### Periodic
-    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true)
-    @test dh.H isa Matrix{Float32}
+    ### cis basis
+    qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true)
+    @test qh.H isa Matrix{Float32}
 
     # exact diagonalisation
-    diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ 2.018 rtol=1e-3
+    diagonalize!(qh, nev=0)
+    @test qh.ε[1] ≈ 2.018 rtol=1e-3
 
     # approximate diagonalisation
-    diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 2.018 rtol=1e-3
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 2.018 rtol=1e-3
 
     ########## χ = π/2, x from -π/2 to π/2
 
@@ -104,16 +104,16 @@ end
     xlimits = (-π/2, π/2) .|> Float32
     ylimits = (0, π) .|> Float32
 
-    ### Nonperiodic
-    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:sin, M)
+    ### sin basis
+    qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:sin, M)
     
     # exact diagonalisation
-    diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ 3.179 rtol=1e-3
+    diagonalize!(qh, nev=0)
+    @test qh.ε[1] ≈ 3.179 rtol=1e-3
 
     # approximate diagonalisation
-    diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 3.179 rtol=1e-3
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 3.179 rtol=1e-3
 
     ########## χ = π/2, full period
 
@@ -122,19 +122,19 @@ end
     xlimits = (0, 2π) .|> Float32
     ylimits = (0, 2π) .|> Float32
 
-    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true);
+    qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, 𝑈_iseven=true);
 
     # exact diagonalisation
-    diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ 0.571 atol=1e-3
+    diagonalize!(qh, nev=0)
+    @test qh.ε[1] ≈ 0.571 atol=1e-3
 
     # approximate diagonalisation
-    diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 0.571 atol=1e-3
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 0.571 atol=1e-3
 
-    sh = PSpaceHamiltonian{:sparse}([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴_x, 𝐴_y]; basis=:cis, M, 𝑈_iseven=true) # cast to Float64 manually to suppress info message
-    diagonalize!(sh, nev=1)
-    @test sh.ε[1] ≈ 0.571 atol=1e-3
+    qh = PSpaceHamiltonian{:sparse}([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, 𝑈_iseven=true) # cast to Float64 manually to suppress info message
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 0.571 atol=1e-3
 end
 
 # Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
@@ -159,65 +159,65 @@ end
     xlimits = (-π, π) .|> Float32
     ylimits = (-π, π) .|> Float32
 
-    M = 1 # one harmonic is enough to capture the transform in the periodic case :)
+    M = 1 # one harmonic is enough to capture the transform in the cis basis case :)
     𝑈 = [nothing nothing 𝛺₁      
          nothing nothing 𝛺₂
          nothing nothing nothing] # only upper triangle is needed
     𝑈_iseven=trues(3, 3)
     
-    ### Hermitian periodic diagonalisation
-    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
-    @test dh.H isa Matrix{Float32}
-    @test dh.H[1, 19] ≈ Ω₁₀ / 2
-    @test dh.H[10, 23] ≈ Ω₊ / 4
-    @test dh.H[11, 22] ≈ -Ω₊ / 4
+    ### Hermitian cis basis diagonalisation
+    qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
+    @test qh.H isa Matrix{Float32}
+    @test qh.H[1, 19] ≈ Ω₁₀ / 2
+    @test qh.H[10, 23] ≈ Ω₊ / 4
+    @test qh.H[11, 22] ≈ -Ω₊ / 4
         
     # exact diagonalisation
-    diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ -7140 rtol=1e-3
+    diagonalize!(qh, nev=0)
+    @test qh.ε[1] ≈ -7140 rtol=1e-3
 
     # approximate diagonalisation
-    diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 0.039 atol=1e-3
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 0.039 atol=1e-3
 
-    ### Hermitian nonperiodic diagonalisation
-    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
-    @test dh.H isa Matrix{Float32}
+    ### Hermitian sin basis diagonalisation
+    qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
+    @test qh.H isa Matrix{Float32}
         
     # exact diagonalisation
-    diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ -1000 rtol=1e-3
+    diagonalize!(qh, nev=0)
+    @test qh.ε[1] ≈ -1000 rtol=1e-3
 
     # approximate diagonalisation
-    diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 0.5 rtol=1e-3
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 0.5 rtol=1e-3
     
-    ### non-Hermitian periodic diagonalisation
-    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃]);
-    @test dh.H isa Matrix{Complex{Float32}}
+    ### non-Hermitian cis basis diagonalisation
+    qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃]);
+    @test qh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
-    diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ -7136 - 250im rtol=1e-3
-    l = findfirst(x -> real(x) > 0, dh.ε)
+    diagonalize!(qh, nev=0)
+    @test qh.ε[1] ≈ -7136 - 250im rtol=1e-3
+    l = findfirst(x -> real(x) > 0, qh.ε)
     @test l == 10
-    @test dh.ε[l] ≈ 0.039 - 0.0002im atol=1e-3
+    @test qh.ε[l] ≈ 0.039 - 0.0002im atol=1e-3
 
     # approximate diagonalisation
-    diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 0.039 atol=1e-3
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 0.039 atol=1e-3
 
-    ### non-Hermitian nonperiodic diagonalisation
-    dh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M, Γ=[0, 0, Γ₃]);
-    @test dh.H isa Matrix{Complex{Float32}}
+    ### non-Hermitian sin basis diagonalisation
+    qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M, Γ=[0, 0, Γ₃]);
+    @test qh.H isa Matrix{Complex{Float32}}
     
     # exact diagonalisation
-    diagonalize!(dh, nev=0)
-    @test dh.ε[1] ≈ -968 - 250im rtol=1e-3
+    diagonalize!(qh, nev=0)
+    @test qh.ε[1] ≈ -968 - 250im rtol=1e-3
 
     # approximate diagonalisation
-    diagonalize!(dh, nev=1)
-    @test dh.ε[1] ≈ 0.5 rtol=1e-3
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 0.5 rtol=1e-3
 end
 
 # Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
@@ -240,27 +240,27 @@ end
     xlimits = (-π, π) .|> Float64
     ylimits = (-π, π) .|> Float64
 
-    M = 1 # one harmonic is enough to capture the transform in the periodic case :)
+    M = 1 # one harmonic is enough to capture the transform in the cis case :)
     𝑈 = [nothing nothing 𝛺₁      
          nothing nothing 𝛺₂
          nothing nothing nothing] # only upper triangle is needed
     𝑈_iseven = trues(3, 3)
 
-    ### Hermitian periodic diagonalisation
-    sh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
-    @test sh.H[1, 19] ≈ Ω₁₀ / 2
-    @test sh.H[10, 23] ≈ Ω₊ / 4
-    @test sh.H[11, 22] ≈ -Ω₊ / 4
+    ### Hermitian cis basis diagonalisation
+    qh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
+    @test qh.H[1, 19] ≈ Ω₁₀ / 2
+    @test qh.H[10, 23] ≈ Ω₊ / 4
+    @test qh.H[11, 22] ≈ -Ω₊ / 4
         
-    diagonalize!(sh, nev=1)
-    @test sh.ε[1] ≈ 0.039 atol=1e-3
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 0.039 atol=1e-3
 
-    ### Non-Hermitian periodic diagonalisation
-    sh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
-    @test sh.H[1, 19] ≈ Ω₁₀ / 2
-    @test sh.H[10, 23] ≈ Ω₊ / 4
-    @test sh.H[11, 22] ≈ -Ω₊ / 4
+    ### Non-Hermitian cis basis diagonalisation
+    qh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
+    @test qh.H[1, 19] ≈ Ω₁₀ / 2
+    @test qh.H[10, 23] ≈ Ω₊ / 4
+    @test qh.H[11, 22] ≈ -Ω₊ / 4
         
-    diagonalize!(sh, nev=1)
-    @test sh.ε[1] ≈ 0.039 atol=1e-3
+    diagonalize!(qh, nev=1)
+    @test qh.ε[1] ≈ 0.039 atol=1e-3
 end

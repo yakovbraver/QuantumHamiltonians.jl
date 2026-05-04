@@ -143,7 +143,7 @@ function transform!(ft::FourierTransformerP, f::AbstractArray{<:Number}; directi
 end
 
 """
-Use the result of the transform to construct a vector indexed by (𝑗ₓ𝑗y⋯).
+Use the result of the transform to construct a vector indexed by (𝑗ˣ𝑗ʸ⋯).
 If `makesparse=true`, a sparse vector is returned, with values below `threshold` in magnitude filtered out. By default, a dense vector is returned.
 If `makereal=true`, a real vector (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of ft.buff.
 """
@@ -182,7 +182,7 @@ function fft_to_vector(ft::FourierTransformerP{R,T}; makesparse::Bool=false, mak
 end
 
 """
-Use the result of the transform to fill `v` as a vector indexed by (𝑗ₓ𝑗y⋯). 
+Use the result of the transform to fill `v` as a vector indexed by (𝑗ˣ𝑗ʸ⋯). 
 `makereal=true` is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
 function fft_to_vector!(v::AbstractVector{<:Number}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward)
@@ -210,7 +210,7 @@ function fft_to_vector!(v::AbstractVector{<:Number}, ft::FourierTransformerP; ma
 end
 
 """
-Use the result of the transform to construct a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+Use the result of the transform to construct a matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
 If `makesparse=true`, a sparse matrix is returned, with values below `threshold` in magnitude filtered out. By default, a dense matrix is returned.
 If `makereal=true`, a real matrix (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
@@ -251,7 +251,7 @@ end
 ################ Dense ################
 
 """
-Use the result of the transform to fill `A` as a matrix indexed by (𝑗′ₓ𝑗′y⋯, 𝑗ₓ𝑗y⋯). 
+Use the result of the transform to fill `A` as a matrix indexed by (𝑗ˣ′𝑗ʸ′⋯, 𝑗ˣ𝑗ʸ⋯). 
 `makereal=true` is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
 function fft_to_matrix!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP; makereal=false)
@@ -267,7 +267,7 @@ function fft_to_matrix!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP; ma
 end
 
 """
-Use the result of the 1D transform to fill `A` as a matrix indexed by (𝑗′ₓ, 𝑗ₓ).
+Use the result of the 1D transform to fill `A` as a matrix indexed by (𝑗ˣ′, 𝑗ˣ).
 """
 function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
     (;M, basis, buff, buff_im) = ft
@@ -279,37 +279,37 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
         end
     elseif basis == :sin
         if ft.did_complex_rxdft
-            for jx in 1:M # not enough work for @floop, slows down execution (checked for M up to 300)
-                for j′x in 1:M
-                    j₋x = abs(j′x-jx)
-                    A[j′x, jx] = buff[j₋x+1] - buff[j′x+jx+1] + im*(buff_im[j₋x+1] - buff_im[j′x+jx+1])
+            for jˣ in 1:M # not enough work for @floop, slows down execution (checked for M up to 300)
+                for jˣ′ in 1:M
+                    jˣ⁻ = abs(jˣ′-jˣ)
+                    A[jˣ′, jˣ] = buff[jˣ⁻+1] - buff[jˣ′+jˣ+1] + im*(buff_im[jˣ⁻+1] - buff_im[jˣ′+jˣ+1])
                 end
             end
         else
-            @turbo for jx in 1:M
-                for j′x in 1:M
-                    j₋x = abs(j′x-jx)
-                    A[j′x, jx] = buff[j₋x+1] - buff[j′x+jx+1]
+            @turbo for jˣ in 1:M
+                for jˣ′ in 1:M
+                    jˣ⁻ = abs(jˣ′-jˣ)
+                    A[jˣ′, jˣ] = buff[jˣ⁻+1] - buff[jˣ′+jˣ+1]
                 end
             end
         end
     else # basis == :cos
         if ft.did_complex_rxdft
-            for jx in 0:M
-                ζₓ = ifelse(jx == 0, 2, 1)
-                for j′x in 0:M
-                    ζ′ₓ = ifelse(j′x == 0, 2, 1)
-                    j₋x = abs(j′x-jx)
-                    A[j′x+1, jx+1] = ( (buff[j₋x+1] + buff[j′x+jx+1]) + im*(buff_im[j₋x+1] + buff_im[j′x+jx+1]) ) / √(ζₓ*ζ′ₓ)
+            for jˣ in 0:M
+                ζˣ = ifelse(jˣ == 0, 2, 1)
+                for jˣ′ in 0:M
+                    ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
+                    jˣ⁻ = abs(jˣ′-jˣ)
+                    A[jˣ′+1, jˣ+1] = ( (buff[jˣ⁻+1] + buff[jˣ′+jˣ+1]) + im*(buff_im[jˣ⁻+1] + buff_im[jˣ′+jˣ+1]) ) / √(ζˣ*ζˣ′)
                 end
             end
         else
-            @turbo for jx in 0:M
-                ζₓ = ifelse(jx == 0, 2, 1)
-                for j′x in 0:M
-                    ζ′ₓ = ifelse(j′x == 0, 2, 1)
-                    j₋x = abs(j′x-jx)
-                    A[j′x+1, jx+1] = (buff[j₋x+1] + buff[j′x+jx+1]) / √(ζₓ*ζ′ₓ)
+            @turbo for jˣ in 0:M
+                ζˣ = ifelse(jˣ == 0, 2, 1)
+                for jˣ′ in 0:M
+                    ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
+                    jˣ⁻ = abs(jˣ′-jˣ)
+                    A[jˣ′+1, jˣ+1] = (buff[jˣ⁻+1] + buff[jˣ′+jˣ+1]) / √(ζˣ*ζˣ′)
                 end
             end
         end
@@ -318,7 +318,7 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
 end
 
 """
-Use the result of the 2D transform to fill `A` as a matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+Use the result of the 2D transform to fill `A` as a matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
 """
 function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
     (;M, basis, buff, buff_im) = ft
@@ -326,33 +326,49 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
         B = 2M + 1
         # TODO add check size(A) .== B^2
         buff_shifted = FFTW.fftshift(buff) # indexing into `u` is more convenient if we shift TODO rewrite without relying on this
-        # We sipmly go over each element of `A`, assigning an appropriate element of `u`.
+        # We simply go over each element of `A`, assigning an appropriate element of `u`.
         # In the dense case it is preferred over (since it's faster than) [`fft_to_matrix_sparse!`](@ref)
-        # because even if `buffer[i, j]=0`, the corresponding elements of `A` still must be accessed to be set to zero.
-        @floop for jx in 1:B
-            for jy in 1:B, j′x in 1:B, j′y in 1:B
-                j₋x = j′x - jx
-                j₋y = j′y - jy
-                A[(j′x-1)B+j′y, (jx-1)B+jy] = buff_shifted[j₋x+B, j₋y+B]
+        # because even if `buff[i, j]=0`, the corresponding elements of `A` still must be accessed to be set to zero.
+        @floop for jˣ in 1:B
+            for jʸ in 1:B
+                for jˣ′ in 1:B
+                    jˣ⁻ = jˣ′ - jˣ + B # +1 because of 1-based indexing
+                    for jʸ′ in 1:B
+                        jʸ⁻ = jʸ′ - jʸ + B
+                        A[(jˣ′-1)B+jʸ′, (jˣ-1)B+jʸ] = buff_shifted[jˣ⁻, jʸ⁻]
+                    end
+                end
             end
         end
     elseif basis == :sin
         # TODO add check size(A) .== M^2
         if ft.did_complex_rxdft
-            @floop for jx in 1:M
-                for jy in 1:M, j′x in 1:M, j′y in 1:M
-                    j₋x = abs(j′x-jx)
-                    j₋y = abs(j′y-jy)
-                    A[(j′x-1)M+j′y, (jx-1)M+jy] = buff[j₋x+1, j₋y+1] - buff[j₋x+1, j′y+jy+1] - buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1] +
-                                im * (buff_im[j₋x+1, j₋y+1] - buff_im[j₋x+1, j′y+jy+1] - buff_im[j′x+jx+1, j₋y+1] + buff_im[j′x+jx+1, j′y+jy+1])
+            @floop for jˣ in 1:M
+                for jʸ in 1:M
+                    for jˣ′ in 1:M
+                        jˣ⁻ = abs(jˣ′ - jˣ) + 1 # +1 because of 1-based indexing
+                        jˣ⁺ =     jˣ′ + jˣ  + 1 # +1 because of 1-based indexing
+                        for jʸ′ in 1:M
+                            jʸ⁻ = abs(jʸ′ - jʸ) + 1
+                            jʸ⁺ =     jʸ′ + jʸ  + 1
+                            A[(jˣ′-1)M+jʸ′, (jˣ-1)M+jʸ] =    buff[jˣ⁻, jʸ⁻] -    buff[jˣ⁻, jʸ⁺] -    buff[jˣ⁺, jʸ⁻] +    buff[jˣ⁺, jʸ⁺] +
+                                                    im * (buff_im[jˣ⁻, jʸ⁻] - buff_im[jˣ⁻, jʸ⁺] - buff_im[jˣ⁺, jʸ⁻] + buff_im[jˣ⁺, jʸ⁺])
+                        end
+                    end
                 end
             end
         else
-            @floop for jx in 1:M
-                for jy in 1:M, j′x in 1:M, j′y in 1:M
-                    j₋x = abs(j′x-jx)
-                    j₋y = abs(j′y-jy)
-                    A[(j′x-1)M+j′y, (jx-1)M+jy] = buff[j₋x+1, j₋y+1] - buff[j₋x+1, j′y+jy+1] - buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]
+            @floop for jˣ in 1:M
+                for jʸ in 1:M
+                    for jˣ′ in 1:M
+                        jˣ⁻ = abs(jˣ′ - jˣ) + 1 # +1 because of 1-based indexing
+                        jˣ⁺ =     jˣ′ + jˣ  + 1 # +1 because of 1-based indexing
+                        for jʸ′ in 1:M
+                            jʸ⁻ = abs(jʸ′ - jʸ) + 1
+                            jʸ⁺ =     jʸ′ + jʸ  + 1
+                            A[(jˣ′-1)M+jʸ′, (jˣ-1)M+jʸ] = buff[jˣ⁻, jʸ⁻] - buff[jˣ⁻, jʸ⁺] - buff[jˣ⁺, jʸ⁻] + buff[jˣ⁺, jʸ⁺]
+                        end
+                    end
                 end
             end
         end
@@ -378,7 +394,7 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
                 end
             end
         else
-            @floop for jˣ in 0:M
+            @floop for jˣ in 0:M # @floop gives ~x6 speedup for M=128. @turbo slows down, @tturbo gives ~x3 speedup
                 ζˣ = ifelse(jˣ == 0, 2, 1)
                 for jʸ in 0:M
                     ζʸ = ifelse(jʸ == 0, 2, 1)
@@ -428,7 +444,7 @@ end
 
 """
 Set to zero values of `ft.buff` that are smaller by magnitude than `threshold`.
-Based on the resulting number of nonzero elements in `ft.buff`, count and return the number of values that will be stored in the matrix indexed by (𝑗′ₓ, 𝑗ₓ).
+Based on the resulting number of nonzero elements in `ft.buff`, count and return the number of values that will be stored in the matrix indexed by (𝑗ˣ′, 𝑗ˣ).
 """
 function filter_count_1D!(ft::FourierTransformerP; threshold::Real=0)
     (;M, buff) = ft
@@ -450,7 +466,7 @@ function filter_count_1D!(ft::FourierTransformerP; threshold::Real=0)
 end
 
 """
-Use the result of the transform to construct a sparse matrix indexed by (𝑗′ₓ, 𝑗ₓ).
+Use the result of the transform to construct a sparse matrix indexed by (𝑗ˣ′, 𝑗ˣ).
 The type of `vals` might differ from the type of `ft.buff` since one may want to drop the imaginary part.
 """
 function fft_to_matrix_sparse_1D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
@@ -489,7 +505,7 @@ end
 
 """
 Set to zero values of `ft.buff` that are smaller by magnitude than `threshold`.
-Based on the resulting number of nonzero elements in `ft.buff`, count and return the number of values that will be stored in the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+Based on the resulting number of nonzero elements in `ft.buff`, count and return the number of values that will be stored in the matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
 """
 function filter_count_2D!(ft::FourierTransformerP; threshold::Real=0)
     (;M, buff) = ft
@@ -513,7 +529,7 @@ function filter_count_2D!(ft::FourierTransformerP; threshold::Real=0)
 end
 
 """
-Use the result of the transform to construct a sparse matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+Use the result of the transform to construct a sparse matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
 The type of `vals` might differ from the type of `ft.buff` since one may want to drop the imaginary part.
 """
 function fft_to_matrix_sparse_2D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
@@ -567,7 +583,7 @@ end
 ########## Unused but correct and tested functions
 
 # """
-# Based on results of a real 2D RFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+# Based on results of a real 2D RFT `u`, return the matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
 # `make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
 # This version is for dense matrices, but it is slower than [`fft_to_matrix_2D!`](@ref); used only for testing purposes.
 # """
@@ -606,7 +622,7 @@ end
 # end
 
 # """
-# Based on results of a 2D FFT `u`, return the matrix indexed by (𝑗′ₓ𝑗′y, 𝑗ₓ𝑗y).
+# Based on results of a 2D FFT `u`, return the matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
 # `make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
 # For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
 # """
