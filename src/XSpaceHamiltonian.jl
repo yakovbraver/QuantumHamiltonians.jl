@@ -59,6 +59,13 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
                            𝐴::AbstractVecOrMat{<:Union{Function, Nothing}}=fill(nothing, size(𝑈, 1), length(xlims));
                            basis::Symbol, M::Integer, δ::R=one(R),
                            Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: AbstractFloat
+    # Warn if M is not optimal
+    if basis == :cis || basis == :cos
+        !ispow2(M) && println("Maximum harmonic number M = 2ⁿ recommended for $basis basis. Consider changing M.")
+    else # basis == :sin
+        !ispow2(M+1) && println("Maximum harmonic number M = 2ⁿ - 1 recommended for $basis basis. Consider changing M.")
+    end
+
     nc = size(𝑈, 1) # number of components
     D = length(xlims) # number of spatial dimensions
     L = [lims[2] - lims[1] for lims in xlims]
@@ -72,7 +79,7 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
 
     ft = FourierTransformerX(xlims, M; basis)
     xs = ft.xs
-    B = length(xs)
+    N = size(xs, 1) # number of grid points
 
     𝑈_diag_allequal = allequal(diagview(𝑈))
     𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing
@@ -96,7 +103,7 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
         for b in 1:c # only upper triangle is scanned. The lower triangle is filled automatically
             if isnothing(𝑈[b, c])
                 if b == c && any(𝐴[b, :] .!== nothing) # if at least one projection for this component is nonzero
-                    U[b, c] = zeros(T, ntuple(Returns(B), D)) # then allocate zeros for storing 𝐴²
+                    U[b, c] = zeros(T, ntuple(Returns(N), D)) # then allocate zeros for storing 𝐴²
                 end
             else
                 if D == 1

@@ -60,11 +60,12 @@ ph.ε
 
 stateno = 1
 xs, ys, ψ = make_eigenfunction(ph, stateno, M, M)
-surface(xs, ys, abs2.(ψ[1])')
+surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 
-# Diagonalisation in x-space -- faster than p-space for higher M: M=64, nev=1: 0.76s
-M = 64
-@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M);
+# Diagonalisation in x-space -- faster than p-space for higher M: basis=:cis, M=64, nev=1: 0.76s
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=64);
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cos, M=64);
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:sin, M=63);
 @time vals, vecs, info = diagonalize(xh, nev=1); # eigenvalues 2 and 3 are degenerate; usually only one is obtained. But works well for nev=1. Increase to krylovdim=40 to converge to 1e-12
 vals
 surface(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[1].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)

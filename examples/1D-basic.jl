@@ -16,11 +16,11 @@ end
 
 Float = Float64 # operating type
 
-xlimits = (-50, 50) .|> Float
-M = 256
+xlimits = (-10, 10) .|> Float
+M = 64
 
 @time ph = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M, δ=Float(√0.5));
-@time diagonalize!(ph, nev=0);
+@time diagonalize!(ph, nev=5);
 ph.ε
 
 # For real Hamiltonian matrix (in momentum space), the eigenstates can be chosen real. But since we are using a complex cis basis, the coordinate-space functions are complex.
@@ -44,16 +44,16 @@ plot(xs, 𝑈)
 plot!(xs, ψ[:, 1, 1] .+ ph.ε[stateno])
 
 ### Diagonalisation in x-space
-M = 128
-xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M, δ=Float(√0.5))
+xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M=128, δ=Float(√0.5))
+xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cos, M=128, δ=Float(√0.5))
+xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:sin, M=127, δ=Float(√0.5))
 @time vals, vecs, info = diagonalize(xh; nev=5); # for large M you may need to tweak solver parameters. E.g. for M = 256, to converge to the default Float64 tolerance of 1e-12, set `krylovdim=35` (default is 30)
 vals
 info
 
 stateno = 5
 plot(xh.ft.xs, 𝑈)
-plot!(xh.ft.xs, vecs[stateno][1] .+ vals[stateno])
-
+plot!(xh.ft.xs, -vecs[stateno][1] .+ vals[stateno])
 
 #=
 ╔═════════════════════════════════════════════════════════════════╗
