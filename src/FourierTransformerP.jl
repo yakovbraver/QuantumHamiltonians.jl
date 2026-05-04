@@ -359,20 +359,40 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
     else # basis == :cos
         b = M + 1 # not `B` to prevent Core.Box :(
         if ft.did_complex_rxdft
-            @floop for jx in 0:M
-                for jy in 0:M, j′x in 0:M, j′y in 0:M
-                    j₋x = abs(j′x-jx)
-                    j₋y = abs(j′y-jy)
-                    A[j′x*b+j′y+1, jx*b+jy+1] = buff[j₋x+1, j₋y+1] + buff[j₋x+1, j′y+jy+1] + buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1] +
-                              im * (buff_im[j₋x+1, j₋y+1] + buff_im[j₋x+1, j′y+jy+1] + buff_im[j′x+jx+1, j₋y+1] + buff_im[j′x+jx+1, j′y+jy+1])
+            @floop for jˣ in 0:M
+                ζˣ = ifelse(jˣ == 0, 2, 1)
+                for jʸ in 0:M
+                    ζʸ = ifelse(jʸ == 0, 2, 1)
+                    for jˣ′ in 0:M
+                        ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
+                        jˣ⁻ = abs(jˣ′ - jˣ) + 1 # +1 because of 1-based indexing
+                        jˣ⁺ =     jˣ′ + jˣ  + 1 # +1 because of 1-based indexing
+                        for jʸ′ in 0:M
+                            ζʸ′ = ifelse(jʸ′ == 0, 2, 1)
+                            jʸ⁻ = abs(jʸ′ - jʸ) + 1
+                            jʸ⁺ =     jʸ′ + jʸ  + 1
+                            A[jˣ′*b + jʸ′+1, jˣ*b + jʸ+1] = (buff[jˣ⁻, jʸ⁻] +    buff[jˣ⁻, jʸ⁺] +    buff[jˣ⁺, jʸ⁻] +    buff[jˣ⁺, jʸ⁺] +
+                                                    im * (buff_im[jˣ⁻, jʸ⁻] + buff_im[jˣ⁻, jʸ⁺] + buff_im[jˣ⁺, jʸ⁻] + buff_im[jˣ⁺, jʸ⁺]) ) / √(ζˣ*ζˣ′*ζʸ*ζʸ′)
+                        end
+                    end
                 end
             end
         else
-            @floop for jx in 0:M
-                for jy in 0:M, j′x in 0:M, j′y in 0:M
-                    j₋x = abs(j′x-jx)
-                    j₋y = abs(j′y-jy)
-                    A[j′x*b+j′y+1, jx*b+jy+1] = buff[j₋x+1, j₋y+1] + buff[j₋x+1, j′y+jy+1] + buff[j′x+jx+1, j₋y+1] + buff[j′x+jx+1, j′y+jy+1]
+            @floop for jˣ in 0:M
+                ζˣ = ifelse(jˣ == 0, 2, 1)
+                for jʸ in 0:M
+                    ζʸ = ifelse(jʸ == 0, 2, 1)
+                    for jˣ′ in 0:M
+                        ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
+                        jˣ⁻ = abs(jˣ′ - jˣ) + 1
+                        jˣ⁺ =     jˣ′ + jˣ  + 1
+                        for jʸ′ in 0:M
+                            ζʸ′ = ifelse(jʸ′ == 0, 2, 1)
+                            jʸ⁻ = abs(jʸ′ - jʸ) + 1
+                            jʸ⁺ =     jʸ′ + jʸ  + 1
+                            A[jˣ′*b + jʸ′+1, jˣ*b + jʸ+1] = (buff[jˣ⁻, jʸ⁻] + buff[jˣ⁻, jʸ⁺] + buff[jˣ⁺, jʸ⁻] + buff[jˣ⁺, jʸ⁺]) / √(ζˣ*ζˣ′*ζʸ*ζʸ′)
+                        end
+                    end
                 end
             end
         end
