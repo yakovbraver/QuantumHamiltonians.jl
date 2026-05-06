@@ -29,7 +29,7 @@ function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zer
     return Diagonal(R[]) # for type stability
 end
 
-"Return the matrix of 𝑝ᵢ = -iδ𝜕ᵢ if `basis=:cis` and δ𝜕ᵢ otherwise. The output is real in both cases."
+"Return the matrix of 𝑝ⁱ = -i𝛿𝜕ⁱ if `basis=:cis` and 𝛿𝜕ⁱ otherwise. The output is real in both cases."
 function make_p_i(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, i::Integer) where R <: AbstractFloat
     if i == 1
         return make_p_x(L, M, δ, basis)
@@ -38,48 +38,78 @@ function make_p_i(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, i::Int
     end
 end
 
-"Return the matrix of 𝑝ₓ = -iδ𝜕ₓ if `basis=:cis` and δ𝜕ₓ otherwise. The output is real in both cases."
+"Return the matrix of 𝑝ˣ = -i𝛿𝜕ˣ if `basis=:cis` and 𝛿𝜕ˣ otherwise. The output is real in both cases."
 function make_p_x(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
     D = length(L)
-    Lx = L[1]
+    Lˣ = L[1]
     if basis == :cis
         PI = R(π)
         if D == 1
-            return Diagonal([2PI * δ * jˣ/Lx for jˣ in -M:M])
+            return Diagonal([2PI * δ * jˣ/Lˣ for jˣ in -M:M])
         elseif D == 2
-            return Diagonal([2PI * δ * jˣ/Lx for jʸ in -M:M for jˣ in -M:M])
+            return Diagonal([2PI * δ * jˣ/Lˣ for jʸ in -M:M for jˣ in -M:M])
         end
     elseif basis == :sin
-        ∂_x = zeros(R, M^D, M^D)
+        ∂ˣ = zeros(R, M^D, M^D)
         if D == 1
             ##
         elseif D == 2
             @floop for jˣ in 1:M
                 for jʸ in 1:M, jˣ′ in 1+isodd(jˣ):2:M
-                    ∂_x[(jʸ-1)M+jˣ′, (jʸ-1)M+jˣ] = 4δ * jˣ′*jˣ/(Lx * (jˣ′^2 - jˣ^2))
+                    ∂ˣ[(jʸ-1)M+jˣ′, (jʸ-1)M+jˣ] = 4δ * jˣ′*jˣ/(Lˣ * (jˣ′^2 - jˣ^2))
                 end
             end
         end
-        return ∂_x
+        return ∂ˣ
+    else # basis == :cos
+        b = M + 1
+        ∂ˣ_cos = zeros(R, b^D, b^D) # different name to prevent Core.Box
+        if D == 1
+            ##
+        elseif D == 2
+            @floop for jˣ in 0:M
+                ζˣ = ifelse(jˣ == 0, 2, 1)
+                for jʸ in 0:M, jˣ′ in iseven(jˣ):2:M
+                    ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
+                    ∂ˣ_cos[jʸ*b+jˣ′+1, jʸ*b+jˣ+1] = 4δ * jˣ^2/(Lˣ * (jˣ′^2 - jˣ^2)) / √(ζˣ′*ζˣ)
+                end
+            end
+        end
+        return ∂ˣ_cos
     end
 end
 
-"Return the matrix of 𝑝_𝑦 = -i𝛿𝜕_𝑦 if `basis=:cis` and 𝛿𝜕_𝑦 otherwise. The output is real in both cases."
+"Return the matrix of 𝑝ʸ = -i𝛿𝜕ʸ if `basis=:cis` and 𝛿𝜕ʸ otherwise. The output is real in both cases."
 function make_p_y(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
     D = length(L)
     # D == 1 && @error "Only D ≥ 2 supported. For D = 1, use make_p_x."; return
-    Ly = L[2]
+    Lʸ = L[2]
     if basis == :cis
         PI = R(π)
-        return Diagonal([2PI * δ * jʸ/Ly for jʸ in -M:M for jˣ in -M:M])
+        return Diagonal([2PI * δ * jʸ/Lʸ for jʸ in -M:M for jˣ in -M:M])
     elseif basis == :sin
-        ∂_y = zeros(R, M^D, M^D)
+        ∂ʸ = zeros(R, M^D, M^D)
         @floop for jʸ in 1:M
             for jʸ′ in 1+isodd(jʸ):2:M, jˣ in 1:M
-                ∂_y[(jʸ′-1)M+jˣ, (jʸ-1)M+jˣ] = 4δ * jʸ′*jʸ/(Ly * (jʸ′^2 - jʸ^2))
+                ∂ʸ[(jʸ′-1)M+jˣ, (jʸ-1)M+jˣ] = 4δ * jʸ′*jʸ/(Lʸ * (jʸ′^2 - jʸ^2))
             end
         end
-        return ∂_y
+        return ∂ʸ
+    else # basis == :cos
+        b = M + 1
+        ∂ʸ_cos = zeros(R, b^D, b^D) # different name to prevent Core.Box
+        if D == 1
+            ##
+        elseif D == 2
+            @floop for jʸ in 0:M
+                ζʸ = ifelse(jʸ == 0, 2, 1)
+                for jʸ′ in iseven(jʸ):2:M, jˣ in 0:M
+                    ζʸ′ = ifelse(jʸ′ == 0, 2, 1)
+                    ∂ʸ_cos[jʸ′*b+jˣ+1, jʸ*b+jˣ+1] = 4δ * jʸ^2/(Lʸ * (jʸ′^2 - jʸ^2)) / √(ζʸ′*ζʸ)
+                end
+            end
+        end
+        return ∂ʸ_cos
     end
 end
 
