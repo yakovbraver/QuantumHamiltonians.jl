@@ -11,7 +11,7 @@
      33  32  31  23  22  21  13  12  11]
     
     # we need a `FourierTransformerP` object to test `fft_to_matrix_2D!`
-    u = [10i+j for i = 1:5, j=1:5]
+    u = [10j+i for i = 1:5, j = 1:5]
     M = 1
     ft = XSpaceHamiltonians.FourierTransformerP([(0.0, 1.0), (0.0, 1.0)], M; basis=:cis)
     ft.buff .= u # set as if `u` was the result of an actual fft
@@ -40,9 +40,47 @@
     # @test H == Symmetric(H_true, :L)
 end
 
+@testset "1-component diagonalisation" begin
+    # Assymetric quantum harmonic oscillator: 𝐻 = -Δ/2 + 𝑥²/2 + 3𝑦²/2
+
+    ω₁ = 1; ω₂ = 3;
+    𝑈(x, y) = ω₁^2 * x^2 / 2 + ω₂^2 * y^2 / 2
+    xlimits = (-5, 5) .|> Float64
+    stateno = 2 # will test 2nd eigenstate (=4th excited state) 
+    𝜓₁₀(x, y) = (ω₁/π)^(1/4) / √2 * exp(-ω₁*x^2/2) * 2x*√ω₁ * (ω₂/π)^(1/4) * exp(-ω₂*y^2/2)
+
+    for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace)
+        M = basis == :sin ? 31 : 32
+
+        if kind == :xspace
+            qh = XSpaceHamiltonian([xlimits, xlimits], 𝑈; basis, M, δ=√0.5) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
+            vals, vecs, info = diagonalize(qh; nev=5)
+            xs = qh.ft.xs
+            ψ = vecs[stateno][1]
+            ε = vals[1:4]
+        else
+            (kind == :sparse && basis != :cis) && continue # sparse is only implemented for cis
+            kwargs = kind == :sparse ? (;fft_threshold=1e-2) : (;) # pass `fft_threshold` for sparse; otherwise pass an empty named tuple
+            qh = PSpaceHamiltonian{kind}([xlimits, xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ=√0.5, kwargs...)
+            # test correctness of kind parameters
+            @test qh isa PSpaceHamiltonian{kind, Float64, Float64, Float64, 3, 4}
+            diagonalize!(qh, nev=4)
+            xs, vec = make_wavefunction(qh, qh.V[:, stateno])
+            ψ = vec[1]
+            ε = qh.ε
+        end
+        
+        @test ε ≈ 2:5 rtol=1e-5 # exact spectrum is εˣʸ = (𝑛ˣ + 1/2) + 3(𝑛ʸ + 1/2); lowest energies are 2, 3, 4, 5, 5, 6
+
+        ψ_true = 𝜓₁₀.(xs[:, 1], xs[:, 2]')
+        @test all(@. abs(ψ) - abs(ψ_true) < 1e-2) # test abs because a sign difference is possible
+    end
+end
+
 # TODO add additional type checks
-# Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
 @testset "Test dense and sparse 2D 1-component diagonalisation" begin
+    # Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
+
     function 𝑈(x::Real, y::Real)
         (sin(x+y)^2 + (ϵc*sin(x-y))^2) / 𝛼(x, y)^2 * 2ϵ^2 * (1+ϵc^2)
     end
@@ -137,8 +175,9 @@ end
     @test qh.ε[1] ≈ 0.571 atol=1e-3
 end
 
-# Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
 @testset "Test dense 2D 3-component diagonalisation" begin
+    # Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
+
     function 𝛺₁(x::Real, y::Real)
         Ω₁₀ / 2
     end
@@ -220,8 +259,9 @@ end
     @test qh.ε[1] ≈ 0.5 rtol=1e-3
 end
 
-# Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
 @testset "Test sparse 2D 3-component diagonalisation" begin
+    # Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
+    
     function 𝛺₁(x::Real, y::Real)
         Ω₁₀ / 2
     end

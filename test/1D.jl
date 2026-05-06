@@ -6,21 +6,21 @@
     stateno = 5 # will test 5th eigenstate (=4th excited state) 
     𝜓₄(x) = 1/√(2^4*factorial(4)√π) * exp(-x^2/2) * (16x^4 - 48x^2 + 12) # analytical state with 𝑛 = 4
 
-    for basis in (:cis, :sin, :cos), type in (:dense, :sparse, :xspace)
+    for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace)
         M = basis == :sin ? 63 : 64
 
-        if type == :xspace
+        if kind == :xspace
             qh = XSpaceHamiltonian([xlimits], 𝑈; basis, M, δ=√0.5) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
-            vals, vecs, info = diagonalize(qh; nev=5); # for large M you may need to tweak solver parameters. E.g. for M = 256, to converge to the default Float64 tolerance of 1e-12, set `krylovdim=35` (default is 30)
+            vals, vecs, info = diagonalize(qh; nev=5)
             xs = qh.ft.xs
             ψ = vecs[stateno][1]
             ε = vals[1:5]
         else
-            (type == :sparse && basis != :cis) && continue # sparse is only implemented for cis
-            kwargs = type == :sparse ? (;fft_threshold=1e-2) : (;) # pass `fft_threshold` for sparse; otherwise pass an empty named tuple
-            qh = PSpaceHamiltonian{type}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ=√0.5, kwargs...) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
-            # test correctness of type parameters
-            @test qh isa PSpaceHamiltonian{type, Float64, Float64, Float64, 2, 3}
+            (kind == :sparse && basis != :cis) && continue # sparse is only implemented for cis
+            kwargs = kind == :sparse ? (;fft_threshold=1e-2) : (;) # pass `fft_threshold` for sparse; otherwise pass an empty named tuple
+            qh = PSpaceHamiltonian{kind}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ=√0.5, kwargs...)
+            # test correctness of kind parameters
+            @test qh isa PSpaceHamiltonian{kind, Float64, Float64, Float64, 2, 3}
             diagonalize!(qh, nev=5)
             xs, ψ = make_eigenfunctions(qh; statenos=[stateno], nx=50)
             ε = qh.ε
@@ -154,7 +154,7 @@ end
     # test that density remains the same
     xs, Ψ1 = make_wavefunction(qh, sol.u[1])
     xs, Ψ2 = make_wavefunction(qh, sol.u[end])
-    @test sum(abs2, abs2.(Ψ1) - abs2.(Ψ2)) < 5e-8
+    @test sum(abs2, abs2.(Ψ1[1]) - abs2.(Ψ2[1])) < 5e-8
 end
 
 @testset "2-component nonlinear Floquet-BdG" begin

@@ -72,6 +72,7 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
 
     # `H_isreal` will show if the resulting `H` will be real
     𝐴_present = !all(isnothing.(𝐴))
+    𝐴_present && basis != :cis && error("XSpaceHamiltonians do not support 𝐴 for $basis basis. Only cis basis is supported.")
     U_isreal = all( 𝑢([xlims[i][1] for i in eachindex(xlims)]...) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢) ) # check if all functions in 𝑈 are real
     H_isreal = U_isreal && !𝐴_present && iszero(Γ) # without checking we assume that all 𝐴 are real. Can be generalised for the exotic cases of complex 𝐴.
 

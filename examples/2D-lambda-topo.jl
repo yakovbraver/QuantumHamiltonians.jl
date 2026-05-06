@@ -139,7 +139,7 @@ M = 32
 @time diagonalize!(ph, nev=5); # 33s for M=64
 ph.ε
 
-stateno = 1
+stateno = 2
 xs, ys, ψ = make_eigenfunction(ph, stateno, 100, 100)
 heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
@@ -149,10 +149,10 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 M = 64
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝜙, [𝐴ₓ, 𝐴y]; basis=:cis, M, δ);
 # Setting `ishermitian=false` because solver claims that map is nonhermitian. TODO: investigate
-@time vals, vecs, info = diagonalize(xh, nev=1, ishermitian=false); # M=64: 7.8s, M=128: 20s. Increase `krylovdim` ot say 40 (or maxiter to say 200) if you want better convergence.
+@time vals, vecs, info = diagonalize(xh, nev=2, ishermitian=false); # M=64: 7.8s, M=128: 20s. Increase `krylovdim` ot say 40 (or maxiter to say 200) if you want better convergence.
 vals
-heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[1].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[1].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[stateno].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[stateno].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Full 3-component diagonalisation
 

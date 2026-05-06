@@ -85,10 +85,11 @@ function make_eigenfunctions(xh::PSpaceHamiltonian{Storage,R}; statenos::Abstrac
                         ψ[ix, c, is] = sum(V[(c-1)*M+jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
                     end
                 else # basis == :cos
+                    b = M + 1 # not B to prevent Core.Box
                     @floop for (ix, x) in enumerate(xs)
-                        ψ[ix, c, is] = sum(V[(c-1)*M+jx+1, stateno]cos(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
+                        ψ[ix, c, is] = sum(V[(c-1)*b+jx+1, stateno]cos(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
                     end
-                    ψ[:, c, is] .+= V[(c-1)*M+1, stateno] / √Lx # treat zeroth harmonic separately
+                    ψ[:, c, is] .+= V[(c-1)*b+1, stateno] / √Lx # treat zeroth harmonic separately
                 end
             end
         end
@@ -105,40 +106,52 @@ function make_eigenfunctions(xh::PSpaceHamiltonian{Storage,R}; statenos::Abstrac
     return xs .+ xlims[1][1], ψ # return "normal" coordinates, in `x ∈ xlims`
 end
 
-# TODO tweak ψ and padding a bit to generalise to any D
 """
-Construct a 1D x-space wave function using its p-space representation `v`.
-Pass integer `pad` to pad `v` with zeros, interpolating the x-space function as if reconstructed using `2^pad*xh.M` harmonics (instead of `xh.M`).
-Return (`xs`, `ψ`) where `ψ[x, components]`.
+Construct a D-dimensional x-space wave function using its p-space representation `ψₚ` (1D vector).
+Pass integer `pad` to pad `ψₚ` with zeros, interpolating the x-space function as if reconstructed using `2^pad*xh.M` harmonics (instead of `xh.M`).
+Return a tuple (`xs`, `ψ`) where `ψ[component][x, y, …]` while `xs[:, 1]` contains sampled 𝑥, `xs[:, 2]` contains sampled 𝑦, etc..
 """
-function make_wavefunction(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{T}; pad::Integer=0) where {Storage, R, T<:Number}
+function make_wavefunction(xh::PSpaceHamiltonian{Storage, R}, ψₚ::AbstractVector{T}; pad::Integer=0) where {Storage, R, T<:Number}
     (;xlims, basis, nc) = xh
-    v_isreal = T <: Real
+    ψₚ_isreal = T <: Real
+
+    B = length(ψₚ) ÷ nc # original block-size
+    # number of x points in each dimension
+    nx = basis == :cis ? 2xh.M+1 :
+         basis == :sin ?    xh.M : xh.M+1
+
     M = 2^pad * xh.M
-    ft = FourierTransformerP(xlims, M; basis, target_real=v_isreal, target_rank=1)
-    ψ_type = basis != :cis && v_isreal ? R : complex(R)  # `ψ` are real if elements of `v` are real and if the basis is real (sin/cos). If basis is real but `v` are complex, this will yield complex function as expected.
+    ft = FourierTransformerP(xlims, M; basis, target_real=ψₚ_isreal, target_rank=1)
+    nx_padded = size(ft.xs, 1) # number of x points in each dimension for the padded array
+    
+    ψₓ_type = basis != :cis && ψₚ_isreal ? R : complex(R) # `ψ` are real if elements of `ψₚ` are real and if the basis is real (sin/cos). If basis is real but `ψₚ` are complex, this will yield complex function as expected.
     D = length(xlims) # number of spatial dimensions
-    # component-block size for the padded array (= number of x points in each dimension)
-    B_padded = basis == :cis ? (2M+1)^D :
-               basis == :sin ?      M^D : (M+1)^D
-    B = length(v) ÷ nc # original block-size
-    ψ = Matrix{ψ_type}(undef, B_padded, nc)
-    pad > 0 && (v_padded = zeros(T, B_padded))
-    @views for c in 1:nc
-        if pad > 0
-            if basis == :cis
-                nadd = B_padded - B # number of points that will be added
-                v_padded[nadd÷2+1:end-nadd÷2] .= v[(c-1)B+1:c*B]
-            else
-                v_padded[1:B] .= v[(c-1)B+1:c*B]
-            end
-            transform!(ft, v_padded; direction=:backward)
-        else
-            transform!(ft, v[(c-1)B+1:c*B]; direction=:backward)
+    ψₓ = [Array{ψₓ_type}(undef, ntuple(Returns(nx_padded), D)) for _ in 1:nc]
+    
+    if pad > 0
+        ψₚᶜ_indices = ntuple(Returns(nx), D) # indices that `ψₚᶜ` will have when reshaped into a D-dimensional tensor
+        ψₚᶜ_padded = zeros(T, size(ψₓ[1])) # a buffer for a padded version of `c`th component, same shape as each components `ψₓ`
+        # determine the indices of `ψₚᶜ_padded` where `ψₚᶜ` will be copied to
+        if basis == :cis
+            offset = (nx_padded - nx) ÷ 2
+            ψₚᶜ_padded_indices = CartesianIndices(ntuple(i -> offset+1:nx+offset, D)) # will copy to the middle of the array
+        else # sin/cos
+            ψₚᶜ_padded_indices = CartesianIndices(ψₚᶜ_indices) # will copy to the low-frequency corner
         end
-        fft_to_vector!(ψ[:, c], ft; direction=:backward)
     end
-    return ft.xs, ψ
+    
+    for c in 1:nc
+        ψₚᶜ = @view ψₚ[(c-1)B+1:c*B] # take part of `ψₚ` corresponding to the `c`th component
+        if pad > 0
+            # reshape `ψₚᶜ` into a D-dimensional tensor and copy into the padded array
+            copyto!(ψₚᶜ_padded, ψₚᶜ_padded_indices, reshape(ψₚᶜ, ψₚᶜ_indices), CartesianIndices(ψₚᶜ_indices))
+            transform!(ft, ψₚᶜ_padded; direction=:backward) # here the input vector is D-dimensional
+        else
+            transform!(ft, ψₚᶜ; direction=:backward) # here the input vector is 1D; `transform!` will reshape it.
+        end
+        fft_to_vector!(ψₓ[c], ft; direction=:backward) # this essentially copies from `ft.buff` into `ψₓ[c]`, but there are a few extra steps to take care of
+    end
+    return ft.xs, ψₓ
 end
 
 """
@@ -158,22 +171,30 @@ function make_eigenfunction(xh::PSpaceHamiltonian{Storage,R}, stateno::Integer, 
             if iqx != 0 # if quasimomentum index has been passed
                 @floop for (iy, y) in enumerate(ys)
                     for (ix, x) in enumerate(xs)
-                        ψ[c][ix, iy] = sum(V_q[(c-1)*B^2+(j-1)B+i, stateno, iqx, iqy]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
-                                                                                                                  for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+                        ψ[c][ix, iy] = sum(V_q[(c-1)*B^2+(i-1)B+j, stateno, iqx, iqy]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (i, jy) in enumerate(-M:M)
+                                                                                                                  for (j, jx) in enumerate(-M:M)) / √(Lx*Ly)
                     end
                 end
             else # no quasimomentum index
                 @floop for (iy, y) in enumerate(ys)
                     for (ix, x) in enumerate(xs)
-                        ψ[c][ix, iy] = sum(V[(c-1)*B^2+(j-1)B+i, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (j, jx) in enumerate(-M:M)
-                                                                                                      for (i, jy) in enumerate(-M:M)) / √(Lx*Ly)
+                        ψ[c][ix, iy] = sum(V[(c-1)*B^2+(i-1)B+j, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (i, jy) in enumerate(-M:M)
+                                                                                                      for (j, jx) in enumerate(-M:M)) / √(Lx*Ly)
                     end
                 end
             end
-        else # nonperiodic
+        elseif basis == :sin
             @floop for (iy, y) in enumerate(ys)
                 for (ix, x) in enumerate(xs)
-                    ψ[c][ix, iy] = sum(V[(c-1)*M^2+(jx-1)M+jy, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jx in 1:M for jy in 1:M) * 2 / √(Lx*Ly)
+                    ψ[c][ix, iy] = sum(V[(c-1)*M^2+(jy-1)M+jx, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jy in 1:M for jx in 1:M) * 2 / √(Lx*Ly)
+                end
+            end
+        else # basis == :cos
+            b = M + 1 # not B to prevent Core.Box
+            @floop for (iy, y) in enumerate(ys)
+                for (ix, x) in enumerate(xs)
+                    ψ[c][ix, iy] = sum(V[(c-1)*b^2+jy*b+jx+1, stateno]cos(π*jx*x/Lx)cos(π*jy*y/Ly)/√(ifelse(jx == 0 || jx == M, 2, 1)ifelse(jy == 0 || jy == M, 2, 1))
+                                       for jy in 0:M for jx in 0:M) * 2 / √(Lx*Ly)
                 end
             end
         end
@@ -190,16 +211,13 @@ Note that `xh.H` is modified in the process. In the case when 𝐴 is absent, on
 When 𝐴 is present, the entire diagonal blocks of `xh.H` are modified, and they are not restored in the end. However, they are constructed from scratch when the function is called rather than using the contents of `xh.H`.
 Thus, in both cases this function can be called repeatedly (e.g. for different `qs`) without reconstructing `xh`.
 """
-function diagonalize!(xh::PSpaceHamiltonian{Storage,R,T,S}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {Storage,R,T,S}
-    if xh.basis != :cis
-        error("Hamiltonian must be periodic. Construct a new one using the cis basis and try again.")
-        return
-    end
+function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {Storage, R, T, S}
+    xh.basis != :cis && error("Hamiltonian must be periodic. Construct a new one using the cis basis and try again.")
     (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
     D = length(xlims)
     if Storage == :dense
         makesparse = false
-        threshold = zero(R) # the value does not matter since it is not be used when `makesparse=false`
+        threshold = zero(R) # the value does not matter since it is not used when `makesparse=false`
     else
         makesparse = true
         threshold = xh.fft_threshold

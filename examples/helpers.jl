@@ -30,11 +30,11 @@ function plot_comps_complex(xs, ψ; stateno=1)
             figs[i]   = plot(xs, abs2.(ψ[:, c, stateno]), xlabel=L"x", ylabel=L"y", title=L"|\psi_{%$c}|^2");
             figs[i+1] = plot(xs, angle.(ψ[:, c, stateno]) ./ π, xlabel=L"x", ylabel=L"y", title=L"\arg(\psi_{%$c})");
         end
-    elseif ndims(ψ) == 2 # for ψ returned by make_wavefunction
+    elseif ndims(ψ) == 1 # for ψ returned by make_wavefunction
         for i in 1:2:2ncomps
             c = (i+1) ÷ 2 # component number
-            figs[i]   = plot(xs, abs2.(ψ[:, c]), xlabel=L"x", ylabel=L"y", title=L"|\psi_{%$c}|^2");
-            figs[i+1] = plot(xs, angle.(ψ[:, c]) ./ π, xlabel=L"x", ylabel=L"y", title=L"\arg(\psi_{%$c})");
+            figs[i]   = plot(xs, abs2.(ψ[c]), xlabel=L"x", ylabel=L"y", title=L"|\psi_{%$c}|^2");
+            figs[i+1] = plot(xs, angle.(ψ[c]) ./ π, xlabel=L"x", ylabel=L"y", title=L"\arg(\psi_{%$c})");
         end
     else
         println("ndims = $ndims not supported.")
@@ -49,33 +49,34 @@ function plot_comps(xs, ψ; stateno=1)
     nc = ndims(ψ) == 1 ? length(ψ) ÷ length(xs) : size(ψ, 2)
     figs = [plot() for _ in 1:nc]
     if ndims(ψ) == 3 # for ψ returned by make_eigenfunctions
-        for i in 1:nc
-            figs[i] = plot(xs, ψ[:, i, stateno], xlabel=L"x", ylabel=L"y", title=L"\psi_{%$i}");
+        for c in 1:nc
+            figs[c] = plot(xs, ψ[:, c, stateno], xlabel=L"x", ylabel=L"y", title=L"\psi_{%$c}");
         end
-    elseif ndims(ψ) == 2 # for ψ returned by make_wavefunction
-        for i in 1:nc
-            figs[i] = plot(xs, ψ[:, i], xlabel=L"x", ylabel=L"y", title=L"\psi_{%$i}");
+    elseif ψ isa Vector{<:Vector} # for ψ returned by make_wavefunction
+        for c in 1:nc
+            figs[c] = plot(xs, ψ[c], xlabel=L"x", ylabel=L"y", title=L"\psi_{%$c}");
         end
-    elseif ndims(ψ) == 1 # for ψ returned by find_stationary
+    elseif ψ isa Vector{<:Number} # for ψ returned by find_stationary
         nx = length(xs)
-        for i in 1:nc
-            figs[i] = plot(xs, ψ[(i-1)nx+1:i*nx], xlabel=L"x", ylabel=L"y", title=L"\psi_{%$i}");
+        for c in 1:nc
+            figs[c] = plot(xs, ψ[(c-1)nx+1:c*nx], xlabel=L"x", ylabel=L"y", title=L"\psi_{%$i}");
         end
     end
     plot(figs..., layout=(nc, 1), legend=false)
 end
 
-"Return a 2D evolution map using the solution."
+"Return a 1-component 2D (time-space) evolution map using the solution."
 function make_map(xh, sol)
     U = Matrix{eltype(sol.u[1])}(undef, length(sol.u[1]), length(sol.u))
     xs = [] # initialise for storing coordinates
-    for i in axes(U, 2)
-        xs, U[:, i] = make_wavefunction(xh, sol.u[i])
+    for it in axes(U, 2)
+        xs, temp = make_wavefunction(xh, sol.u[it])
+        U[:, it] = temp[1]
     end
     return vec(xs), U
 end
 
-"Return a multi-component 2D evolution map using the solution. Output format: u[x, t, c]"
+"Return a multi-component 2D (time-space) evolution map using the solution. Output format: u[x, t, c]"
 function make_map_comps(xh, sol; itime=false, pad=0)
     nt = itime ? length(sol.u) ÷ 2 + 1 : length(sol.u) # for imaginary time, save only every second solution point (we don't need unnormalised solutions before the callback)
 
@@ -89,7 +90,10 @@ function make_map_comps(xh, sol; itime=false, pad=0)
     xs = [] # initialise for storing coordinates
     for it in axes(U, 2)
         iu = itime ? 2it - 1 : it
-        xs, U[:, it, :] = make_wavefunction(xh, sol.u[iu]; pad)
+        xs, temp = make_wavefunction(xh, sol.u[iu]; pad)
+        for c in 1:xh.nc
+            U[:, it, c] = temp[c]
+        end
     end
     return vec(xs), U
 end

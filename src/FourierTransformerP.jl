@@ -6,7 +6,7 @@ mutable struct FourierTransformerP{R, T, PlanForward, PlanBackward, D} # T is th
     norm_backward::R # normalisation factor for backward transform
     basis::Symbol
     buff::Array{T, D} # buffer for the result of the transform
-    buff_im::Array{T, D} # additional buffer for storing the DST/DCT of the imaginary part of a function
+    buff_im::Array{T, D} # additional buffer: in the sin/cos cases it stores the imaginary part of a function. In the cis cases it is used for fftshift
     did_complex_rxdft::Bool # a flag that is true if the last-performed transformation was a DST/DCT ("FFTW.RODFT"/"FFTW.REDFT") of a *complex* function. The only reason why the type is mutable.
     plan_forward::PlanForward # plan for forward transform
     plan_backward::PlanBackward # plan for backward transform
@@ -84,11 +84,11 @@ function transform!(ft::FourierTransformerP, 𝑓::Function; direction::Symbol=:
         if D == 1
             buff .= 𝑓.(xs) .* normalisation
         elseif D == 2
-            @views buff .= 𝑓.(xs[:, 1], xs[:, 2]') .* normalisation
+            @views buff .= 𝑓.(xs[:, 1], xs[:, 2]') .* normalisation # structurally corresponds to f[i, j] = 𝑓(xs[i], ys[j]), i.e. first index is 𝑥, second is 𝑦. 𝑥↓ 𝑦→
         end
         plan * buff # in-place transform, weird syntax
         ft.did_complex_rxdft = false
-    else # if basis is sin/cos and 𝑓 is complex
+    else # if basis is sin/cos and `𝑓` is complex
         # `FFTW.RxDFT00` can only handle real input. So we transform Re and Im separately.
         if D == 1
             for (ix, x) in enumerate(xs)
@@ -107,24 +107,48 @@ function transform!(ft::FourierTransformerP, 𝑓::Function; direction::Symbol=:
 end
 
 """
-Transform a discretised function `f`, which can be either in x-space or p-space.
-The transformation is forward or backward depending on the `direction` keyword argument.
+Transform a discretised function `f`, which can be either in x-space or p-space. Store the result in `ft.buff` and `ft.buff_im`.
+
+The transformation is forward (= to p-space) or backward (= to x-space) depending on the `direction` keyword argument.
+For `direction=:forward`, `f` is assumed to be an x-space D-dimensional tensor indexed by (x, y, …). It is transformed and written directly to the buffer (shapes match).
+Forward transformation is used both for transforming states and operators.
+
+For `direction=:backward`, `f` is assumed to be a p-space state, either a D-dimensional tensor indexed by (𝑗ˣ, 𝑗ʸ, …) or a 1D vector indexed by (⋯𝑗ʸ𝑗ˣ). 
+In the latter case, prior to transforming, the input tensor is reshaped to a D-dimensional tensor like the buffer.
+Backward transformation is used only for transforming states -- we never need to transform operators back to x-space.
 """
 function transform!(ft::FourierTransformerP, f::AbstractArray{<:Number}; direction::Symbol=:forward)
     (;norm_forward, norm_backward, basis, buff, buff_im, plan_forward, plan_backward) = ft
     normalisation = direction == :forward ? norm_forward : norm_backward
     plan = direction == :forward ? plan_forward : plan_backward
     
+    D = ndims(buff)
     # preparation of the input if going to x-space
-    if basis == :cis && direction != :forward # then do `ifftshift` because `f` is stored in -M:M ordering, while FFT assumes 0:M,-M:-1
-        FFTW.ifftshift!(buff_im, f) # using `buff_im` as a convenient buffer (specifically made for this case)
-        f_input = buff_im
-    elseif basis == :cos && direction != :forward
-        f_input = copy(f)
-        f_input[1] *= √2; f_input[end] *= √2 # TODO generalise to n dims
-    else
+    if direction == :backward
+        f_reshaped = reshape(f, ntuple(Returns(size(buff, 1)), D)) # make `f` same shape as the buffer. It might be already, but this goes through anyway.
+        if basis == :cis # then do `ifftshift` because `f` is stored in -M:M ordering, while FFT assumes 0:M,-M:-1
+            FFTW.ifftshift!(buff_im, f_reshaped) # using `buff_im` as a convenient buffer (specifically made for this case)
+            f_input = buff_im
+        elseif basis == :sin
+            f_input = f_reshaped
+        else # basis == :cos
+            f_input = copy(f_reshaped)
+            # proper normalisation of the zeroth and last harmonic
+            if D == 1
+                f_input[1] *= √2; f_input[end] *= √2
+            elseif D == 2
+                # edges (without corners)
+                f_input[1, 2:end-1] *= √2; f_input[end, 2:end-1] *= √2; f_input[2:end-1, 1] *= √2; f_input[2:end-1, end] *= √2;
+                # corners 
+                f_input[1, 1] *= 2; f_input[end, 1] *= 2; f_input[1, end] *= 2; f_input[end, end] *= 2;
+            else
+                error("transform! with basis=:cos and direction=:backward not implemented in $(D)D.")
+            end
+        end
+    else # going to p-space, no setup required
         f_input = f
     end
+
     # transform              
     if basis == :cis || eltype(f) <: Real
         buff .= f_input .* normalisation
@@ -143,78 +167,89 @@ function transform!(ft::FourierTransformerP, f::AbstractArray{<:Number}; directi
 end
 
 """
-Use the result of the transform to construct a vector indexed by (𝑗ˣ𝑗ʸ⋯).
-If `makesparse=true`, a sparse vector is returned, with values below `threshold` in magnitude filtered out. By default, a dense vector is returned.
-If `makereal=true`, a real vector (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of ft.buff.
+Use the result of the D-dimensional transform contained in `ft.buff` to construct a p-space or x-space state.
+For `direction=:forward`, use reshaping to construct a p-space state as a 1D vector indexed by (⋯𝑗ʸ𝑗ˣ). 
+For `direction=:backward`, construct an x-space state as a D-dimensional array indexed by (x, y, …). 
+Pass `makereal=true` to drop the imaginary part of `ft.buff` -- useful in the cis case when constructing x-space state if you know the state must be real.
 """
-function fft_to_vector(ft::FourierTransformerP{R,T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R)), direction::Symbol=:forward) where {R <: AbstractFloat, T <: Number}
-    (;M, buff, basis) = ft
-    D = ndims(buff)
+function fft_to_vector(ft::FourierTransformerP{R, T}; makereal=false, direction::Symbol=:forward) where {R, T}
+    (;buff, basis) = ft
+
     if basis == :cis
-        B = (2M+1)^D
         if makereal
-            v_type = R
+            ψ_type = R
             buff .= real.(buff)
         else
-            v_type = T
+            ψ_type = T
         end
-    else
-        B = basis == :sin ? M^D : (M+1)^D
-        v_type = ft.did_complex_rxdft ? Complex{T} : T
+    else # sin/cos
+        ψ_type = ft.did_complex_rxdft ? Complex{T} : T
     end
 
-    if makesparse
-        # if basis == :cis
-        #     n_elem = filter_count!(ft; threshold)
-        #     rows = Vector{Int64}(undef, n_elem)
-        #     cols = Vector{Int64}(undef, n_elem)
-        #     vals = Vector{v_type}(undef, n_elem)
-        #     fft_to_matrix_sparse!(rows, cols, vals, ft)
-        #     v = sparse(rows, cols, vals)
-        # else
-        #     error("Sparse not available for basis = $basis. Only available for basis = :cis.")
-        # end
-    else # dense
-        v = Vector{v_type}(undef, B)
-        fft_to_vector!(v, ft; direction) # we do not pass `makereal` because already performed this above
+    if direction == :forward
+        ψ = Vector{ψ_type}(undef, length(buff)) # a p-space state that is a linearised 1D vector, constructed from the D-dimensional `buffer` (`length` gives total number of elements)
+    else
+        ψ = similar(buff, ψ_type) # an x-space state that is a D-dimensional tensor, like `buff`
     end
-    return v
+
+    fft_to_vector!(ψ, ft; direction) # we do not pass `makereal` because already performed this above
+
+    return ψ
 end
 
 """
-Use the result of the transform to fill `v` as a vector indexed by (𝑗ˣ𝑗ʸ⋯). 
-`makereal=true` is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
+Use the result of the D-dimensional transform contained in `ft.buff` to construct (fill) a p-space or x-space state `ψ`.
+For `direction=:forward`, use reshaping to construct a p-space state `ψ` as a 1D vector indexed by (⋯𝑗ʸ𝑗ˣ).
+For `direction=:backward`, construct an x-space state `ψ` as a D-dimensional array indexed by (x, y, ⋯).
+Pass `makereal=true` to drop the imaginary part of `ft.buff` -- useful in the cis case when constructing x-space state if you know the state must be real.
 """
-function fft_to_vector!(v::AbstractVector{<:Number}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward)
+function fft_to_vector!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward) where D
     (;buff, buff_im, basis) = ft
-    D = ndims(buff)
     makereal && (buff .= real.(buff))
-    if D == 1
-        if basis == :cis
-            if direction == :forward
-                # we always work with fftshift'ed vectors -- we also do this in `fft_to_matrix!` and use -M:M ordering for momentum terms
-                FFTW.fftshift!(v, buff)
-            else # `v` is in x-space
-                copy!(v, buff)
-            end
-        else # sin/cos
-            copy!(v, buff)
-            ft.did_complex_rxdft && (v .+= im.*buff_im)
-            # proper normalisation of the zeroth and last harmonic
-            basis == :cos && direction == :forward && (v[1] /= √2; v[end] /= √2)
+    if basis == :cis
+        if direction == :forward # `ψ` is in p-space, and is a 1D vector, so the buffer must be reshaped (linearised)
+            FFTW.fftshift!(buff_im, buff) # using `buff_im` as a convenient buffer (specifically made for this case)
+            copyto!(ψ, buff_im) # `copyto!` copies contiguously even though shapes are different (`ψ` is 1D vector, `buff_im` is D-dimensional); this is like `ψ = buff_im[:]`
+        else # `ψ` is in x-space, and already D-dimensional like the buffer, so just copy
+            copy!(ψ, buff)
         end
-    else
-        error("fft_to_vector! not implemented in $(D)D.")
+    else # sin/cos
+        if direction == :forward # `ψ` is in p-space, and is a 1D vector, so the buffer must be reshaped (linearised)
+            # proper normalisation of the zeroth and last harmonic; do this for the D-dimensional buffer (more convenient than for linearised ψ)
+            if basis == :cos
+                if D == 1
+                    buff[1] /= √2; buff[end] /= √2
+                    ft.did_complex_rxdft && (buff_im[1] /= √2; buff_im[end] /= √2)
+                elseif D == 2
+                    # edges (without corners)
+                    buff[1, 2:end-1] /= √2; buff[end, 2:end-1] /= √2; buff[2:end-1, 1] /= √2; buff[2:end-1, end] /= √2;
+                    # corners 
+                    buff[1, 1] /= 2; buff[end, 1] /= 2; buff[1, end] /= 2; buff[end, end] /= 2;
+                    # repeat for `buff_im`                    
+                    if ft.did_complex_rxdft
+                        buff_im[1, 2:end-1] /= √2; buff_im[end, 2:end-1] /= √2; buff_im[2:end-1, 1] /= √2; buff_im[2:end-1, end] /= √2;
+                        buff_im[1, 1] /= 2; buff_im[end, 1] /= 2; buff_im[1, end] /= 2; buff_im[end, end] /= 2;
+                    end
+                else
+                    error("fft_to_vector! with basis=:cos and direction=:forward not implemented in $(D)D.")
+                end
+            end
+            copyto!(ψ, buff) # `copyto!` copies contiguously even though shapes are different; this is like `ψ = buff[:]`
+            ft.did_complex_rxdft && (ψ .+= im .* reshape(buff_im, :))
+        else # `ψ` is in x-space, and already D-dimensional like the buffer, so just copy
+            copy!(ψ, buff)
+            ft.did_complex_rxdft && (ψ .+= im .* buff_im)
+        end
     end
     return
 end
 
 """
-Use the result of the transform to construct a matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
+Use the result of the transform to construct a matrix indexed by (⋯𝑗ʸ′𝑗ˣ′, ⋯𝑗ʸ𝑗ˣ).
 If `makesparse=true`, a sparse matrix is returned, with values below `threshold` in magnitude filtered out. By default, a dense matrix is returned.
 If `makereal=true`, a real matrix (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
-function fft_to_matrix(ft::FourierTransformerP{R,T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R))) where {R <: AbstractFloat, T <: Number}
+function fft_to_matrix(ft::FourierTransformerP{R, T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R))) where {R, T}
     (;M, buff, basis) = ft
     D = ndims(buff)
     if basis == :cis
@@ -239,7 +274,7 @@ function fft_to_matrix(ft::FourierTransformerP{R,T}; makesparse::Bool=false, mak
             fft_to_matrix_sparse!(rows, cols, vals, ft)
             A = sparse(rows, cols, vals)
         else
-            error("Sparse fft_to_matrix not available for basis = $basis. Only available for basis = :cis.")
+            error("Sparse fft_to_matrix not implemented for basis = $basis. Only implemented for basis = :cis.")
         end
     else # dense
         A = Matrix{A_type}(undef, B, B)
@@ -251,7 +286,7 @@ end
 ################ Dense ################
 
 """
-Use the result of the transform to fill `A` as a matrix indexed by (𝑗ˣ′𝑗ʸ′⋯, 𝑗ˣ𝑗ʸ⋯). 
+Use the result of the transform to fill `A` as a matrix indexed by (⋯𝑗ʸ′𝑗ˣ′, ⋯𝑗ʸ𝑗ˣ). 
 `makereal=true` is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
 function fft_to_matrix!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP; makereal=false)
@@ -318,55 +353,54 @@ function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
 end
 
 """
-Use the result of the 2D transform to fill `A` as a matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
+Use the result of the 2D transform to fill `A` as a matrix indexed by (𝑗ʸ′𝑗ˣ′, 𝑗ʸ𝑗ˣ).
 """
 function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
     (;M, basis, buff, buff_im) = ft
+    # We simply go over each element of `A`, assigning an appropriate element of `u`.
+    # In the dense case it is preferred over (since it's faster than) [`fft_to_matrix_sparse!`](@ref)
+    # because even if `buff[i, j]=0`, the corresponding elements of `A` still must be accessed to be set to zero.
+    # In `A`, the x-index must be fastest, like in `buff` so that when an eigenvector of `A` is reshaped into a 2D matrix, and FFT is calculated, the first index is x and second is y.
     if basis == :cis
         B = 2M + 1
-        # TODO add check size(A) .== B^2
-        buff_shifted = FFTW.fftshift(buff) # indexing into `u` is more convenient if we shift TODO rewrite without relying on this
-        # We simply go over each element of `A`, assigning an appropriate element of `u`.
-        # In the dense case it is preferred over (since it's faster than) [`fft_to_matrix_sparse!`](@ref)
-        # because even if `buff[i, j]=0`, the corresponding elements of `A` still must be accessed to be set to zero.
-        @floop for jˣ in 1:B
-            for jʸ in 1:B
-                for jˣ′ in 1:B
-                    jˣ⁻ = jˣ′ - jˣ + B # +1 because of 1-based indexing
-                    for jʸ′ in 1:B
-                        jʸ⁻ = jʸ′ - jʸ + B
-                        A[(jˣ′-1)B+jʸ′, (jˣ-1)B+jʸ] = buff_shifted[jˣ⁻, jʸ⁻]
+        FFTW.fftshift!(buff_im, buff) # indexing into `u` is more convenient if we shift. We shift into `buff_im`
+        @floop for jʸ in 1:B
+            for jˣ in 1:B
+                for jʸ′ in 1:B
+                    jʸ⁻ = jʸ′ - jʸ + B
+                    for jˣ′ in 1:B
+                        jˣ⁻ = jˣ′ - jˣ + B
+                        A[(jʸ′-1)B+jˣ′, (jʸ-1)B+jˣ] = buff_im[jˣ⁻, jʸ⁻]
                     end
                 end
             end
         end
     elseif basis == :sin
-        # TODO add check size(A) .== M^2
         if ft.did_complex_rxdft
-            @floop for jˣ in 1:M
-                for jʸ in 1:M
-                    for jˣ′ in 1:M
-                        jˣ⁻ = abs(jˣ′ - jˣ) + 1 # +1 because of 1-based indexing
-                        jˣ⁺ =     jˣ′ + jˣ  + 1 # +1 because of 1-based indexing
-                        for jʸ′ in 1:M
-                            jʸ⁻ = abs(jʸ′ - jʸ) + 1
-                            jʸ⁺ =     jʸ′ + jʸ  + 1
-                            A[(jˣ′-1)M+jʸ′, (jˣ-1)M+jʸ] =    buff[jˣ⁻, jʸ⁻] -    buff[jˣ⁻, jʸ⁺] -    buff[jˣ⁺, jʸ⁻] +    buff[jˣ⁺, jʸ⁺] +
-                                                    im * (buff_im[jˣ⁻, jʸ⁻] - buff_im[jˣ⁻, jʸ⁺] - buff_im[jˣ⁺, jʸ⁻] + buff_im[jˣ⁺, jʸ⁺])
+            @floop for jʸ in 1:M
+                for jˣ in 1:M
+                    for jʸ′ in 1:M
+                        jʸ⁻ = abs(jʸ′ - jʸ) + 1 # +1 because of 1-based indexing
+                        jʸ⁺ =     jʸ′ + jʸ  + 1 # +1 because of 1-based indexing
+                        for jˣ′ in 1:M
+                            jˣ⁻ = abs(jˣ′ - jˣ) + 1
+                            jˣ⁺ =     jˣ′ + jˣ  + 1
+                            A[(jʸ′-1)M+jˣ′, (jʸ-1)M+jˣ] = buff[jˣ⁻, jʸ⁻] -    buff[jˣ⁻, jʸ⁺] -    buff[jˣ⁺, jʸ⁻] +    buff[jˣ⁺, jʸ⁺] +
+                                                 im * (buff_im[jˣ⁻, jʸ⁻] - buff_im[jˣ⁻, jʸ⁺] - buff_im[jˣ⁺, jʸ⁻] + buff_im[jˣ⁺, jʸ⁺])
                         end
                     end
                 end
             end
         else
-            @floop for jˣ in 1:M
-                for jʸ in 1:M
-                    for jˣ′ in 1:M
-                        jˣ⁻ = abs(jˣ′ - jˣ) + 1 # +1 because of 1-based indexing
-                        jˣ⁺ =     jˣ′ + jˣ  + 1 # +1 because of 1-based indexing
-                        for jʸ′ in 1:M
-                            jʸ⁻ = abs(jʸ′ - jʸ) + 1
-                            jʸ⁺ =     jʸ′ + jʸ  + 1
-                            A[(jˣ′-1)M+jʸ′, (jˣ-1)M+jʸ] = buff[jˣ⁻, jʸ⁻] - buff[jˣ⁻, jʸ⁺] - buff[jˣ⁺, jʸ⁻] + buff[jˣ⁺, jʸ⁺]
+            @floop for jʸ in 1:M
+                for jˣ in 1:M
+                    for jʸ′ in 1:M
+                        jʸ⁻ = abs(jʸ′ - jʸ) + 1
+                        jʸ⁺ =     jʸ′ + jʸ  + 1
+                        for jˣ′ in 1:M
+                            jˣ⁻ = abs(jˣ′ - jˣ) + 1
+                            jˣ⁺ =     jˣ′ + jˣ  + 1
+                            A[(jʸ′-1)M+jˣ′, (jʸ-1)M+jˣ] = buff[jˣ⁻, jʸ⁻] - buff[jˣ⁻, jʸ⁺] - buff[jˣ⁺, jʸ⁻] + buff[jˣ⁺, jʸ⁺]
                         end
                     end
                 end
@@ -375,38 +409,38 @@ function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
     else # basis == :cos
         b = M + 1 # not `B` to prevent Core.Box :(
         if ft.did_complex_rxdft
-            @floop for jˣ in 0:M
-                ζˣ = ifelse(jˣ == 0, 2, 1)
-                for jʸ in 0:M
-                    ζʸ = ifelse(jʸ == 0, 2, 1)
-                    for jˣ′ in 0:M
-                        ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
-                        jˣ⁻ = abs(jˣ′ - jˣ) + 1 # +1 because of 1-based indexing
-                        jˣ⁺ =     jˣ′ + jˣ  + 1 # +1 because of 1-based indexing
-                        for jʸ′ in 0:M
-                            ζʸ′ = ifelse(jʸ′ == 0, 2, 1)
-                            jʸ⁻ = abs(jʸ′ - jʸ) + 1
-                            jʸ⁺ =     jʸ′ + jʸ  + 1
-                            A[jˣ′*b + jʸ′+1, jˣ*b + jʸ+1] = (buff[jˣ⁻, jʸ⁻] +    buff[jˣ⁻, jʸ⁺] +    buff[jˣ⁺, jʸ⁻] +    buff[jˣ⁺, jʸ⁺] +
+            @floop for jʸ in 0:M
+                ζʸ = ifelse(jʸ == 0, 2, 1)
+                for jˣ in 0:M
+                    ζˣ = ifelse(jˣ == 0, 2, 1)
+                    for jʸ′ in 0:M
+                        ζʸ′ = ifelse(jʸ′ == 0, 2, 1)
+                        jʸ⁻ = abs(jʸ′ - jʸ) + 1
+                        jʸ⁺ =     jʸ′ + jʸ  + 1
+                        for jˣ′ in 0:M
+                            ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
+                            jˣ⁻ = abs(jˣ′ - jˣ) + 1
+                            jˣ⁺ =     jˣ′ + jˣ  + 1
+                            A[jʸ′*b + jˣ′+1, jʸ*b + jˣ+1] = (buff[jˣ⁻, jʸ⁻] +    buff[jˣ⁻, jʸ⁺] +    buff[jˣ⁺, jʸ⁻] +    buff[jˣ⁺, jʸ⁺] +
                                                     im * (buff_im[jˣ⁻, jʸ⁻] + buff_im[jˣ⁻, jʸ⁺] + buff_im[jˣ⁺, jʸ⁻] + buff_im[jˣ⁺, jʸ⁺]) ) / √(ζˣ*ζˣ′*ζʸ*ζʸ′)
                         end
                     end
                 end
             end
         else
-            @floop for jˣ in 0:M # @floop gives ~x6 speedup for M=128. @turbo slows down, @tturbo gives ~x3 speedup
-                ζˣ = ifelse(jˣ == 0, 2, 1)
-                for jʸ in 0:M
-                    ζʸ = ifelse(jʸ == 0, 2, 1)
-                    for jˣ′ in 0:M
-                        ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
-                        jˣ⁻ = abs(jˣ′ - jˣ) + 1
-                        jˣ⁺ =     jˣ′ + jˣ  + 1
-                        for jʸ′ in 0:M
-                            ζʸ′ = ifelse(jʸ′ == 0, 2, 1)
-                            jʸ⁻ = abs(jʸ′ - jʸ) + 1
-                            jʸ⁺ =     jʸ′ + jʸ  + 1
-                            A[jˣ′*b + jʸ′+1, jˣ*b + jʸ+1] = (buff[jˣ⁻, jʸ⁻] + buff[jˣ⁻, jʸ⁺] + buff[jˣ⁺, jʸ⁻] + buff[jˣ⁺, jʸ⁺]) / √(ζˣ*ζˣ′*ζʸ*ζʸ′)
+            @floop for jʸ in 0:M # @floop gives ~x6 speedup (on 8 CPU cores) for M=128. @turbo slows down, @tturbo gives ~x3 speedup
+                ζʸ = ifelse(jʸ == 0, 2, 1)
+                for jˣ in 0:M
+                    ζˣ = ifelse(jˣ == 0, 2, 1)
+                    for jʸ′ in 0:M
+                        ζʸ′ = ifelse(jʸ′ == 0, 2, 1)
+                        jʸ⁻ = abs(jʸ′ - jʸ) + 1
+                        jʸ⁺ =     jʸ′ + jʸ  + 1
+                        for jˣ′ in 0:M
+                            ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
+                            jˣ⁻ = abs(jˣ′ - jˣ) + 1
+                            jˣ⁺ =     jˣ′ + jˣ  + 1
+                            A[jʸ′*b + jˣ′+1, jʸ*b + jˣ+1] = (buff[jˣ⁻, jʸ⁻] + buff[jˣ⁻, jʸ⁺] + buff[jˣ⁺, jʸ⁻] + buff[jˣ⁺, jʸ⁺]) / √(ζˣ*ζˣ′*ζʸ*ζʸ′)
                         end
                     end
                 end
@@ -513,9 +547,9 @@ function filter_count_2D!(ft::FourierTransformerP; threshold::Real=0)
     B = 2M + 1 # the size of each block
 
     # roughly, r controls the block-diagonal on which buff[r, c] will be placed, while c controls the diagonal inside all those blocks
-    for c in axes(buff, 2), r in axes(buff, 1)
-        if abs(buff[r, c]) ≤ threshold
-            buff[r, c] = 0
+    for r in axes(buff, 2), c in axes(buff, 1) # SWAPPED r and c according to swapping of x and y, but didn't rename, hence r/c ("row"/"column") have swapped names
+        if abs(buff[c, r]) ≤ threshold # SWAPPED
+            buff[c, r] = 0 # SWAPPED
         else
             # the block-diagonal into which buff[r, c] will be placed: 0 is main block-diagonal, 1 is the first lower or upper block-diagonal, etc.
             b_d = r ≤ B ? r - 1 : B - (r-B)
@@ -538,9 +572,10 @@ function fft_to_matrix_sparse_2D!(rows::AbstractVector{<:Integer}, cols::Abstrac
 
     counter = 1
 
-    for c_u in axes(u, 2), r_u in axes(u, 1) # iterate over columns and rows of `u`
-        u[r_u, c_u] == 0 && continue
-        val = u[r_u, c_u]
+    # SWAPPED r and c according to swapping of x and y, but didn't rename, hence r/c ("row"/"column") have swapped names
+    for r_u in axes(u, 2), c_u in axes(u, 1) # iterate over columns and rows of `u`
+        val = u[c_u, r_u] # SWAPPED 
+        val == 0 && continue
         if r_u ≤ B # when using rows 1 through B of `u` to fill the lower block-triangle of H, including the main block-diagonal
             d = 1 - r_u # (negative) block-diagonal number, where 0 is the main block-diagonal, -1 is first lower block-diagonal, etc.
             r_b_range = r_u:B  # a value from `r_u`th row of `u` will be put in block-rows of `H` from `r_u`th to `B`th

@@ -8,24 +8,22 @@ function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zer
     if basis == :cis
         cx = 2PI*δ/L[1]
         if D == 1
-            return [(cx*jx + qs[1])^2 for jx in -M:M] |> Diagonal
+            return [(cx*jˣ + qs[1])^2 for jˣ in -M:M] |> Diagonal
         elseif D == 2
             cy = 2PI*δ/L[2]
-            return [((cx*jx + qs[1])^2 + (cy*jy + qs[2])^2) for jx in -M:M for jy in -M:M] |> Diagonal
+            return [((cx*jˣ + qs[1])^2 + (cy*jʸ + qs[2])^2) for jʸ in -M:M for jˣ in -M:M] |> Diagonal
         # else # arbitrary `D`
         #     Ms = ntuple(Returns(-M:M), D)
-        #     L_r = reverse(L) # because `J` will be be enumerated in "reverse" order compared to that used by us (first dimesnion is 𝑥, then 𝑦, ...)
-        #     qs_r = reverse(L)
-        #     return [sum(@. (J * 2PI*δ/L_r + qs_r)^2) for J in Iterators.product(Ms...)] |> vec |> Diagonal 
+        #     return [sum(@. (J * 2PI*δ/L + qs)^2) for J in Iterators.product(Ms...)] |> vec |> Diagonal 
         end
     else # basis == :sin || basis == :cos
         bx = PI*δ/L[1] # different name than `cx` above to prevent Core.Box
         j₁ = basis == :sin ? 1 : 0
         if D == 1
-            return [(bx*jx)^2 for jx in j₁:M] |> Diagonal
+            return [(bx*jˣ)^2 for jˣ in j₁:M] |> Diagonal
         elseif D == 2
             by = PI*δ/L[2]
-            return [(bx*jx)^2 + (by*jy)^2 for jx in j₁:M for jy in j₁:M] |> Diagonal
+            return [(bx*jˣ)^2 + (by*jʸ)^2 for jʸ in j₁:M for jˣ in j₁:M] |> Diagonal
         end
     end
     return Diagonal(R[]) # for type stability
@@ -47,18 +45,18 @@ function make_p_x(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where 
     if basis == :cis
         PI = R(π)
         if D == 1
-            return Diagonal([2PI * δ * jx/Lx for jx in -M:M])
+            return Diagonal([2PI * δ * jˣ/Lx for jˣ in -M:M])
         elseif D == 2
-            return Diagonal([2PI * δ * jx/Lx for jx in -M:M for jy in -M:M])
+            return Diagonal([2PI * δ * jˣ/Lx for jʸ in -M:M for jˣ in -M:M])
         end
     elseif basis == :sin
         ∂_x = zeros(R, M^D, M^D)
         if D == 1
             ##
         elseif D == 2
-            @floop for jx in 1:M
-                for j′x in 1+isodd(jx):2:M, jy in 1:M
-                    ∂_x[(j′x-1)M+jy, (jx-1)M+jy] = 4δ * j′x*jx/(Lx * (j′x^2 - jx^2))
+            @floop for jˣ in 1:M
+                for jʸ in 1:M, jˣ′ in 1+isodd(jˣ):2:M
+                    ∂_x[(jʸ-1)M+jˣ′, (jʸ-1)M+jˣ] = 4δ * jˣ′*jˣ/(Lx * (jˣ′^2 - jˣ^2))
                 end
             end
         end
@@ -73,12 +71,12 @@ function make_p_y(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where 
     Ly = L[2]
     if basis == :cis
         PI = R(π)
-        return Diagonal([2PI * δ * jy/Ly for jx in -M:M for jy in -M:M])
+        return Diagonal([2PI * δ * jʸ/Ly for jʸ in -M:M for jˣ in -M:M])
     elseif basis == :sin
         ∂_y = zeros(R, M^D, M^D)
-        @floop for jx in 1:M
-            for jy in 1:M, j′y in 1+isodd(jy):2:M
-                ∂_y[(jx-1)M+j′y, (jx-1)M+jy] = 4δ * j′y*jy/(Ly * (j′y^2 - jy^2))
+        @floop for jʸ in 1:M
+            for jʸ′ in 1+isodd(jʸ):2:M, jˣ in 1:M
+                ∂_y[(jʸ′-1)M+jˣ, (jʸ-1)M+jˣ] = 4δ * jʸ′*jʸ/(Ly * (jʸ′^2 - jʸ^2))
             end
         end
         return ∂_y
@@ -96,10 +94,10 @@ function make_p²_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol,
         cx = 2PI*δ/L[1]
         M_range = [0:M-1; -M:-1]
         if D == 1
-            return [(cx*jx + qs[1])^2 for jx in M_range]
+            return [(cx*jˣ + qs[1])^2 for jˣ in M_range]
         elseif D == 2
             cy = 2PI*δ/L[2]
-            return [((cx*jx + qs[1])^2 + (cy*jy + qs[2])^2) for jx in M_range, jy in M_range]
+            return [((cx*jˣ + qs[1])^2 + (cy*jʸ + qs[2])^2) for jˣ in M_range, jʸ in M_range]
         # else # arbitrary `D`
         #     Ms = ntuple(Returns(M_range), D)
         #     L_r = reverse(L) # because `J` will be be enumerated in "reverse" order compared to that used by us (first dimesnion is 𝑥, then 𝑦, ...)
@@ -110,10 +108,10 @@ function make_p²_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol,
         bx = PI*δ/L[1] # different name than `cx` above to prevent Core.Box
         j₁ = basis == :sin ? 1 : 0
         if D == 1
-            return [(bx*jx)^2 for jx in j₁:M]
+            return [(bx*jˣ)^2 for jˣ in j₁:M]
         elseif D == 2
             by = PI*δ/L[2]
-            return [(bx*jx)^2 + (by*jy)^2 for jx in j₁:M, jy in j₁:M]
+            return [(bx*jˣ)^2 + (by*jʸ)^2 for jˣ in j₁:M, jʸ in j₁:M]
         end
     end
     return R[] # for type stability
@@ -142,17 +140,17 @@ function make_p_x_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol)
         M_range = [0:M-1; -M:-1]
         cx = 2PI*δ/L[1]
         if D == 1
-            return [cx * jx for jx in M_range]
+            return [cx * jˣ for jˣ in M_range]
         elseif D == 2
-            return [cx * jx for jx in M_range, jy in M_range]
+            return [cx * jˣ for jˣ in M_range, jʸ in M_range]
         end
     else # basis == :sin || basis == :cos # TODO reconsider because inverse transform for sin is cos and for cos is sin
         j₁ = basis == :sin ? 1 : 0
         bx = (-1)^j₁ * PI*δ/L[1] # different name than `cx` above to prevent Core.Box. The prefactor is because we need a minus in the sin case.
         if D == 1
-            return [bx*jx for jx in j₁:M] 
+            return [bx*jˣ for jˣ in j₁:M] 
         elseif D == 2
-            return [bx*jx for jx in j₁:M, jy in j₁:M]
+            return [bx*jˣ for jˣ in j₁:M, jʸ in j₁:M]
         end
     end
 end
@@ -168,12 +166,12 @@ function make_p_y_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol)
     if basis == :cis
         M_range = [0:M-1; -M:-1]
         cy = 2PI*δ/L[2]
-        return [cy * jy for jx in M_range, jy in M_range]
+        return [cy * jʸ for jˣ in M_range, jʸ in M_range]
     else # basis == :sin || basis == :cos # TODO reconsider because inverse transform for sin is cos and for cos is sin
         j₁ = basis == :sin ? 1 : 0
         by = (-1)^j₁ * PI*δ/L[2] # different name than `cx` above to prevent Core.Box. The prefactor is because we need a minus in the sin case.
         if D == 2
-            return [by*jy for jx in j₁:M, jy in j₁:M]
+            return [by*jʸ for jˣ in j₁:M, jʸ in j₁:M]
         end
     end
 end

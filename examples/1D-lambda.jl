@@ -31,7 +31,6 @@ plot(xs, 𝑈)
 matrix_density(ph)
 
 @time diagonalize!(ph; nev=5)
-@time diagonalize!(ph; nev=0)
 ph.ε
 xs, ψ = make_eigenfunctions(ph, statenos=1:5, nx=100)
 plot(xs, real(ψ[:, 1, 1]))

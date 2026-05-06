@@ -52,7 +52,7 @@ v = sol.u[end]
 get_Eμη(xh, v)
 
 xs, ψ = make_wavefunction(xh, v)
-plot(xs, real(ψ[:, 1]))
+plot(xs, real(ψ[1]))
 
 ################ Nonlinear ################
 
@@ -67,8 +67,8 @@ V = sol.u[end]
 get_Eμη(xh, V, [g;;])
 
 xs, ψD = make_wavefunction(xh, V)
-plot(xs, real(ψD[:, 1]), ylims=(-0.5, 0.5))
-plot!(xs, imag(ψD[:, 1]), ylims=(-0.5, 0.5))
+plot(xs, real(ψD[1]), ylims=(-0.5, 0.5))
+plot!(xs, imag(ψD[1]), ylims=(-0.5, 0.5))
 
 ######## Free system ########
 
@@ -105,7 +105,7 @@ g = 500 |> Float # nonlinearity
 
 μ = get_Eμη(xh, xh.V[:, 1], [g;;])[2]
 xs, ψ = make_wavefunction(xh, xh.V[:, 1])
-vals, vecs = bdg_spectrum(xh, real(vec(ψ)), g, μ[1])
+vals, vecs = bdg_spectrum(xh, real(ψ[1]), g, μ[1])
 
 ω = -real(vals) |> sort
 
@@ -168,8 +168,8 @@ dt = 1e-4 |> Float
 V = sol.u[end]
 E, μ₀ = get_Eμη(xh, V, [g;;])
 xs, ψ = make_wavefunction(xh, V)
-plot(xs, real(ψ[:, 1]))
-plot!(xs, imag(ψ[:, 1]))
+plot(xs, real(ψ[1]))
+plot!(xs, imag(ψ[1]))
 
 # using Newton-Raphson (undef fixed total number of particles)
 natoms = 1.0
@@ -199,7 +199,7 @@ nsaves = 500
 v = sol.u[end]
 get_Eμη(xh, v, [g;;])
 xs, ψ = make_wavefunction(xh, v)
-plot(xs, abs2.(ψ[:, 1]))
+plot(xs, abs2.(ψ[1]))
 
 xs, U = make_map(xh, sol)
 ts = range(0, T_max, nsaves+1)
