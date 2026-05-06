@@ -14,8 +14,8 @@ end
 
 """
 `target_real` is only used in the sin and cos case: set to false if you plan to calculate DST or DCT for complex functions.
-Set `target_rank=1` if you are making the transform for building a Fourier-space vector (using `fft_to_vector`),
-set `target_rank=2` if you are making the transform for building a Fourier-space matrix (using `fft_to_matrix`). The latter needs twice the number of harmonics.
+Set `target_rank=1` if you are making the transform for building a Fourier-space state (using `fft_to_state`),
+set `target_rank=2` if you are making the transform for building a Fourier-space operator (using `fft_to_operator`). The latter needs twice the number of harmonics.
 """
 function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_real::Bool=true, target_rank::Integer=2) where R <: AbstractFloat
     D = length(xlims) # number of spatial dimensions
@@ -31,7 +31,7 @@ function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
         end
         buff = Array{Complex{R}}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
         buff_im = similar(buff, ntuple(Returns(N), D)) # allocate full buffer for backward transform fftshift
-        # the time savings of rfft are negligible for us, and the output is much less convenient to handle in `fft_to_matrix`, so using fft. Also, this way we can do FFT in-place
+        # the time savings of rfft are negligible for us, and the output is much less convenient to handle in `fft_to_operator`, so using fft. Also, this way we can do FFT in-place
         plan_forward = FFTW.plan_fft!(buff) # using unnormalised plan
         plan_backward = FFTW.plan_bfft!(buff) # using unnormalised `bfft` because the "1/N" used in `ifft` is not right for our use case
     else # sin/cos
@@ -101,7 +101,7 @@ function transform!(ft::FourierTransformerP, 𝑓::Function; direction::Symbol=:
         end
         plan * buff
         plan * buff_im
-        ft.did_complex_rxdft = true # will be used in fft_to_matrix_*D! to include `buff_im` when constructing the matrix
+        ft.did_complex_rxdft = true # will be used in fft_to_operator_*D! to include `buff_im` when constructing the matrix
     end
     return
 end
@@ -161,7 +161,7 @@ function transform!(ft::FourierTransformerP, f::AbstractArray{<:Number}; directi
         end
         plan * buff
         plan * buff_im
-        ft.did_complex_rxdft = true # will be used in `fft_to_vector` and `fft_to_matrix!` to include `buff_im`
+        ft.did_complex_rxdft = true # will be used in `fft_to_state` and `fft_to_operator!` to include `buff_im`
     end
     return
 end
@@ -172,7 +172,7 @@ For `direction=:forward`, use reshaping to construct a p-space state as a 1D vec
 For `direction=:backward`, construct an x-space state as a D-dimensional array indexed by (x, y, …). 
 Pass `makereal=true` to drop the imaginary part of `ft.buff` -- useful in the cis case when constructing x-space state if you know the state must be real.
 """
-function fft_to_vector(ft::FourierTransformerP{R, T}; makereal=false, direction::Symbol=:forward) where {R, T}
+function fft_to_state(ft::FourierTransformerP{R, T}; makereal=false, direction::Symbol=:forward) where {R, T}
     (;buff, basis) = ft
 
     if basis == :cis
@@ -192,7 +192,7 @@ function fft_to_vector(ft::FourierTransformerP{R, T}; makereal=false, direction:
         ψ = similar(buff, ψ_type) # an x-space state that is a D-dimensional tensor, like `buff`
     end
 
-    fft_to_vector!(ψ, ft; direction) # we do not pass `makereal` because already performed this above
+    fft_to_state!(ψ, ft; direction) # we do not pass `makereal` because already performed this above
 
     return ψ
 end
@@ -203,7 +203,7 @@ For `direction=:forward`, use reshaping to construct a p-space state `ψ` as a 1
 For `direction=:backward`, construct an x-space state `ψ` as a D-dimensional array indexed by (x, y, ⋯).
 Pass `makereal=true` to drop the imaginary part of `ft.buff` -- useful in the cis case when constructing x-space state if you know the state must be real.
 """
-function fft_to_vector!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward) where D
+function fft_to_state!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward) where D
     (;buff, buff_im, basis) = ft
     makereal && (buff .= real.(buff))
     if basis == :cis
@@ -231,7 +231,7 @@ function fft_to_vector!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP;
                         buff_im[1, 1] /= 2; buff_im[end, 1] /= 2; buff_im[1, end] /= 2; buff_im[end, end] /= 2;
                     end
                 else
-                    error("fft_to_vector! with basis=:cos and direction=:forward not implemented in $(D)D.")
+                    error("fft_to_state! with basis=:cos and direction=:forward not implemented in $(D)D.")
                 end
             end
             copyto!(ψ, buff) # `copyto!` copies contiguously even though shapes are different; this is like `ψ = buff[:]`
@@ -249,7 +249,7 @@ Use the result of the transform to construct a matrix indexed by (⋯𝑗ʸ′�
 If `makesparse=true`, a sparse matrix is returned, with values below `threshold` in magnitude filtered out. By default, a dense matrix is returned.
 If `makereal=true`, a real matrix (of type `R`) is returned, which is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
-function fft_to_matrix(ft::FourierTransformerP{R, T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R))) where {R, T}
+function fft_to_operator(ft::FourierTransformerP{R, T}; makesparse::Bool=false, makereal=false, threshold::Real=√(eps(R))) where {R, T}
     (;M, buff, basis) = ft
     D = ndims(buff)
     if basis == :cis
@@ -271,14 +271,14 @@ function fft_to_matrix(ft::FourierTransformerP{R, T}; makesparse::Bool=false, ma
             rows = Vector{Int64}(undef, n_elem)
             cols = Vector{Int64}(undef, n_elem)
             vals = Vector{A_type}(undef, n_elem)
-            fft_to_matrix_sparse!(rows, cols, vals, ft)
+            fft_to_operator_sparse!(rows, cols, vals, ft)
             A = sparse(rows, cols, vals)
         else
-            error("Sparse fft_to_matrix not implemented for basis = $basis. Only implemented for basis = :cis.")
+            error("Sparse fft_to_operator not implemented for basis = $basis. Only implemented for basis = :cis.")
         end
     else # dense
         A = Matrix{A_type}(undef, B, B)
-        fft_to_matrix!(A, ft) # we do not pass `makereal` because already performed this above
+        fft_to_operator!(A, ft) # we do not pass `makereal` because already performed this above
     end
     return A
 end
@@ -289,22 +289,22 @@ end
 Use the result of the transform to fill `A` as a matrix indexed by (⋯𝑗ʸ′𝑗ˣ′, ⋯𝑗ʸ𝑗ˣ). 
 `makereal=true` is useful in the cis case if you wish to drop the imaginary part of `ft.buff`.
 """
-function fft_to_matrix!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP; makereal=false)
+function fft_to_operator!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP; makereal=false)
     D = ndims(ft.buff)
     makereal && (ft.buff .= real.(ft.buff))
     if D == 1
-        fft_to_matrix_1D!(A, ft)
+        fft_to_operator_1D!(A, ft)
     elseif D == 2
-        fft_to_matrix_2D!(A, ft)
+        fft_to_operator_2D!(A, ft)
     else
-        error("fft_to_matrix_$(D)D! not implemented.")
+        error("fft_to_operator_$(D)D! not implemented.")
     end
 end
 
 """
 Use the result of the 1D transform to fill `A` as a matrix indexed by (𝑗ˣ′, 𝑗ˣ).
 """
-function fft_to_matrix_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
+function fft_to_operator_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
     (;M, basis, buff, buff_im) = ft
     if basis == :cis
         A[diagind(A)] .= buff[1]
@@ -355,10 +355,10 @@ end
 """
 Use the result of the 2D transform to fill `A` as a matrix indexed by (𝑗ʸ′𝑗ˣ′, 𝑗ʸ𝑗ˣ).
 """
-function fft_to_matrix_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
+function fft_to_operator_2D!(A::AbstractMatrix{<:Number}, ft::FourierTransformerP)
     (;M, basis, buff, buff_im) = ft
     # We simply go over each element of `A`, assigning an appropriate element of `u`.
-    # In the dense case it is preferred over (since it's faster than) [`fft_to_matrix_sparse!`](@ref)
+    # In the dense case it is preferred over (since it's faster than) [`fft_to_operator_sparse!`](@ref)
     # because even if `buff[i, j]=0`, the corresponding elements of `A` still must be accessed to be set to zero.
     # In `A`, the x-index must be fastest, like in `buff` so that when an eigenvector of `A` is reshaped into a 2D matrix, and FFT is calculated, the first index is x and second is y.
     if basis == :cis
@@ -463,14 +463,14 @@ function filter_count!(ft::FourierTransformerP; threshold::Real=0)
     return n_elem
 end
 
-function fft_to_matrix_sparse!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
+function fft_to_operator_sparse!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
     D = ndims(ft.buff)
     if D == 1
-        fft_to_matrix_sparse_1D!(rows, cols, vals, ft)
+        fft_to_operator_sparse_1D!(rows, cols, vals, ft)
     elseif D == 2
-        fft_to_matrix_sparse_2D!(rows, cols, vals, ft)
+        fft_to_operator_sparse_2D!(rows, cols, vals, ft)
     else
-        error("fft_to_matrix_sparse_$(D)D! not implemented.")
+        error("fft_to_operator_sparse_$(D)D! not implemented.")
     end
 end
 
@@ -503,7 +503,7 @@ end
 Use the result of the transform to construct a sparse matrix indexed by (𝑗ˣ′, 𝑗ˣ).
 The type of `vals` might differ from the type of `ft.buff` since one may want to drop the imaginary part.
 """
-function fft_to_matrix_sparse_1D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
+function fft_to_operator_sparse_1D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
     B = 2ft.M + 1 # the size of Hamiltonian
     counter = 1
     for (c_u, val) in enumerate(ft.buff)
@@ -566,7 +566,7 @@ end
 Use the result of the transform to construct a sparse matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
 The type of `vals` might differ from the type of `ft.buff` since one may want to drop the imaginary part.
 """
-function fft_to_matrix_sparse_2D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
+function fft_to_operator_sparse_2D!(rows::AbstractVector{<:Integer}, cols::AbstractVector{<:Integer}, vals::AbstractVector{<:Number}, ft::FourierTransformerP)
     B = 2ft.M + 1 # the size of each block
     u = ft.buff
 
@@ -620,9 +620,9 @@ end
 # """
 # Based on results of a real 2D RFT `u`, return the matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
 # `make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
-# This version is for dense matrices, but it is slower than [`fft_to_matrix_2D!`](@ref); used only for testing purposes.
+# This version is for dense matrices, but it is slower than [`fft_to_operator_2D!`](@ref); used only for testing purposes.
 # """
-# function _rfft_to_matrix!(u::AbstractMatrix{<:Number}; make_real=false)
+# function _rfft_to_operator!(u::AbstractMatrix{<:Number}; make_real=false)
 #     N = size(u, 2) # number of points used for FFT
 #     M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
 #     B = 2M + 1 # the size of each block
@@ -659,9 +659,9 @@ end
 # """
 # Based on results of a 2D FFT `u`, return the matrix indexed by (𝑗ˣ′𝑗ʸ′, 𝑗ˣ𝑗ʸ).
 # `make_real=true` will mutate `u`, taking the real parts of elements, which is useful if the original function is even and hence the transform is known to be real.
-# For dense matrices, this is slower than [`fft_to_matrix_naive`](@ref); used only for testing purposes.
+# For dense matrices, this is slower than [`fft_to_operator_naive`](@ref); used only for testing purposes.
 # """
-# function _fft_to_matrix(u::AbstractMatrix; make_real=false)
+# function _fft_to_operator(u::AbstractMatrix; make_real=false)
 #     N = size(u, 2) # number of points used for FFT
 #     M = (N-1) ÷ 4 # maximum harmonic number (recall that N = 4M + 1 in the constructor)
 #     B = 2M + 1 # the size of each block

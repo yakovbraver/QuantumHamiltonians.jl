@@ -61,7 +61,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     𝑈_diag_allequal = allequal(diagview(𝑈))
     𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing
 
-    makereal = (basis == :cis && H_isreal) # in this case the transform is actually real, but is stored in a complex array `ft.buff`; this will be passed to `fft_to_matrix` to drop imaginary part of `ft.buff`
+    makereal = (basis == :cis && H_isreal) # in this case the transform is actually real, but is stored in a complex array `ft.buff`; this will be passed to `fft_to_operator` to drop imaginary part of `ft.buff`
 
     # treat diagonal blocks, adding the diagonal potentials 𝑈ᵢᵢ and 𝑝² (conditionally)
     for jH in 1:nc
@@ -69,7 +69,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
         h_set = false # shows if `h` has been set to something (i.e. etiher/both next two if's have been entered)
         if !isnothing(𝑈[jH, jH])
             transform!(ft, 𝑈[jH, jH])
-            fft_to_matrix!(h, ft; makereal)
+            fft_to_operator!(h, ft; makereal)
             h_set = true
             # @debug "Wrote 𝑈[$jH, $jH] into H[$jH, $jH]" # H[iH, jH] schematically means the block (`iH`, `jH`)
         end
@@ -109,7 +109,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                     continue
                 end
                 transform!(ft, 𝐴[c, i])
-                fft_to_matrix!(A_buff, ft)
+                fft_to_operator!(A_buff, ft)
 
                 if basis == :cis
                     A_buff .= pᵢ .- A_buff
@@ -143,7 +143,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
             wi = (iH-1)*B+1:iH*B
             wj = (jH-1)*B+1:jH*B
             h = @view H[wi, wj] # a view of the required block
-            fft_to_matrix!(h, ft; makereal)
+            fft_to_operator!(h, ft; makereal)
             # @debug "Wrote 𝑈[$iH, $jH] into H[$iH, $jH]"
 
             # copy adjoint of H[wi, wj] into H[wj, wi]. Needed for nonhermitian diagonalisation (cannot use Hermitian view) and also for GPE
@@ -280,7 +280,7 @@ function propagate(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
         for c in 1:nc
             transform!(ft, ψ₀[c])
             ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
-            fft_to_vector!(ψ₀ₚ_block, ft; makereal=(ψ₀_iseven[c] && ψ₀_arereal[c]))
+            fft_to_state!(ψ₀ₚ_block, ft; makereal=(ψ₀_iseven[c] && ψ₀_arereal[c]))
         end
     end
 
@@ -568,7 +568,7 @@ function u∑gu²_real!(u_re, u_im, u², u²_sum, g::Number, nc) # `u²_sum` is 
 end
 
 """
-For a state `v`, return `E, μ, η`, where `E` is mean energy per particle, μ is a vector of chemical potentials of each compoenent,
+For a state `v`, return `E, μ, η`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each compoenent,
 and `η` is a vector of relative particle numbers of each compoenent.
 `v_is_pspace=true` means that `v` is given in p-space, and x-space otherwise.
 By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider a decaying state, whereby imaginary part is important.
@@ -588,7 +588,7 @@ function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
         @views for c in 1:nc
             window = (c-1)B+1:c*B
             transform!(ft, v[window]; direction=:forward)
-            fft_to_vector!(vₚ[window], ft; direction=:forward)
+            fft_to_state!(vₚ[window], ft; direction=:forward)
         end
     end
 
@@ -607,7 +607,7 @@ function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
             # create an array of arrays holding squared x-space densities |𝜓(𝑥)|² for each component
             ψ² = map(1:nc) do c
                 @views transform!(ft, v[(c-1)B+1:c*B]; direction=:backward)
-                ψ = fft_to_vector(ft; direction=:backward)
+                ψ = fft_to_state(ft; direction=:backward)
                 ψ .= abs2.(ψ)
                 return ψ
             end
@@ -755,10 +755,10 @@ function nls_gpe_real_1comp!(du, u, params)
     μ = μ_isfixed ? μ_or_N : u[end] # if 𝜇 is fixed, the `μ_or_N` contains the fixed chemical potential
     # transform `u` to p-space, multiply by `H` and transform back
     transform!(ft, @view u[1:B]; direction=:forward)
-    fft_to_vector!(uₚ_buff, ft; direction=:forward)
+    fft_to_state!(uₚ_buff, ft; direction=:forward)
     mul!(uₚ_buff2, H, uₚ_buff)
     transform!(ft, uₚ_buff2; direction=:backward)
-    @views fft_to_vector!(du[1:B], ft; direction=:backward, makereal=true) # we assume that `u` is real, so the result here must be real: pass `make_real=true` to drop imaginary part in the cis case
+    @views fft_to_state!(du[1:B], ft; direction=:backward, makereal=true) # we assume that `u` is real, so the result here must be real: pass `make_real=true` to drop imaginary part in the cis case
     # add g and μ terms
     @views @. du[1:B] += (g * abs2(u[1:B]) - μ) * u[1:B]
     if !μ_isfixed # then update the last element of `du` representing the residual ∫𝑢²d𝑥 - 𝑁. In this case, `μ_or_N` contains 𝑁.
@@ -786,10 +786,10 @@ function jvp_gpe_real_1comp!(Jv, v, u, params)
     μ = μ_isfixed ? μ_or_N : u[end] # if 𝜇 is fixed, the `μ_or_N` contains the fixed chemical potential
     # transform `v` to p-space, multiply by `H` and transform back
     transform!(ft, @view v[1:B]; direction=:forward)
-    fft_to_vector!(vₚ_buff, ft; direction=:forward)
+    fft_to_state!(vₚ_buff, ft; direction=:forward)
     mul!(vₚ_buff2, H, vₚ_buff)
     transform!(ft, vₚ_buff2; direction=:backward)
-    @views fft_to_vector!(Jv[1:B], ft; direction=:backward, makereal=true)
+    @views fft_to_state!(Jv[1:B], ft; direction=:backward, makereal=true)
     # add g and μ terms
     @views @. Jv[1:B] += (3g * abs2(u[1:B]) - μ) * v[1:B]
     if !μ_isfixed # then subtract the additional term 𝑀𝑢 and update the last element of `Jv` representing the additional equation. In this case, `μ_or_N` contains 𝑁.
@@ -819,14 +819,14 @@ function nls_gpe_real!(du, u, params)
     @views for i in 1:nc
         window = (i-1)B+1:i*B
         transform!(ft, u[window]; direction=:forward)
-        fft_to_vector!(uₚ_buff[window], ft; direction=:forward)
+        fft_to_state!(uₚ_buff[window], ft; direction=:forward)
     end
     mul!(uₚ_buff2, H, uₚ_buff)
     # transform `uₚ_buff2` back to x-space, write into `du`
     @views for i in 1:nc
         window = (i-1)B+1:i*B
         transform!(ft, uₚ_buff2[window]; direction=:backward)
-        fft_to_vector!(du[window], ft; direction=:backward, makereal=true)
+        fft_to_state!(du[window], ft; direction=:backward, makereal=true)
     end
     ### Nonlinear part
     # pre-calculate 𝑢ᵢ² for each component and store in `u²`
@@ -886,14 +886,14 @@ function jvp_gpe_real!(Jv, v, u, params)
     @views for i in 1:nc
         window = (i-1)B+1:i*B
         transform!(ft, v[window]; direction=:forward)
-        fft_to_vector!(vₚ_buff[window], ft; direction=:forward)
+        fft_to_state!(vₚ_buff[window], ft; direction=:forward)
     end
     mul!(vₚ_buff2, H, vₚ_buff)
     # transform `vₚ_buff2` back to x-space, write into `Jv`
     @views for i in 1:nc
         window = (i-1)B+1:i*B
         transform!(ft, vₚ_buff2[window]; direction=:backward)
-        fft_to_vector!(Jv[window], ft; direction=:backward, makereal=true)
+        fft_to_state!(Jv[window], ft; direction=:backward, makereal=true)
     end
     ### Nonlinear part
     # pre-calculate products `uⱼvⱼ` and `uⱼ²`
@@ -957,19 +957,19 @@ function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractVecO
     ψ2 = g .* ψ.^2
     ft = FourierTransformerP(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `M`
     transform!(ft, ψ2)
-    v2 = fft_to_matrix(ft; makereal=(ψ_iseven && ψ_isreal))
+    v2 = fft_to_operator(ft; makereal=(ψ_iseven && ψ_isreal))
     if ψ_isreal
         vconj2 = v2
         vabs2 = 2 .* v2
     else
         # transform `conj(ψ2)` to p-space
         transform!(ft, conj(ψ2))
-        vconj2 = fft_to_matrix(ft)
+        vconj2 = fft_to_operator(ft)
         # transform `ψabs2` to p-space
         ψabs2 = abs2.(ψ)
         ft = FourierTransformerP(xlims, M; basis, target_real=true, target_rank=2)
         transform!(ft, ψabs2)
-        vabs2 = fft_to_matrix(ft)
+        vabs2 = fft_to_operator(ft)
     end
     # construct the matrix
     A11 = xh.H - μ*LA.I + vabs2
@@ -1001,11 +1001,11 @@ function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
     ψ_isreal = eltype(ψ) <: Real
     ft = FourierTransformerP(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
     transform!(ft, ψ[:, 1].^2)
-    v₁² = fft_to_matrix(ft)
+    v₁² = fft_to_operator(ft)
     transform!(ft, ψ[:, 2].^2)
-    v₂² = fft_to_matrix(ft)
+    v₂² = fft_to_operator(ft)
     transform!(ft, ψ[:, 1].*ψ[:, 2])
-    v₁v₂ = fft_to_matrix(ft)
+    v₁v₂ = fft_to_operator(ft)
     if ψ_isreal
         v₁⁺² = v₁² # "+" means conjugate
         V₁²  = v₁² # uppercase means modulus
@@ -1016,22 +1016,22 @@ function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
         v₁⁺v₂ = v₁v₂
     else
         transform!(ft, conj(ψ[:, 1]).^2)
-        v₁⁺² = fft_to_matrix(ft)
+        v₁⁺² = fft_to_operator(ft)
         transform!(ft, conj(ψ[:, 2]).^2)
-        v₂⁺² = fft_to_matrix(ft)
+        v₂⁺² = fft_to_operator(ft)
         
         ft_real = FourierTransformerP(xlims, M; basis, target_real=true, target_rank=2)
         transform!(ft_real, abs2.(ψ[:, 1]))
-        V₁² = fft_to_matrix(ft_real)
+        V₁² = fft_to_operator(ft_real)
         transform!(ft_real, abs2.(ψ[:, 2]))
-        V₂² = fft_to_matrix(ft_real)
+        V₂² = fft_to_operator(ft_real)
 
         transform!(ft, conj.(ψ[:, 1]) .* conj.(ψ[:, 2]))
-        v₁⁺v₂⁺ = fft_to_matrix(ft)
+        v₁⁺v₂⁺ = fft_to_operator(ft)
         transform!(ft, ψ[:, 1] .* conj.(ψ[:, 2]))
-        v₁v₂⁺ = fft_to_matrix(ft)
+        v₁v₂⁺ = fft_to_operator(ft)
         transform!(ft, conj.(ψ[:, 1]) .* ψ[:, 2])
-        v₁⁺v₂ = fft_to_matrix(ft)
+        v₁⁺v₂ = fft_to_operator(ft)
     end
     B = size(v₁², 1) # our usual blocksize -- number of points corresponding to each (of the two) components -- of xh_half
     A = Matrix{eltype(v₁²)}(undef, 4B, 4B)

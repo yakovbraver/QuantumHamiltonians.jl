@@ -101,7 +101,7 @@ function LM._unsafe_mul!(ψ_out, bdg_map::BdGMap{T}, ψ_in::AbstractVector) wher
         # transform 𝑎₁, …, 𝑎ₙ to p-space, writing into appropriate parts of `ψₚ_buff1`
         for j in 1:nc
             transform!(ft, ψ_in[block((i-1)nc+j)]; direction=:forward)
-            fft_to_vector!(ψₚ_buff1[block(j)], ft; direction=:forward)
+            fft_to_state!(ψₚ_buff1[block(j)], ft; direction=:forward)
         end
         # apply Hamiltonian
         if i == 1
@@ -113,7 +113,7 @@ function LM._unsafe_mul!(ψ_out, bdg_map::BdGMap{T}, ψ_in::AbstractVector) wher
         # transform 𝑎₁, …, 𝑎ₙ back to x-space, writing into appropriate parts of `ψ_out`
         for j in 1:nc
             transform!(ft, ψₚ_buff2[block(j)]; direction=:backward)
-            fft_to_vector!(ψ_out[block((i-1)nc+j)], ft; direction=:backward, makereal=(ψ_in_isreal && T <: Real)) # if initial ψ is real and map also, then make the result real
+            fft_to_state!(ψ_out[block((i-1)nc+j)], ft; direction=:backward, makereal=(ψ_in_isreal && T <: Real)) # if initial ψ is real and map also, then make the result real
         end
     end
     # add G * ψ_in to `ψ_out`

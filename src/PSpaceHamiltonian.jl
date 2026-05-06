@@ -149,7 +149,7 @@ function make_wavefunction(xh::PSpaceHamiltonian{Storage, R}, ψₚ::AbstractVec
         else
             transform!(ft, ψₚᶜ; direction=:backward) # here the input vector is 1D; `transform!` will reshape it.
         end
-        fft_to_vector!(ψₓ[c], ft; direction=:backward) # this essentially copies from `ft.buff` into `ψₓ[c]`, but there are a few extra steps to take care of
+        fft_to_state!(ψₓ[c], ft; direction=:backward) # this essentially copies from `ft.buff` into `ψₓ[c]`, but there are a few extra steps to take care of
     end
     return ft.xs, ψₓ
 end
@@ -255,7 +255,7 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
         for c in 1:nc
             if !isnothing(𝑈[c, c])
                 transform!(ft, 𝑈[c, c])
-                U[c] = fft_to_matrix(ft; makesparse, threshold)
+                U[c] = fft_to_operator(ft; makesparse, threshold)
                 # @debug "Filled U[$c]"
             end
             # If all 𝑈 are equal, then we will be using only U[1], no need to fill other elements
@@ -271,7 +271,7 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
                     # @debug "Wrote p_$i to K[$c, $i]"
                 else
                     transform!(ft, 𝐴[c, i])
-                    K[c, i] = fft_to_matrix(ft; makesparse, threshold)
+                    K[c, i] = fft_to_operator(ft; makesparse, threshold)
                     K[c, i] .= pᵢ .- K[c, i]
                     # @debug "Wrote p_$i - 𝐴[$c, $i] to K[$c, $i]"
                 end

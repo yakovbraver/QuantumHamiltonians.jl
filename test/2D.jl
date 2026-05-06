@@ -1,4 +1,4 @@
-@testset "Test various `fft_to_matrix`" begin
+@testset "Test various `fft_to_operator`" begin
     H_true =
     [11  15  14  51  55  54  41  45  44
      12  11  15  52  51  55  42  41  45
@@ -10,25 +10,25 @@
      32  31  35  22  21  25  12  11  15
      33  32  31  23  22  21  13  12  11]
     
-    # we need a `FourierTransformerP` object to test `fft_to_matrix_2D!`
+    # we need a `FourierTransformerP` object to test `fft_to_operator_2D!`
     u = [10j+i for i = 1:5, j = 1:5]
     M = 1
     ft = XSpaceHamiltonians.FourierTransformerP([(0.0, 1.0), (0.0, 1.0)], M; basis=:cis)
     ft.buff .= u # set as if `u` was the result of an actual fft
     H = similar(H_true)
-    XSpaceHamiltonians.fft_to_matrix_2D!(H, ft)
+    XSpaceHamiltonians.fft_to_operator_2D!(H, ft)
     @test H == H_true
     
     ### legacy functions 
 
     # u = [10i+j for i = 1:5, j=1:5]
-    # H = XSpaceHamiltonians._fft_to_matrix(u)
+    # H = XSpaceHamiltonians._fft_to_operator(u)
     # @test H == H_true
 
     # u = [10i+j for i = 1:5, j=1:5]
     # n_elem = XSpaceHamiltonians.filter_count_fft!(u)
     # @test n_elem == 81
-    # H = XSpaceHamiltonians.fft_to_matrix_sparse!(u)
+    # H = XSpaceHamiltonians.fft_to_operator_sparse!(u)
     # @test H == H_true
 
     # u = [(10i+j)*iseven(i+j) for i = 1:5, j=1:5]
@@ -36,7 +36,7 @@
     # @test n_elem == 45
 
     # u = [10i+j for i = 1:3, j=1:5]
-    # H = XSpaceHamiltonians._rfft_to_matrix!(u)
+    # H = XSpaceHamiltonians._rfft_to_operator!(u)
     # @test H == Symmetric(H_true, :L)
 end
 
@@ -261,7 +261,7 @@ end
 
 @testset "Test sparse 2D 3-component diagonalisation" begin
     # Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
-    
+
     function 𝛺₁(x::Real, y::Real)
         Ω₁₀ / 2
     end
