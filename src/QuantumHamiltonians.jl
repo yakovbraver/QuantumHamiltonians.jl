@@ -25,6 +25,9 @@ include("DenseHamiltonian.jl")
 include("SparseHamiltonian.jl")
 include("FourierTransformerP.jl")
 include("momentum.jl")
+
+include("pspace_gpe_dynamics.jl")
+include("pspace_gpe_stationary.jl")
 include("BdGMaps.jl")
 
 include("StateVector.jl")
