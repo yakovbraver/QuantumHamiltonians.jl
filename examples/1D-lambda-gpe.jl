@@ -3,7 +3,7 @@
 ║ Calculations for https://arxiv.org/abs/2603.28876 ║
 ╚═══════════════════════════════════════════════════╝
 =#
-using XSpaceHamiltonians, AppleAccelerate
+using QuantumHamiltonians, AppleAccelerate
 
 using Plots, LaTeXStrings
 plotlyjs()

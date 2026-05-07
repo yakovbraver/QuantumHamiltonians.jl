@@ -3,7 +3,7 @@
 ║ Dark state analysis of https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302) ║
 ╚═══════════════════════════════════════════════════════════════════════════════════════════════════════╝
 =# 
-using XSpaceHamiltonians
+using QuantumHamiltonians
 
 using Plots
 plotlyjs()

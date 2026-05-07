@@ -13,30 +13,30 @@
     # we need a `FourierTransformerP` object to test `fft_to_operator_2D!`
     u = [10j+i for i = 1:5, j = 1:5]
     M = 1
-    ft = XSpaceHamiltonians.FourierTransformerP([(0.0, 1.0), (0.0, 1.0)], M; basis=:cis)
+    ft = QuantumHamiltonians.FourierTransformerP([(0.0, 1.0), (0.0, 1.0)], M; basis=:cis)
     ft.buff .= u # set as if `u` was the result of an actual fft
     H = similar(H_true)
-    XSpaceHamiltonians.fft_to_operator_2D!(H, ft)
+    QuantumHamiltonians.fft_to_operator_2D!(H, ft)
     @test H == H_true
     
     ### legacy functions 
 
     # u = [10i+j for i = 1:5, j=1:5]
-    # H = XSpaceHamiltonians._fft_to_operator(u)
+    # H = QuantumHamiltonians._fft_to_operator(u)
     # @test H == H_true
 
     # u = [10i+j for i = 1:5, j=1:5]
-    # n_elem = XSpaceHamiltonians.filter_count_fft!(u)
+    # n_elem = QuantumHamiltonians.filter_count_fft!(u)
     # @test n_elem == 81
-    # H = XSpaceHamiltonians.fft_to_operator_sparse!(u)
+    # H = QuantumHamiltonians.fft_to_operator_sparse!(u)
     # @test H == H_true
 
     # u = [(10i+j)*iseven(i+j) for i = 1:5, j=1:5]
-    # n_elem = XSpaceHamiltonians.filter_count_fft!(u)
+    # n_elem = QuantumHamiltonians.filter_count_fft!(u)
     # @test n_elem == 45
 
     # u = [10i+j for i = 1:3, j=1:5]
-    # H = XSpaceHamiltonians._rfft_to_operator!(u)
+    # H = QuantumHamiltonians._rfft_to_operator!(u)
     # @test H == Symmetric(H_true, :L)
 end
 

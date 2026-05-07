@@ -75,7 +75,7 @@ end
         # also test BdG in p-space. Skip sin case because that requires 2M+1 harmonics for dimensions to match, but the result is then inaccurate
         if basis != :sin
             xh_half = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M=M÷2, δ)
-            vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, sol.u, g, μ₀; ψ_iseven=true)
+            vals, vecs = QuantumHamiltonians.bdg_spectrum_pspace(xh_half, sol.u, g, μ₀; ψ_iseven=true)
             @test maximum(imag, vals) ≈ 0.3306185 atol=1e-5 # using larger atol because with twice less harmonics this is less accurate
         end
     end
@@ -134,7 +134,7 @@ end
 
     # Calculate BdG spectrum in p-space
     xh_half = PSpaceHamiltonian{:dense}([xlimits], fill(nothing, 2, 2); basis, 𝑈_iseven=trues(2, 2), M=M÷2, δ=√0.5);
-    vals, vecs = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_db[1:end÷2] ψ_db[end÷2+1:end]], g, μs)
+    vals, vecs = QuantumHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_db[1:end÷2] ψ_db[end÷2+1:end]], g, μs)
     smallindx = findall(x -> abs(x) < 1e-2, vals) # find indices of very small values
     @test length(smallindx) == 6 # there should be exactly 6 values "close to zero"
     @test all(x -> abs(x) < 5e-5, vals[smallindx]) # those values should be ≲ 5e-5
@@ -143,7 +143,7 @@ end
     nsaves = 2
     T_max = 50 |> Float
     dt = 1e-3 |> Float
-    sol = propagate(qh, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=XSpaceHamiltonians.ODE.ETDRK2())
+    sol = propagate(qh, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE.ETDRK2())
     @test Int(sol.retcode) == 1 # test for success
 
     # test energy conservation
@@ -192,7 +192,7 @@ end
     @test isapprox.(sort(vals[indx]; by=imag), vals_true; atol=1e-2) |> all
 
     # BdG in p-space
-    vals, _ = XSpaceHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_lattice[1:end÷2] ψ_lattice[end÷2+1:end]], g, μs, qs; nev=100)
+    vals, _ = QuantumHamiltonians.bdg_spectrum_pspace(xh_half, [ψ_lattice[1:end÷2] ψ_lattice[end÷2+1:end]], g, μs, qs; nev=100)
     indx = findall(x -> imag(x) > 0.005, vals)
     @test length(indx) == 4 # there should be 4 unstable eigenvalues
     @test isapprox.(sort(vals[indx]; by=imag), vals_true; atol=1e-2) |> all

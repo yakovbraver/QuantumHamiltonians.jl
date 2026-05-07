@@ -3,7 +3,7 @@
 ║ Analysis of https://doi.org/10.1103/PhysRevLett.117.233001 (https://arxiv.org/abs/1607.07338) ║
 ╚═══════════════════════════════════════════════════════════════════════════════════════════════╝
 =#
-using XSpaceHamiltonians, AppleAccelerate
+using QuantumHamiltonians, AppleAccelerate
 
 using Plots, LaTeXStrings
 plotlyjs()

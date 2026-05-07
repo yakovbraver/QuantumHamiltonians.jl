@@ -3,7 +3,7 @@
 ║ Analysis of https://doi.org/10.1103/dhkv-zvwg (https://arxiv.org/abs/2506.17096) ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝
 =#
-using XSpaceHamiltonians
+using QuantumHamiltonians
 
 using Plots, LaTeXStrings
 plotlyjs()
