@@ -38,7 +38,7 @@ function find_stationary(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{Abst
     end
     eq_isreal = ψ₀_arereal && all(isnothing.(xh.𝐴)) # equations are real (in x-space) if Hamiltonian and wfs are real (in x-space)
     ft = FourierTransformerP(xlims, M; basis, target_real=eq_isreal, target_rank=1) # single transformer supporting both directions
-    nx = length(ft.xs)
+    nx = length(ft.xs) # TODO this assumes 1D, change to size(ft.xs, 1), also in other places
     
     # Prepare the input wf `ψ_input`. By default, its length is `nc*nx`, but if `natoms` is passed then we need additional `nc` elements to represent the μ's that are being optimised.
     # Even if only total 𝑁 is fixed (and hence there is only one 𝜇 to be optimised), we still add `nc` elements to keep the general structure

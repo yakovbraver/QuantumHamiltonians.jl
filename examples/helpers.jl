@@ -59,7 +59,7 @@ function plot_comps(xs, ψ; stateno=1)
     elseif ψ isa Vector{<:Number} # for ψ returned by find_stationary
         nx = length(xs)
         for c in 1:nc
-            figs[c] = plot(xs, ψ[(c-1)nx+1:c*nx], xlabel=L"x", ylabel=L"y", title=L"\psi_{%$i}");
+            figs[c] = plot(xs, ψ[(c-1)nx+1:c*nx], xlabel=L"x", ylabel=L"y", title=L"\psi_{%$c}");
         end
     end
     plot(figs..., layout=(nc, 1), legend=false)

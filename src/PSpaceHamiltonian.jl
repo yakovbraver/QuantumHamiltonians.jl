@@ -359,8 +359,8 @@ end
 ################ GPE-related methods ################
 
 """
-For a state `v`, return `E, μ, η`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each compoenent,
-and `η` is a vector of relative particle numbers of each compoenent.
+For a state `v`, return `E, μ, η`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each component,
+and `η` is a vector of relative particle numbers of each component.
 `v_is_pspace=true` means that `v` is given in p-space, and x-space otherwise.
 By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider a decaying state, whereby imaginary part is important.
 """
