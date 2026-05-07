@@ -3,7 +3,7 @@
 ║ Dark state analysis of https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302) ║
 ╚═══════════════════════════════════════════════════════════════════════════════════════════════════════╝
 =# 
-using XSpaceHamiltonians, AppleAccelerate
+using XSpaceHamiltonians
 
 using Plots
 plotlyjs()
@@ -41,7 +41,7 @@ xlimits = (0, π) .|> Float
 ylimits = (0, π) .|> Float
 
 # plot potential
-M = 64
+M = 32
 N = 2M + 1
 xs = range(xlimits..., N)
 ys = range(ylimits..., N)
@@ -55,19 +55,16 @@ ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_ise
 @time ph = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true, fft_threshold=Float(1e-1));
 matrix_density(ph)
 
-# basis=:cis, M=64, nev=1: Dense: 9.7s (w/ AA: 17s). Sparse: 6.6s (w/ AA: 9.3s) at threshold=1e-1 (less accurate). [AppleAccelerate slows down. Testd with --check-bounds=no]
+# basis=:cis, M=64, nev=1: Dense: 9.7s (w/ AA: 17s). Sparse: 6.6s (w/ AA: 9.3s) at threshold=1e-1 (less accurate). [AppleAccelerate slows down. Tested with --check-bounds=no]
 @time diagonalize!(ph, nev=5);
 ph.ε
 
 stateno = 1
-xs, ys, ψ = make_eigenfunction(ph, stateno, 2M+1, 2M+1)
-surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-
-xs, ψ = make_wavefunction(ph, ph.V[:, stateno])
+xs, ψ = make_eigenfunction(ph, stateno)
 surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 
 # Diagonalisation in x-space -- faster than p-space for higher M.
-# basis=:cis, M=64, nev=1: 0.76s (w/o AA: 2.4s).  [AppleAccelerate speeds up. Testd with --check-bounds=no]
+# basis=:cis, M=64, nev=1: 0.76s (w/o AA: 2.4s).  [AppleAccelerate speeds up. Tested with --check-bounds=no]
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=64);
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cos, M=64);
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:sin, M=63);
@@ -82,7 +79,7 @@ surface(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[1].data[1])', xlabel="x/a", y
 xlimits = (0, 2π) .|> Float
 ylimits = (0, 2π) .|> Float
 M = 30
-@time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true); # M=30: 0.025 s construct + 8.4 s diagonalise
+@time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true); # M=30, ncells=21: 0.025 s construct + 8.4 s diagonalise (w/o AA)
 @time ph = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true, fft_threshold=1e-2); # M=30, thresh=1e-2, ncells=21: 0.05 s + 16.8 s diagonalise
 matrix_density(ph)
 
@@ -99,14 +96,20 @@ for n in axes(ph.ε_q, 1)
 end
 fig
 
+stateno = 5
+iqs = [15, 1]
+xs, ψ = make_eigenfunction(ph, stateno, iqs)
+surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+
 # unfolded spectrum for 0 ≤ 𝑞ˣ, 𝑞ʸ ≤ π (a quater of Fig. 2(b))
 
 xlimits = (0, π) .|> Float # (0, π) for unfolded spectrum (like Fig. 4), (0, 2π) for folded
 ylimits = (0, π) .|> Float
 
 M = 30
-ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true) # M = 30, ncells = 5: 9.6 s.
-ph = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true, fft_threshold=Float(1e-1)) # M = 30, ncells = 5: 10.9 s
+ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true) # M=30, ncells=5, nev=1: 7.2 s.
+ph = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true, fft_threshold=Float(1e-1)) # M=30, ncells=5, nev=1: 10.9 s
 ncells = 5
 P = xlimits[2] - xlimits[1]
 qlimits = (0, π/P)
@@ -114,7 +117,7 @@ qxs = range(qlimits..., ncells)
 @time diagonalize!(ph, [qxs, qxs]; nev=1);
 heatmap(qxs, qxs, ph.ε_q[1, :, :], c=:viridis, xlabel="q_x", ylabel="q_y")
 
-########## χ = π/2, x from -π/2 to π/2
+########## χ = π/2, x from -π/2 to π/2 -- vortex state for hard-wall BC
 
 χ::Float = π/2
 
@@ -130,16 +133,15 @@ surface(xs, ys, 𝑈)
 surface(xs, ys, (x, y) -> 𝐴ˣ(x, y)^2 + 𝐴ʸ(x, y)^2)
 
 @time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:sin, M);
-@time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M);
-heatmap(real.(ph.H), yaxis=:flip, c=:viridis)
+
 @time diagonalize!(ph, nev=5);
 ph.ε
 
 stateno = 1
-xs, ys, ψ = make_eigenfunction(ph, stateno, 100, 100)
-heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+xs, ψ = make_eigenfunction(ph, stateno)
+heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ########## χ = π/2, full period
 
@@ -149,7 +151,7 @@ xlimits = (0, 2π) .|> Float
 ylimits = (0, 2π) .|> Float
 
 # plot potential
-M = 32
+M = 50
 xs = range(xlimits..., 2M)
 ys = range(ylimits..., 2M)
 surface(xs, ys, 𝑈)
@@ -164,10 +166,19 @@ matrix_density(ph)
 ph.ε
 
 stateno = 1
-@time xs, ys, ψ = make_eigenfunction(ph, stateno, 100, 100);
-heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+xs, ψ = make_eigenfunction(ph, stateno);
+heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+
+# Diagonalisation in x-space: faster than p-space
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64);
+# Setting `ishermitian=false` because solver claims that map is nonhermitian. TODO: investigate
+@time vals, vecs, info = diagonalize(xh, nev=5, ishermitian=false); # M=64: 6.5s. Increase `krylovdim` ot say 40 (or maxiter to say 200) if you want better convergence.
+vals
+heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+
 
 ########## χ = 1.4, full period
 
@@ -180,7 +191,7 @@ xlimits = (-π, π) .|> Float
 ylimits = (-π, π) .|> Float
 
 # plot potential
-M = 50
+M = 32
 xs = range(xlimits..., 2M)
 ys = range(ylimits..., 2M)
 surface(xs, ys, 𝑈)
@@ -194,10 +205,19 @@ matrix_density(ph)
 ph.ε
 
 stateno = 1
-@time xs, ys, ψ = make_eigenfunction(ph, stateno, 100, 100);
-heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+xs, ψ = make_eigenfunction(ph, stateno);
+heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+
+# Diagonalisation in x-space: faster than p-space
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64);
+# Setting `ishermitian=false` because solver claims that map is nonhermitian. TODO: investigate
+@time vals, vecs, info = diagonalize(xh, nev=5, ishermitian=false);
+vals
+heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+
 
 ### Quasimomenta
 

@@ -16,11 +16,11 @@ function 𝛺₁(x::Real, y::Real)
     Ω₀ * ( sin(k*(x+y)) - im*sin(k*(x-y)) )
 end
 
-function ∂ₓ𝛺₁(x::Real, y::Real)
+function ∂ˣ𝛺₁(x::Real, y::Real)
     Ω₀ * ( k * cos(k*(x+y)) - im*k*cos(k*(x-y)) )
 end
 
-function ∂y𝛺₁(x::Real, y::Real)
+function ∂ʸ𝛺₁(x::Real, y::Real)
     Ω₀ * ( k * cos(k*(x+y)) + im*k*cos(k*(x-y)) )
 end
 
@@ -29,11 +29,11 @@ end
 #     Ω₀ * ( sin(k*(x+y)) - im*sin(k*(x-y)) )^2
 # end
 
-# function ∂ₓ𝛺₁(x::Real, y::Real)
+# function ∂ˣ𝛺₁(x::Real, y::Real)
 #     Ω₀ * 2( sin(k*(x+y)) - im*sin(k*(x-y)) ) * ( k * cos(k*(x+y)) - im*k*cos(k*(x-y)) )
 # end
 
-# function ∂y𝛺₁(x::Real, y::Real)
+# function ∂ʸ𝛺₁(x::Real, y::Real)
 #     Ω₀ * 2( sin(k*(x+y)) - im*sin(k*(x-y)) ) * ( k * cos(k*(x+y)) + im*k*cos(k*(x-y)) )
 # end
 #########
@@ -42,11 +42,11 @@ function 𝛺₂(x::Real, y::Real)
     ϵ * Ω₀ * (1 + ν/2 * cos(2k*x) + ν/2 * cos(2k*y))
 end
 
-function ∂ₓ𝛺₂(x::Real, y::Real)
+function ∂ˣ𝛺₂(x::Real, y::Real)
     -ϵ * Ω₀ * k * ν * sin(2k*x)
 end
 
-function ∂y𝛺₂(x::Real, y::Real)
+function ∂ʸ𝛺₂(x::Real, y::Real)
     -ϵ * Ω₀ * k * ν * sin(2k*y)
 end
 
@@ -54,24 +54,24 @@ function 𝜁(x::Real, y::Real)
     𝛺₁(x, y) / 𝛺₂(x, y)
 end
 
-function ∂ₓ𝜁(x::Real, y::Real)
-    (∂ₓ𝛺₁(x, y) * 𝛺₂(x, y) - 𝛺₁(x, y) * ∂ₓ𝛺₂(x, y) ) / 𝛺₂(x, y)^2
+function ∂ˣ𝜁(x::Real, y::Real)
+    (∂ˣ𝛺₁(x, y) * 𝛺₂(x, y) - 𝛺₁(x, y) * ∂ˣ𝛺₂(x, y) ) / 𝛺₂(x, y)^2
 end
 
-function ∂y𝜁(x::Real, y::Real)
-    (∂y𝛺₁(x, y) * 𝛺₂(x, y) - 𝛺₁(x, y) * ∂y𝛺₂(x, y) ) / 𝛺₂(x, y)^2
+function ∂ʸ𝜁(x::Real, y::Real)
+    (∂ʸ𝛺₁(x, y) * 𝛺₂(x, y) - 𝛺₁(x, y) * ∂ʸ𝛺₂(x, y) ) / 𝛺₂(x, y)^2
 end
 
 function 𝜙(x::Float, y::Float) where Float <: AbstractFloat
-    (abs2(∂ₓ𝜁(x, y)) + abs2(∂y𝜁(x, y))) / (1+abs2(𝜁(x, y)))^2 / Float(2π)^2
+    (abs2(∂ˣ𝜁(x, y)) + abs2(∂ʸ𝜁(x, y))) / (1+abs2(𝜁(x, y)))^2 / Float(2π)^2
 end
 
-function 𝐴ₓ(x::Float, y::Float) where Float <: AbstractFloat
-    -imag(𝜁(x, y)' * ∂ₓ𝜁(x, y)) / (1+abs2(𝜁(x, y))) / Float(2π)
+function 𝐴ˣ(x::Float, y::Float) where Float <: AbstractFloat
+    -imag(𝜁(x, y)' * ∂ˣ𝜁(x, y)) / (1+abs2(𝜁(x, y))) / Float(2π)
 end
 
-function 𝐴y(x::Float, y::Float) where Float <: AbstractFloat
-    -imag(𝜁(x, y)' * ∂y𝜁(x, y)) / (1+abs2(𝜁(x, y))) / Float(2π)
+function 𝐴ʸ(x::Float, y::Float) where Float <: AbstractFloat
+    -imag(𝜁(x, y)' * ∂ʸ𝜁(x, y)) / (1+abs2(𝜁(x, y))) / Float(2π)
 end
 
 Float = Float64 # operating type
@@ -111,45 +111,45 @@ heatmap(xs, ys, 𝜙, c=cmap_rainbow, zlims=(-2, 2), clims=(-2, 2))
 
 import CairoMakie
 
-Aₓ = [𝐴ₓ(x, y) for x in xs, y in ys]
-Ay = [𝐴y(x, y) for x in xs, y in ys]
+Aˣ = [𝐴ˣ(x, y) for x in xs, y in ys]
+Ay = [𝐴ʸ(x, y) for x in xs, y in ys]
 
 x_window = 1:5:length(xs)
 window = CartesianIndices((x_window, x_window))
 fig = CairoMakie.Figure(size=(500, 500));
 ax = CairoMakie.Axis(fig[1, 1], xlabel="x", ylabel="y", limits=(xs[1], xs[end], ys[1], ys[end]))
-CairoMakie.arrows2d!(xs[x_window], ys[x_window], Aₓ[window], Ay[window], tiplength=5, lengthscale=0.05, shaftwidth=1, tipwidth=5, normalize=true)
+CairoMakie.arrows2d!(xs[x_window], ys[x_window], Aˣ[window], Ay[window], tiplength=5, lengthscale=0.05, shaftwidth=1, tipwidth=5, normalize=true)
 fig
 
 # Absolute value of 𝐴
 
 plotlyjs()
-A_abs = [sqrt(𝐴ₓ(x, y)^2 + 𝐴y(x, y)^2) for x in xs, y in ys]
+A_abs = [sqrt(𝐴ˣ(x, y)^2 + 𝐴ʸ(x, y)^2) for x in xs, y in ys]
 surface(xs, ys, A_abs, zlims=(0, 3))
 
-A_abs_cut = [sqrt(𝐴ₓ(x-0.25, 0.25)^2 + 𝐴y(x-0.25, 0.25)^2) for x in xs] # a cut, shifted by 0.25
+A_abs_cut = [sqrt(𝐴ˣ(x-0.25, 0.25)^2 + 𝐴ʸ(x-0.25, 0.25)^2) for x in xs] # a cut, shifted by 0.25
 plot(xs, A_abs_cut)
 
 ### Dark-state diagonalisation
 
 M = 32
 ν = 0.95
-@time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝜙, [𝐴ₓ, 𝐴y]; basis=:cis, M, δ, 𝑈_iseven=true); # 243s for M=64
+@time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝜙, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, δ, 𝑈_iseven=true); # 243s for M=64
 
 @time diagonalize!(ph, nev=5); # 33s for M=64
 ph.ε
 
 stateno = 2
-xs, ys, ψ = make_eigenfunction(ph, stateno, 100, 100)
-heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+xs, ψ = make_eigenfunction(ph, stateno)
+heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 # Diagonalisation in x-space: faster than p-space
-M = 64
-@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝜙, [𝐴ₓ, 𝐴y]; basis=:cis, M, δ);
+M = 128
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝜙, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, δ);
 # Setting `ishermitian=false` because solver claims that map is nonhermitian. TODO: investigate
-@time vals, vecs, info = diagonalize(xh, nev=2, ishermitian=false); # M=64: 7.8s, M=128: 20s. Increase `krylovdim` ot say 40 (or maxiter to say 200) if you want better convergence.
+@time vals, vecs, info = diagonalize(xh, nev=2, ishermitian=false, krylovdim=50); # M=64, krylovdim=50: 4.4s. M=128, krylovdim=50: 22s. [with AppleAccelerate]
 vals
 heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[stateno].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[stateno].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
@@ -169,28 +169,28 @@ M = 50
 𝑈_iseven = trues(3, 3)
 
 @time ph = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, δ, 𝑈_iseven, Γ=[0, 0, Γ₃], fft_threshold=1e-3);
-@time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, δ, 𝑈_iseven);
+#@time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, δ, 𝑈_iseven);
 matrix_density(ph)
 
 @time diagonalize!(ph, nev=5);
 ph.ε
 
 stateno = 1
-@time xs, ys, ψ = make_eigenfunction(ph, stateno, 101, 101);
+@time xs, ψ = make_eigenfunction(ph, stateno);
 
-plot_comps(xs, ys, ψ)
+plot_comps(xs, ψ)
 # total density
-heatmap(xs, ys, (abs2.(ψ[1])+abs2.(ψ[2]))', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{1}|^2+|\psi_{2}|^2")
+heatmap(xs[:, 1], xs[:, 2], (abs2.(ψ[1])+abs2.(ψ[2]))', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{1}|^2+|\psi_{2}|^2")
 
 # Plot all components
-function plot_comps(xs, ys, ψ)
+function plot_comps(xs, ψ)
     gr()
     theme(:dark, size=(600, 550*1.45))
     figs = [plot() for _ in 1:6]
     for i in 1:2:6
         c = (i+1) ÷ 2 # component number
-        figs[i]   = heatmap(xs, ys, abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
-        figs[i+1] = heatmap(xs, ys, angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
+        figs[i]   = heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
+        figs[i+1] = heatmap(xs[:, 1], xs[:, 2], angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
     end
     plot(figs..., layout=(3, 2))
 end

@@ -65,7 +65,7 @@ end
             # test correctness of kind parameters
             @test qh isa PSpaceHamiltonian{kind, Float64, Float64, Float64, 3, 4}
             diagonalize!(qh, nev=4)
-            xs, vec = make_wavefunction(qh, qh.V[:, stateno])
+            xs, vec = make_eigenfunction(qh, stateno)
             ψ = vec[1]
             ε = qh.ε
         end

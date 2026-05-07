@@ -12,14 +12,14 @@ cmap_phase = cgrad(:RdBu_9);
 theme(:dark, size=(600, 500))
 
 "Plot all components"
-function plot_comps(xs, ys, ψ)
+function plot_comps(xs, ψ)
     gr()
     theme(:dark, size=(600, 550*1.5))
     figs = [plot() for _ in 1:6]
     for i in 1:2:6
         c = (i+1) ÷ 2 # component number
-        figs[i]   = heatmap(xs, ys, abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
-        figs[i+1] = heatmap(xs, ys, angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
+        figs[i]   = heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
+        figs[i+1] = heatmap(xs[:, 1], xs[:, 2], angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
     end
     plot(figs..., plot_title="Full solution, state no. $stateno, "*L"\epsilon=%$(ϵ),\ \Omega_{10}=%$(Int(Ω₁₀)), \Gamma=%$(Γ₃),"*"\n"*L"E="*"$(round(ComplexF64(ph.ε[stateno]), sigdigits=3))",
          plot_titlefontcolor=:white, plot_titlefontsize=12, layout=(3, 2))
@@ -71,9 +71,9 @@ ph.ε
 # ph.ε[l]
 
 stateno = 1
-@time xs, ys, ψ = make_eigenfunction(ph, stateno, 101, 101);
+xs, ψ = make_eigenfunction(ph, stateno);
 
-plot_comps(xs, ys, ψ)
+plot_comps(xs, ψ)
 
 # Experimental: diagonalisation in x-space. For M > 8, linear solving does not converge to sufficient accuracy, so eigenvalues end up being wrong.
 # @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=8)
@@ -126,9 +126,9 @@ M = 100
 ph.ε
 
 stateno = 1
-@time xs, ys, ψ = make_eigenfunction(ph, stateno, 101, 101);
+@time xs, ψ = make_eigenfunction(ph, stateno);
 
-plot_comps(xs, ys, ψ)
+plot_comps(xs, ψ)
 
 ### Quasimomenta
 
@@ -140,6 +140,7 @@ qlimits = (-π/P, π/P)
 qxs = range(qlimits..., ncells)
 qys = Float[0]
 @time diagonalize!(ph, [qxs, qys]; nev=5); # doing a cut for fixed 𝑞𝑦 = 0
+
 fig = plot();
 for n in axes(ph.ε_q, 1)
     scatter!(qxs, real.(ph.ε_q[n, :, 1]), c=n)

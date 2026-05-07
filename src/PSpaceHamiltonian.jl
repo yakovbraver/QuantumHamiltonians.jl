@@ -1,4 +1,4 @@
-abstract type PSpaceHamiltonian{Storage, R<:AbstractFloat, T<:Union{R,Complex{R}}, S<:Union{R,Complex{R}}, D1, D2} end
+abstract type PSpaceHamiltonian{Storage, R<:AbstractFloat, T<:Union{R, Complex{R}}, S<:Union{R, Complex{R}}, D1, D2} end
 # `R` - base real type, `T` - Hamiltonian, eigenvectors elements, `S` - eigenvalues
 # The types are restricted *here*, therefore no need to specify restrictions in functions (except for constructors). E.g. an object with complex R cannot be constructed.
 
@@ -32,7 +32,7 @@ function PSpaceHamiltonian{:sparse}(xlims::AbstractVector{Tuple{R,R}},
                                     basis::Symbol, M::Integer, δ::R=one(R), fft_threshold::R=√eps(R),
                                     𝑈_iseven::AbstractMatrix{Bool}=falses(size(𝑈)), Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: AbstractFloat
     if R !== Float64
-        println("Sparse diagonalisation is only supported for R = Float64, got R = $R. Constructed object Will use Float64.")
+        println("Sparse diagonalisation is only supported for R = Float64, got R = $R. Constructed object will use Float64.")
         threshold = fft_threshold == √eps(R) ? √eps(Float64) : Float64(fft_threshold) # if `fft_threshold` is the default eps value, then switch to appropriate type
     else
         threshold = fft_threshold
@@ -51,7 +51,7 @@ function PSpaceHamiltonian{:sparse}(xlims::AbstractVector{Tuple{R,R}},
                                    basis::Symbol, M::Integer, δ::R=one(R), fft_threshold::R=√eps(R),
                                    𝑈_iseven::Bool=false, Γ::R=zero(R)) where R <: AbstractFloat
     if R !== Float64
-        println("Sparse diagonalisation is only supported for R = Float64, got R = $R. Constructed object Will use Float64.")
+        println("Sparse diagonalisation is only supported for R = Float64, got R = $R. Constructed object will use Float64.")
         threshold = fft_threshold == √eps(R) ? √eps(Float64) : Float64(fft_threshold) # if `fft_threshold` is the default eps value, then switch to appropriate type
     else
         threshold = fft_threshold
@@ -155,51 +155,17 @@ function make_wavefunction(xh::PSpaceHamiltonian{Storage, R}, ψₚ::AbstractVec
 end
 
 """
-Construct 2D coordinate-space wave function `ψ` of eigenstate `stateno` on a grid having `nx` points in `x` and `ny` points in `y` direction.
-Return (`xs`, `ys`, `ψ`). If `qx` and `qy` are passed, then construct `ψ` at the corresponding quasimomenta.
+Construct x-space wave function of eigenstate `stateno`.
+If a vector of quasimomenta indices `iqs = [iqx, iqy, …]` is provided, then construct the wave function at those indices for band number `stateno`.
+Pass integer `pad` to interpolate the x-space function as if reconstructed using `2^pad*xh.M` harmonics (instead of `xh.M`).
+Return a tuple (`xs`, `ψ`) where `ψ[component][x, y, …]` while `xs[:, 1]` contains sampled 𝑥, `xs[:, 2]` contains sampled 𝑦, etc..
 """
-function make_eigenfunction(xh::PSpaceHamiltonian{Storage,R}, stateno::Integer, nx::Integer, ny::Integer, iqx::Integer=0, iqy::Integer=0) where {Storage,R}
-    (;L, xlims, M, basis, V, V_q, nc) = xh
-    Lx, Ly = L
-    xs = range(0, Lx, nx) # these are the differences `x - xlims[1][1]`, with `x ∈ xlims[1]`
-    ys = range(0, Ly, ny) # these are the differences `y - xlims[2][1]`, with `y ∈ xlims[2]`
-    ψ_type = basis != :cis && eltype(xh.H) isa Real ? R : complex(R)
-    ψ = [Matrix{ψ_type}(undef, nx, ny) for _ in 1:nc] # `ψ` are real if elements of H are real and the basis is real (sin/cos)
-    for c in 1:nc
-        if basis == :cis
-            B = 2M + 1
-            if iqx != 0 # if quasimomentum index has been passed
-                @floop for (iy, y) in enumerate(ys)
-                    for (ix, x) in enumerate(xs)
-                        ψ[c][ix, iy] = sum(V_q[(c-1)*B^2+(i-1)B+j, stateno, iqx, iqy]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (i, jy) in enumerate(-M:M)
-                                                                                                                  for (j, jx) in enumerate(-M:M)) / √(Lx*Ly)
-                    end
-                end
-            else # no quasimomentum index
-                @floop for (iy, y) in enumerate(ys)
-                    for (ix, x) in enumerate(xs)
-                        ψ[c][ix, iy] = sum(V[(c-1)*B^2+(i-1)B+j, stateno]cis(2π*jx*x/Lx + 2π*jy*y/Ly) for (i, jy) in enumerate(-M:M)
-                                                                                                      for (j, jx) in enumerate(-M:M)) / √(Lx*Ly)
-                    end
-                end
-            end
-        elseif basis == :sin
-            @floop for (iy, y) in enumerate(ys)
-                for (ix, x) in enumerate(xs)
-                    ψ[c][ix, iy] = sum(V[(c-1)*M^2+(jy-1)M+jx, stateno]sin(π*jx*x/Lx)sin(π*jy*y/Ly) for jy in 1:M for jx in 1:M) * 2 / √(Lx*Ly)
-                end
-            end
-        else # basis == :cos
-            b = M + 1 # not B to prevent Core.Box
-            @floop for (iy, y) in enumerate(ys)
-                for (ix, x) in enumerate(xs)
-                    ψ[c][ix, iy] = sum(V[(c-1)*b^2+jy*b+jx+1, stateno]cos(π*jx*x/Lx)cos(π*jy*y/Ly)/√(ifelse(jx == 0 || jx == M, 2, 1)ifelse(jy == 0 || jy == M, 2, 1))
-                                       for jy in 0:M for jx in 0:M) * 2 / √(Lx*Ly)
-                end
-            end
-        end
+function make_eigenfunction(xh::PSpaceHamiltonian{Storage, R}, stateno::Integer, iqs::Union{Nothing, AbstractVector{<:Integer}}=nothing; pad::Integer=0) where {Storage, R}
+    if !isnothing(iqs) # if quasimomentum index has been passed
+        make_wavefunction(xh, xh.V_q[:, stateno, iqs...]; pad)
+    else
+        make_wavefunction(xh, xh.V[:, stateno]; pad)
     end
-    return xs .+ xlims[1][1], ys .+ xlims[2][1], ψ # return "normal" coordinates, in `x ∈ xlims` and `y ∈ ylims`
 end
 
 """
