@@ -4,7 +4,7 @@ A type representing a spatial, 𝐷-dimensional, 𝑛-component, possibly quasim
     𝐻ᵢⱼ(r) = 𝑈ᵢⱼ(r)
 as a dense matrix. Here  1 ≤ 𝑖, 𝑗 ≤ 𝑛,  r = (𝑥₁, …, 𝑥_𝐷),  Aᵢ = (𝐴ᵢ₁, …, 𝐴ᵢ_𝐷),  q = (𝑞₁, …, 𝑞_𝐷).
 """
-mutable struct DenseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: XSpaceHamiltonian{:dense} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct DenseHamiltonian{R,T,S,D1,D2} <: PSpaceHamiltonian{:dense,R,T,S,D1,D2}
     xlims::Vector{Tuple{R, R}}
     L::Vector{R}
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
@@ -12,9 +12,9 @@ mutable struct DenseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: X
     nc::Int # number of components
     basis::Symbol
     ishermitian::Bool # `H` is nonhermitian if decays Γ are present
-    𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings
-    𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(𝑟) = 𝑈ᵢⱼ(-𝑟)
-    𝐴::Matrix{<:Union{Function,Nothing}}
+    𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings. Return type must be R or T
+    𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(r) = 𝑈ᵢⱼ(-r)
+    𝐴::Matrix{<:Union{Function,Nothing}} # 𝐴[c, i] is `i`th projection of the `c`th component of hte vector potential
     Γ::Vector{R} # decay rates
     H::Matrix{T} # momentum-space Hamiltonian used for diagonalisation
     ε::Vector{S} # eigenvalues, can be complex for nonhermitian `H`, hence additional type `S`
@@ -49,17 +49,19 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
         H_isreal &= all(𝑈_iseven[𝑈 .!== nothing])
     end
 
-    B = basis == :cis ? (2M+1)^D : M^D # size of each Hamiltonian block
+    # size of each Hamiltonian block
+    B = basis == :cis ? (2M+1)^D :
+        basis == :sin ?      M^D : (M+1)^D
 
     T = H_isreal ? R : Complex{R} # type of elements of the Hamiltonian
     H = zeros(T, nc*B, nc*B)
 
-    ft = FourierTransformer(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
+    ft = FourierTransformerP(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
 
     𝑈_diag_allequal = allequal(diagview(𝑈))
     𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing
 
-    makereal = (basis == :cis && H_isreal) # in this case the transform is actually real, but is stored in a complex array `ft.buff`; this will be passed to `fft_to_matrix` to drop imaginary part of `ft.buff`
+    makereal = (basis == :cis && H_isreal) # in this case the transform is actually real, but is stored in a complex array `ft.buff`; this will be passed to `fft_to_operator` to drop imaginary part of `ft.buff`
 
     # treat diagonal blocks, adding the diagonal potentials 𝑈ᵢᵢ and 𝑝² (conditionally)
     for jH in 1:nc
@@ -67,7 +69,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
         h_set = false # shows if `h` has been set to something (i.e. etiher/both next two if's have been entered)
         if !isnothing(𝑈[jH, jH])
             transform!(ft, 𝑈[jH, jH])
-            fft_to_matrix!(h, ft; makereal)
+            fft_to_operator!(h, ft; makereal)
             h_set = true
             # @debug "Wrote 𝑈[$jH, $jH] into H[$jH, $jH]" # H[iH, jH] schematically means the block (`iH`, `jH`)
         end
@@ -107,7 +109,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                     continue
                 end
                 transform!(ft, 𝐴[c, i])
-                fft_to_matrix!(A_buff, ft)
+                fft_to_operator!(A_buff, ft)
 
                 if basis == :cis
                     A_buff .= pᵢ .- A_buff
@@ -141,13 +143,12 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
             wi = (iH-1)*B+1:iH*B
             wj = (jH-1)*B+1:jH*B
             h = @view H[wi, wj] # a view of the required block
-            fft_to_matrix!(h, ft; makereal)
+            fft_to_operator!(h, ft; makereal)
             # @debug "Wrote 𝑈[$iH, $jH] into H[$iH, $jH]"
 
-            if !iszero(Γ) # fill conjugate block if Γ is present (then we cannot use Hermitian view)
-                H[wj, wi] .= h' # TODO possible to use `copyto!` ?
-                # @debug "Copied H[$iH, $jH]' into H[$jH, $iH]"
-            end
+            # copy adjoint of H[wi, wj] into H[wj, wi]. Needed for nonhermitian diagonalisation (cannot use Hermitian view) and also for GPE
+            copy_adjoint!(H, wj, wi, H, wi, wj)
+            # @debug "Copied H[$iH, $jH]' into H[$jH, $iH]"
         end
     end
 
@@ -218,4 +219,5 @@ function update_diag!(xh::DenseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴�
             # @debug "Added -im*Γ[$c]/2 to H[$c, $c]"
         end
     end
+    return
 end

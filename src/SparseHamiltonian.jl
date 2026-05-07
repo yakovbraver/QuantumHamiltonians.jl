@@ -4,7 +4,7 @@ A type representing a spatial, 𝐷-dimensional, 𝑛-component, possibly quasim
     𝐻ᵢⱼ(r) = 𝑈ᵢⱼ(r)
 as a sparse matrix. Here  1 ≤ 𝑖, 𝑗 ≤ 𝑛,  r = (𝑥₁, …, 𝑥_𝐷),  Aᵢ = (𝐴ᵢ₁, …, 𝐴ᵢ_𝐷),  q = (𝑞₁, …, 𝑞_𝐷).
 """
-mutable struct SparseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: XSpaceHamiltonian{:sparse} # in practice `T` shoudld be `R` or `Complex{R}` (and same for `S`) -- always check this. If this is not the case, probably your 𝑈 or 𝐴 do not return R's.
+mutable struct SparseHamiltonian{R,T,S,D1,D2} <: PSpaceHamiltonian{:sparse,R,T,S,D1,D2}
     xlims::Vector{Tuple{R, R}}
     L::Vector{R}
     M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
@@ -13,9 +13,9 @@ mutable struct SparseHamiltonian{R<:AbstractFloat,T<:Number,S<:Number,D1,D2} <: 
     nc::Int # number of components
     basis::Symbol
     ishermitian::Bool # `H` is nonhermitian if decays Γ are present
-    𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings
-    𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(𝑟) = 𝑈ᵢⱼ(-𝑟)
-    𝐴::Matrix{<:Union{Function,Nothing}}
+    𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings. Return type must be R or T.
+    𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(r) = 𝑈ᵢⱼ(-r)
+    𝐴::Matrix{<:Union{Function,Nothing}} # 𝐴[c, i] is `i`th projection of the `c`th component of hte vector potential. Return type must be R or T.
     Γ::Vector{R} # decay rates
     H::SparseMatrixCSC{T, Int64} # momentum-space Hamiltonian used for diagonalisation (UMFPACKFactorization only supports Int64-type indices)
     H_blocks::Matrix{SparseMatrixCSC{T, Int64}} # a matrix of blocks of `H`, used for quasimomentum diagonalisation
@@ -51,17 +51,19 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
         H_isreal &= all(𝑈_iseven[𝑈 .!== nothing])
     end
 
-    B = basis == :cis ? (2M+1)^D : M^D # size of each Hamiltonian block
+    # size of each Hamiltonian block
+    B = basis == :cis ? (2M+1)^D :
+        basis == :sin ?      M^D : (M+1)^D
 
     T = H_isreal ? R : Complex{R} # type of elements of the Hamiltonian
     H_blocks = Matrix{SparseMatrixCSC{T, Int64}}(undef, nc, nc) # temporary Hamiltonian as an `nc`-by-`nc` matrix of sparse blocks
 
-    ft = FourierTransformer(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
+    ft = FourierTransformerP(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
 
     𝑈_diag_allequal = allequal(diagview(𝑈))
     𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing
 
-    makereal = (basis == :cis && H_isreal) # in this case the transform is actually real, but is stored in a complex array `ft.buff`; this will be passed to `fft_to_matrix` to drop imaginary part of `ft.buff`
+    makereal = (basis == :cis && H_isreal) # in this case the transform is actually real, but is stored in a complex array `ft.buff`; this will be passed to `fft_to_operator` to drop imaginary part of `ft.buff`
 
     # treat diagonal blocks, adding the diagonal potentials 𝑈ᵢᵢ and 𝑝² (conditionally)
     for jH in 1:nc
@@ -70,7 +72,7 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
             # @debug "Set H[$jH, $jH] to spzero"
         else
             transform!(ft, 𝑈[jH, jH])
-            H_blocks[jH, jH] = fft_to_matrix(ft; makesparse=true, makereal, threshold=fft_threshold)
+            H_blocks[jH, jH] = fft_to_operator(ft; makesparse=true, makereal, threshold=fft_threshold)
             # @debug "Wrote 𝑈[$jH, $jH] into H[$jH, $jH]" # H[iH, jH] schematically means the block (`iH`, `jH`)
         end
         # Add 𝑝² if basis is sin/cos. But if there are no 𝐴's at all, add in the cis case too (if 𝐴's are present, then 𝑝ᵢ²'s will be added together with 𝐴ᵢ's)
@@ -106,7 +108,7 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                     continue
                 end
                 transform!(ft, 𝐴[c, i])
-                A_buff = fft_to_matrix(ft; makesparse=true, threshold=fft_threshold) # contrary to the dense case, an in-place `fft_to_matrix` is impossible
+                A_buff = fft_to_operator(ft; makesparse=true, threshold=fft_threshold) # contrary to the dense case, an in-place `fft_to_operator` is impossible
 
                 if basis == :cis
                     A_buff .= pᵢ .- A_buff
@@ -140,7 +142,7 @@ function SparseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
                 # @debug "Set H[$jH, $jH] to spzero"
             else
                 transform!(ft, 𝑈[iH, jH])
-                H_blocks[iH, jH] = fft_to_matrix(ft; makesparse=true, makereal, threshold=fft_threshold)
+                H_blocks[iH, jH] = fft_to_operator(ft; makesparse=true, makereal, threshold=fft_threshold)
                 # @debug "Wrote 𝑈[$iH, $jH] into H[$iH, $jH]"
             end
             H_blocks[jH, iH] = H_blocks[iH, jH]' # set the conjugate block

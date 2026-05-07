@@ -1,4 +1,4 @@
-using XSpaceHamiltonians
+using QuantumHamiltonians
 using Test
 using LinearAlgebra: Symmetric
 
