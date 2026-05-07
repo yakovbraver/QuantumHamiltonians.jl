@@ -272,7 +272,7 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
     return
 end
 
-########## Dense
+################ Dense ################
 
 """
 Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
@@ -320,7 +320,7 @@ function dense_linear_map(A)
     return LM.LinearMap{eltype(A)}((y, x) -> ldiv!(y, F, x), size(A, 1), ismutating=true)
 end
 
-########## Sparse
+################ Sparse ################
 
 """
 Calculate `nev` lowest eigenvectors and eigenvalues.
@@ -354,4 +354,77 @@ Base.size(lm::LinSolveLinMap) = lm.size
 function LM._unsafe_mul!(y, lm::LinSolveLinMap, x::AbstractVector)
     copy!(lm.linsolve.b, x)
     copy!(y, LS.solve!(lm.linsolve).u) # `solve!` allocates up to 50 KiB :(
+end
+
+################ GPE-related methods ################
+
+"""
+For a state `v`, return `E, μ, η`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each compoenent,
+and `η` is a vector of relative particle numbers of each compoenent.
+`v_is_pspace=true` means that `v` is given in p-space, and x-space otherwise.
+By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider a decaying state, whereby imaginary part is important.
+"""
+function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc);
+                 v_is_pspace=true, makereal=true) where {Storage, R}
+    (;xlims, M, nc, basis) = xh
+    B = size(xh.H, 1) ÷ nc  
+     
+    if v_is_pspace # if `v` is in p-space, then make `vₚ` point to `v`
+        vₚ = v
+    else # if `v` is in x-space, then perform FT to transition to p-space
+        v_isreal = eltype(v) <: Real
+        ft = FourierTransformerP(xlims, M; basis, target_real=v_isreal, target_rank=1)
+        v_type = !v_isreal ? Complex{R} : eltype(ft.buff) # if v in x-space is complex, then result will be complex; otherwise the same as determined in `ft`
+        vₚ = Vector{v_type}(undef, length(v))
+        @views for c in 1:nc
+            window = (c-1)B+1:c*B
+            transform!(ft, v[window]; direction=:forward)
+            fft_to_state!(vₚ[window], ft; direction=:forward)
+        end
+    end
+
+    η = [@views sum(abs2, vₚ[(c-1)B+1:c*B]) for c in 1:nc]
+    η_total = sum(η)
+    e = [@views dot(vₚ[(c-1)B+1:c*B], xh.H[(c-1)B+1:c*B, :], vₚ[1:nc*B]) for c in 1:nc] # using `vₚ[1:nc*B]` instead of just `vₚ` because it might contain chemical potentials as the last `nc` elements
+    E = sum(e) / η_total
+    μ = e ./ η
+    
+    if !iszero(g)
+        # we need `ft` object to get the coordinates
+        v_isreal = eltype(v) <: Real
+        ft = FourierTransformerP(xlims, M; basis, target_real=v_isreal, target_rank=1)
+        dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
+        if v_is_pspace # if `v` is in p-space, then perform FT to x-space
+            # create an array of arrays holding squared x-space densities |𝜓(𝑥)|² for each component
+            ψ² = map(1:nc) do c
+                @views transform!(ft, v[(c-1)B+1:c*B]; direction=:backward)
+                ψ = fft_to_state(ft; direction=:backward)
+                ψ .= abs2.(ψ)
+                return ψ
+            end
+        else # if `v` is in x-space, then calculate abs2 directly, but we need a vector of vectors instead of contiguous
+            ψ² = map(1:nc) do c
+                @views abs2.(v[(c-1)B+1:c*B])
+            end
+        end
+        # for each `i`th component: calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝜓ⱼ|², then multiply by |𝜓ᵢ|², then integrate
+        ψ²_sum = similar(ψ²[1])
+        for i in 1:nc
+            ψ²_sum .= 0
+            for j in 1:nc
+                g[i, j] == 0 && continue
+                @. ψ²_sum += g[i, j] * ψ²[j]
+            end
+            ψ²_sum .*= ψ²[i]
+            U = sum(ψ²_sum) * dV # for sin, endpoints are not included but are zero, so this is equivalent to the trapezoid rule. For cis, rectangle rule is more appropriate because there is no boundary
+            basis == :cos && (U -= (ψ²_sum[1] + ψ²_sum[end])/2 * dV)
+            μ[i] += U / η[i]
+            E += U / 2η_total
+        end
+    end
+    if makereal
+        return real(E), real(μ), η
+    else
+        return E, μ, η
+    end
 end

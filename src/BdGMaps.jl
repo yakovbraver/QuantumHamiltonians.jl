@@ -2,7 +2,7 @@
 A lazy linear map describing the action of the BdG operator on an x-space vector
     𝑐 = (𝑎₁(x), …, 𝑎ₙ(x), 𝑏₁(x), …, 𝑏ₙ(x))
 """
-struct BdGMap{T,H,P,R,FT} <: LM.LinearMap{T}
+struct BdGMap{T, H, P, R, FT} <: LM.LinearMap{T}
     Hₚ::H # Hamiltonian matrix in p-space; can be dense or sparse
     H⁺ₚ::H # p-space matrix corresponding to the conjugated x-space Hamiltonian; can be dense or sparse
     G::Matrix{Vector{P}} # An analogue of the BdG matrix
@@ -62,7 +62,7 @@ function BdGMap(xh::PSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
         @. G[4, 3] = -G[1, 2]
         @. G[4, 4] = -G[2, 2]
     else
-        println("BdGMap not implemented for $(xh.nc) components")
+        error("BdGMap not implemented for $(xh.nc) components")
     end
 
     # prepare the plan that can transform either real or complex vectors (hence `target_real=false`), because the map might need to act on complex ones during diagonalisation
@@ -245,5 +245,156 @@ function bdg_spectrum(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:
         vals[:, IQ...], vecs[:, :, IQ...] = diagonalize(bdg_map, ψ; storage, nev, verbose)
     end
     
+    return vals, vecs
+end
+
+################ p-space approach (the BdG matrix is constructed explicitly in p-space) ################
+
+"""
+Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (1-component case).
+If `nev > 0`, calculate only `nev` eigenvalues of of type `whichvals` (`:LI` = largest imaginary by default).
+`xh` must contain half the number of harmonics of `ψ` (because having N points in `ψ` we can only construct a p-space operator of size N/2).
+`ψ` can be a vector or a N×1 matrix (where N is the number of x points).
+"""
+function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::AbstractFloat, μ::AbstractFloat; ψ_iseven=false, nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
+    (;xlims, M, basis) = xh
+    # transform `ψ2` to p-space
+    ψ_isreal = eltype(ψ) <: Real
+    ψ2 = g .* ψ.^2
+    ft = FourierTransformerP(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `M`
+    transform!(ft, ψ2)
+    v2 = fft_to_operator(ft; makereal=(ψ_iseven && ψ_isreal))
+    if ψ_isreal
+        vconj2 = v2
+        vabs2 = 2 .* v2
+    else
+        # transform `conj(ψ2)` to p-space
+        transform!(ft, conj(ψ2))
+        vconj2 = fft_to_operator(ft)
+        # transform `ψabs2` to p-space
+        ψabs2 = abs2.(ψ)
+        ft = FourierTransformerP(xlims, M; basis, target_real=true, target_rank=2)
+        transform!(ft, ψabs2)
+        vabs2 = fft_to_operator(ft)
+    end
+    # construct the matrix
+    A11 = xh.H - μ*LA.I + vabs2
+    A = [A11     v2
+         -vconj2 -A11]
+    if nev == 0
+        vals, vecs = eigen(A)
+    else
+        ps, info = partialschur(A; nev, which=whichvals, restarts=200) # note: no shift-invert
+        verbose && @show info
+        vals, vecs = partialeigen(ps)
+    end
+    return vals, vecs
+end
+
+"""
+Compute BdG stability spectrum and eigenfunctions for an x-space state `ψ` (2-component case).
+If `nev > 0`, calculate only `nev` eigenvalues of smallest magnitude.
+`xh` must contain half the number of harmonics of `ψ`.
+`ψ` must be a N×nc matrix, where `N` is the number of x points and `nc` is the number of components.
+The chemical potential `μ` can be passed as a vector, or a number if it is the same for all components.
+`q` is the quasimomentum vector [qx, qy, …], zero by default.
+Note that the off-diagonal blocks of `xh.H` are not taken into account at all (because one needs to figure out conjugation).
+"""
+function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::Union{R, AbstractVector{<:R}}, q=zeros(R, length(xh.xlims));
+                             nev::Integer=0, verbose::Bool=false) where {Storage, R}
+    (;xlims, M, basis, H, nc) = xh
+    μs = μ isa R ? fill(μ, nc) : μ # if only one μ is passed, then construct a vector of same values
+    ψ_isreal = eltype(ψ) <: Real
+    ft = FourierTransformerP(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
+    transform!(ft, ψ[:, 1].^2)
+    v₁² = fft_to_operator(ft)
+    transform!(ft, ψ[:, 2].^2)
+    v₂² = fft_to_operator(ft)
+    transform!(ft, ψ[:, 1].*ψ[:, 2])
+    v₁v₂ = fft_to_operator(ft)
+    if ψ_isreal
+        v₁⁺² = v₁² # "+" means conjugate
+        V₁²  = v₁² # uppercase means modulus
+        v₂⁺² = v₂²  
+        V₂²  = v₂²
+        v₁⁺v₂⁺ = v₁v₂
+        v₁v₂⁺ = v₁v₂
+        v₁⁺v₂ = v₁v₂
+    else
+        transform!(ft, conj(ψ[:, 1]).^2)
+        v₁⁺² = fft_to_operator(ft)
+        transform!(ft, conj(ψ[:, 2]).^2)
+        v₂⁺² = fft_to_operator(ft)
+        
+        ft_real = FourierTransformerP(xlims, M; basis, target_real=true, target_rank=2)
+        transform!(ft_real, abs2.(ψ[:, 1]))
+        V₁² = fft_to_operator(ft_real)
+        transform!(ft_real, abs2.(ψ[:, 2]))
+        V₂² = fft_to_operator(ft_real)
+
+        transform!(ft, conj.(ψ[:, 1]) .* conj.(ψ[:, 2]))
+        v₁⁺v₂⁺ = fft_to_operator(ft)
+        transform!(ft, ψ[:, 1] .* conj.(ψ[:, 2]))
+        v₁v₂⁺ = fft_to_operator(ft)
+        transform!(ft, conj.(ψ[:, 1]) .* ψ[:, 2])
+        v₁⁺v₂ = fft_to_operator(ft)
+    end
+    B = size(v₁², 1) # our usual blocksize -- number of points corresponding to each (of the two) components -- of xh_half
+    A = Matrix{eltype(v₁²)}(undef, 4B, 4B)
+    block(a, b) = CartesianIndices(((a-1)B+1:a*B, (b-1)B+1:b*B))
+
+    # Blocks (1, 1) and (3, 3) require special treatment if quasimomenta are passed
+    A₁₁ = @view A[block(1, 1)]
+    A₃₃ = @view A[block(3, 3)]
+    if basis == :cis && !iszero(q) # then need to include quasimomentum on the diagonal of `A`
+        # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
+        U_diags = [H[(c-1)B + B÷2+1, (c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
+
+        # block (1, 1)
+        copyto!(A, block(1, 1), H, block(1, 1))
+        p² = make_p²(xh.L, xh.M, xh.δ, basis, q) |> parent
+        A₁₁[diagind(A₁₁)] .= p² .+ U_diags[1] .- μs[1]
+        @. A₁₁ += 2g[1,1]V₁² + g[1,2]V₂²
+
+        # block (3, 3)
+        copyto!(A, block(3, 3), H, block(2, 2))
+        A₃₃[diagind(A₃₃)] .= p² .+ U_diags[2] .- μs[2]
+        @. A₃₃ += 2g[2,2]V₂² + g[2,1]V₁²
+    else
+        # block (1, 1)
+        @. A₁₁ = H[block(1, 1)] + 2g[1,1]V₁² + g[1,2]V₂²
+        A₁₁[diagind(A₁₁)] .-= μs[1]
+
+        # block (3, 3)
+        @. A₃₃ = H[block(2, 2)] + 2g[2,2]V₂² + g[2,1]V₁²
+        A₃₃[diagind(A₃₃)] .-= μs[2]
+    end
+
+    @. A[block(1, 2)] = g[1,1]v₁²
+    @. A[block(1, 3)] = g[1,2]v₁v₂⁺
+    @. A[block(1, 4)] = g[1,2]v₁v₂
+    @. A[block(2, 1)] = -g[1,1]v₁⁺²
+    @. A[block(2, 2)] = -A₁₁ # assumes `xh.H` is real in x-space
+    @. A[block(2, 3)] = -g[1,2]v₁⁺v₂⁺
+    @. A[block(2, 4)] = -g[1,2]v₁⁺v₂
+    @. A[block(3, 1)] = g[2,1]v₁⁺v₂
+    @. A[block(3, 2)] = g[2,1]v₁v₂
+    @. A[block(3, 4)] = g[2,2]v₂²
+    @. A[block(4, 1)] = -g[2,1]v₁⁺v₂⁺
+    @. A[block(4, 2)] = -g[2,1]v₁v₂⁺
+    @. A[block(4, 3)] = -g[2,2]v₂⁺²
+    @. A[block(4, 4)] = -A₃₃ # assumes `xh.H` is real in x-space
+
+    if nev == 0
+        vals, vecs = eigen(A)
+    else
+        prob = LS.LinearProblem(A, similar(A, size(A, 1)))
+        linsolve = LS.init(prob, LS.LUFactorization())
+        linmap = LinSolveLinMap{eltype(A), typeof(linsolve)}(linsolve, size(A))
+        ps, info = partialschur(linmap; nev, which=:LM)
+        verbose && @show info
+        vals, vecs = partialeigen(ps)
+        return inv.(vals), vecs
+    end
     return vals, vecs
 end
