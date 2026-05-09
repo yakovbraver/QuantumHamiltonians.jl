@@ -21,8 +21,7 @@ function plot_comps(xs, ψ)
         figs[i]   = heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
         figs[i+1] = heatmap(xs[:, 1], xs[:, 2], angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
     end
-    plot(figs..., plot_title="Full solution, state no. $stateno, "*L"\epsilon=%$(ϵ),\ \Omega_{10}=%$(Int(Ω₁₀)), \Gamma=%$(Γ₃),"*"\n"*L"E="*"$(round(ComplexF64(ph.ε[stateno]), sigdigits=3))",
-         plot_titlefontcolor=:white, plot_titlefontsize=12, layout=(3, 2))
+    plot(figs..., layout=(3, 2))
 end
 
 ########## χ = 0 (real 𝛺₂)
@@ -63,6 +62,7 @@ M = 200
      nothing nothing nothing] # only upper triangle is needed
 @time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃])
 @time ph = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=trues(3, 3), Γ=[0, 0, Γ₃], fft_threshold=1e-3)
+matrix_density(ph)
 
 @time diagonalize!(ph, nev=5);
 ph.ε
@@ -75,11 +75,18 @@ xs, ψ = make_eigenfunction(ph, stateno);
 
 plot_comps(xs, ψ)
 
-# Experimental: diagonalisation in x-space. For M > 8, linear solving does not converge to sufficient accuracy, so eigenvalues end up being wrong.
-# @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=8)
-# @time vals, vecs, info = diagonalize(xh; nev=5, krylovdim=30, maxiter=200);
-# info
+### Diagonalisation in x-space. Inversion slows down solving, and this become uncompetitive compared to sparse p-space diagonalisation.
+# @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=16, Γ=[0, 0, Γ₃])
+# @time diagonalize!(xh; nev=5, verbose=true, tol=1e-3);
+# xh.ε
+# xs, ys, ψ = make_eigenfunction(xh, stateno=1);
+# plot_comps([xs ys], ψ)
+
+## Diagonalising via `StateVector`. Linear solving struggles to converge.
+# @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=8, Γ=[0, 0, Γ₃])
+# @time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh; nev=5, krylovdim=30, maxiter=200, tol=1e-3);
 # vals
+# plot_comps(xh.ft.xs, vecs[1])
 
 ### Quasimomenta
 
@@ -91,7 +98,7 @@ P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P)
 qxs = range(qlimits..., ncells)
 qys = [0.0]
-@time diagonalize!(ph, [qxs, qys]; nev=4); # doing a cut for fixed 𝑞𝑦 = 0
+@time diagonalize!(ph, [qxs, qys]; nev=4); # doing a cut for fixed 𝑞ʸ = 0
 
 fig = plot();
 for n in axes(ph.ε_q, 1)
@@ -139,7 +146,7 @@ P = xlimits[2] - xlimits[1]
 qlimits = (-π/P, π/P)
 qxs = range(qlimits..., ncells)
 qys = Float[0]
-@time diagonalize!(ph, [qxs, qys]; nev=5); # doing a cut for fixed 𝑞𝑦 = 0
+@time diagonalize!(ph, [qxs, qys]; nev=5); # doing a cut for fixed 𝑞ʸ = 0
 
 fig = plot();
 for n in axes(ph.ε_q, 1)

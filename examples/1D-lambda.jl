@@ -35,11 +35,18 @@ ph.ε
 xs, ψ = make_eigenfunctions(ph, statenos=1:5, nx=100)
 plot(xs, real(ψ[:, 1, 1]))
 
-# Diagonalisation in x-space
-@time xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M);
-@time vals, vecs, info = diagonalize(xh, nev=5, krylovdim=40); # must increase krylovdim to get 11 digits convergence
-info
-vals
+### Diagonalisation in x-space
+@time xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M)
+@time diagonalize!(xh; nev=5, verbose=true, maxdim=30); # must increase maxdim to say 30 to get convergence
+xh.ε
+xs, ψ = make_eigenfunction(xh, stateno=1);
+plot(xs, ψ)
+
+## Diagonalisation via `StateVector`
+# @time xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M);
+# @time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh, nev=5, krylovdim=40); # must increase krylovdim to get 11 digits convergence
+# info
+# vals
 
 # calculate and plot components 1 and 2
 ψD = ψ[:, 1, 1] |> real
@@ -64,7 +71,6 @@ ylims!(0.95, 1.1)
 
 
 ################ 3-component analysis
-
 
 𝛺₁(x) = Ω₁₀/ϵ*cos(x) / 2 # we take cos so that `𝛺₁` is even in (0, P). Alternatively, can use sin as in the paper and use shifted xlimits. Or use sin with (0, P) without setting 𝑈_iseven
 𝛺₂(x) = Ω₁₀ / 2
@@ -91,14 +97,18 @@ ph.ε
 xs, ψ = make_eigenfunctions(ph; statenos=1:5, nx=100)
 plot_comps_complex(xs, ψ; stateno=1)
 
-# Experimental: diagonalisation in x-space. For M ≥ 16, linear solving struggles to converge to sufficient accuracy, so eigenvalues cannot converge correctly.
-# For M=32, `krylovdim` kinda helps but is still flaky and slow. Perhaps a preconditioner is needed.
-M = 32
-@time xh = XSpaceHamiltonian([xlimits], 𝑉; basis=:cis, M, Γ=[0, 0, Γ₃]);
-@time vals, vecs, info = diagonalize(xh, nev=1, tol=1e-8, krylovdim=100); # eigenvalues 2 and 3 are degenerate; usually only one is obtained. But works well for nev=1. Increase to krylovdim=40 to converge to 1e-12
+### Diagonalisation in x-space. Slower than p-space due to linear solving for inversion
+@time xh = XSpaceHamiltonian([xlimits], 𝑉; basis=:cis, M=128, Γ=[0, 0, Γ₃]);
+@time diagonalize!(xh, nev=1, verbose=true);
+xh.ε
+
+## Diagonalising via `StateVector`. Linear solving struggles to converge.
+@time xh = XSpaceHamiltonian([xlimits], 𝑉; basis=:cis, M=32, Γ=[0, 0, Γ₃]);
+@time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh; nev=1); 
 vals
 
-# diagonalise with quasimomentum (Fig. 2(c))
+###### Diagonalise with quasimomentum (Fig. 2(c))
+
 ncells = 101
 qlimits = (-π/P, π/P)
 qs = range(qlimits[1], qlimits[2], ncells)

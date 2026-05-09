@@ -123,4 +123,4 @@ function VectorInterface.inner(v::StateVector{T, D, :cos}, w::StateVector{T, D, 
 end
 
 "Return the norm ∑ᶜ|𝜓ᶜ|² (sum over components); note that physical normalisation includes the volume element: ∑ᶜ|𝜓ᶜ|²d𝑉 = 1."
-VectorInterface.norm(v::StateVector) = √VectorInterface.inner(v, v) # could use `LA.norm(v.data)`, but this is faster
+VectorInterface.norm(v::StateVector) = √real(VectorInterface.inner(v, v)) # could use `LA.norm(v.data)`, but this is faster. Using `real` because `inner` returns complex for complex input

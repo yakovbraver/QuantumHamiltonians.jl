@@ -127,7 +127,7 @@ function make_p²_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol,
             return [(cx*jˣ + qs[1])^2 for jˣ in M_range]
         elseif D == 2
             cy = 2PI*δ/L[2]
-            return [((cx*jˣ + qs[1])^2 + (cy*jʸ + qs[2])^2) for jˣ in M_range, jʸ in M_range]
+            return [((cx*jˣ + qs[1])^2 + (cy*jʸ + qs[2])^2) for jʸ in M_range for jˣ in M_range]
         # else # arbitrary `D`
         #     Ms = ntuple(Returns(M_range), D)
         #     L_r = reverse(L) # because `J` will be be enumerated in "reverse" order compared to that used by us (first dimesnion is 𝑥, then 𝑦, ...)
@@ -141,7 +141,7 @@ function make_p²_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol,
             return [(bx*jˣ)^2 for jˣ in j₁:M]
         elseif D == 2
             by = PI*δ/L[2]
-            return [(bx*jˣ)^2 + (by*jʸ)^2 for jˣ in j₁:M, jʸ in j₁:M]
+            return [(bx*jˣ)^2 + (by*jʸ)^2 for jʸ in j₁:M for jˣ in j₁:M]
         end
     end
     return R[] # for type stability
@@ -172,7 +172,7 @@ function make_p_x_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol)
         if D == 1
             return [cx * jˣ for jˣ in M_range]
         elseif D == 2
-            return [cx * jˣ for jˣ in M_range, jʸ in M_range]
+            return [cx * jˣ for jʸ in M_range for jˣ in M_range]
         end
     else # basis == :sin || basis == :cos # TODO reconsider because inverse transform for sin is cos and for cos is sin
         j₁ = basis == :sin ? 1 : 0
@@ -180,7 +180,7 @@ function make_p_x_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol)
         if D == 1
             return [bx*jˣ for jˣ in j₁:M] 
         elseif D == 2
-            return [bx*jˣ for jˣ in j₁:M, jʸ in j₁:M]
+            return [bx*jˣ for jʸ in j₁:M for jˣ in j₁:M]
         end
     end
 end
@@ -196,12 +196,12 @@ function make_p_y_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol)
     if basis == :cis
         M_range = [0:M-1; -M:-1]
         cy = 2PI*δ/L[2]
-        return [cy * jʸ for jˣ in M_range, jʸ in M_range]
+        return [cy * jʸ for jʸ in M_range for jˣ in M_range]
     else # basis == :sin || basis == :cos # TODO reconsider because inverse transform for sin is cos and for cos is sin
         j₁ = basis == :sin ? 1 : 0
         by = (-1)^j₁ * PI*δ/L[2] # different name than `cx` above to prevent Core.Box. The prefactor is because we need a minus in the sin case.
         if D == 2
-            return [by*jʸ for jˣ in j₁:M, jʸ in j₁:M]
+            return [by*jʸ for jʸ in j₁:M for jˣ in j₁:M]
         end
     end
 end
