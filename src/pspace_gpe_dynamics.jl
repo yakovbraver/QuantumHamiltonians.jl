@@ -23,11 +23,7 @@ Return the DifferentialEquations solution object.
 function propagate(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
                    ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), T_max::R, dt::R, itime::Bool=false,
                    solver=(iszero(g) ? ODE.LinearExponential() : itime ? ODE.LawsonEuler() : ODE.ETDRK4()), nsaves::Integer=0) where {Storage, R, T}
-    (;xlims, L, M, basis, nc) = xh
-    D = length(xlims)
-    # size of each Hamiltonian block
-    B = basis == :cis ? (2M+1)^D :
-        basis == :sin ?      M^D : (M+1)^D
+    (;xlims, L, B, basis, nc, ft) = xh
 
     # determine if equation can be solved using real types. Note that for cis with nonzero `g` it cannot because intermediate FFT's will be yielding complex results
     eq_isreal = itime && T <: Real && !(basis == :cis && !iszero(g)) # below `eq_isreal` might change if initial state is complex
@@ -52,7 +48,6 @@ function propagate(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
         ψ₀ₚ = Vector{eq_isreal ? R : Complex{R}}(undef, nc*B)
 
         # transform each component's wf and put into ψ₀ₚ
-        ft = FourierTransformerP(xlims, M; basis, target_real=all(ψ₀_arereal), target_rank=1) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
         for c in 1:nc
             transform!(ft, ψ₀[c])
             ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
@@ -71,15 +66,15 @@ function propagate(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
 
     # Combine in `G` all fft normalisation factors so that this multiplication can be done just once at each step
     if basis == :cis
-        N = 2M + 1 # number of points in each dimension
+        N = 2ft.M + 1 # number of points in each dimension
         dx = L ./ N
         G .*= prod(@. dx / L^2) # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
     elseif basis == :sin
-        N = M
+        N = ft.M
         dx = L ./ (N+1)
         G .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
     else # basis == :cos
-        N = M + 1
+        N = ft.M + 1
         dx = L ./ (N-1)
         G .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
     end

@@ -66,7 +66,8 @@ If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for t
 Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqxs]`
 """
 function make_eigenfunctions(xh::PSpaceHamiltonian{Storage,R}; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[]) where {Storage,R}
-    (;L, xlims, M, basis, V, V_q, nc) = xh
+    (;L, xlims, B, basis, V, V_q, nc) = xh
+    M = xh.ft.M
     Lx = L[1]
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ns = isempty(iqxs) ? length(statenos) : length(iqxs)
@@ -76,29 +77,26 @@ function make_eigenfunctions(xh::PSpaceHamiltonian{Storage,R}; statenos::Abstrac
         for (is, stateno) in enumerate(statenos)
             for c in 1:nc
                 if basis == :cis
-                    B = 2M + 1
                     @floop for (ix, x) in enumerate(xs)
-                        ψ[ix, c, is] = sum(V[(c-1)*B+j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                        ψ[ix, c, is] = sum(V[(c-1)B+j, stateno]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
                     end
                 elseif basis == :sin
                     @floop for (ix, x) in enumerate(xs)
-                        ψ[ix, c, is] = sum(V[(c-1)*M+jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
+                        ψ[ix, c, is] = sum(V[(c-1)M+jx, stateno]sin(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
                     end
                 else # basis == :cos
-                    b = M + 1 # not B to prevent Core.Box
                     @floop for (ix, x) in enumerate(xs)
-                        ψ[ix, c, is] = sum(V[(c-1)*b+jx+1, stateno]cos(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
+                        ψ[ix, c, is] = sum(V[(c-1)B+jx+1, stateno]cos(π*jx*x/Lx) for jx in 1:M) * √(2/Lx)
                     end
-                    ψ[:, c, is] .+= V[(c-1)*b+1, stateno] / √Lx # treat zeroth harmonic separately
+                    ψ[:, c, is] .+= V[(c-1)B+1, stateno] / √Lx # treat zeroth harmonic separately
                 end
             end
         end
     else # quasimomenta indices passed
         for iqx in iqxs
             for c in 1:nc
-                B = 2M + 1
                 @floop for (ix, x) in enumerate(xs)
-                    ψ[ix, c, iqx] = sum(V_q[(c-1)*B+j, statenos[1], iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
+                    ψ[ix, c, iqx] = sum(V_q[(c-1)B+j, statenos[1], iqx]cis(2π*jx*x/Lx) for (j, jx) in enumerate(-M:M)) / √Lx
                 end
             end
         end
@@ -117,11 +115,11 @@ function make_wavefunction(xh::PSpaceHamiltonian{Storage, R}, ψₚ::AbstractVec
 
     B = length(ψₚ) ÷ nc # original block-size
     # number of x points in each dimension
-    nx = basis == :cis ? 2xh.M+1 :
-         basis == :sin ?    xh.M : xh.M+1
+    nx = basis == :cis ? 2xh.ft.M+1 :
+         basis == :sin ?    xh.ft.M : xh.ft.M+1
 
-    M = 2^pad * xh.M
-    ft = FourierTransformerP(xlims, M; basis, target_real=ψₚ_isreal, target_rank=1)
+    M = 2^pad * xh.ft.M
+    ft = FourierTransformerP(xlims, M; basis, target_rank=1)
     nx_padded = size(ft.xs, 1) # number of x points in each dimension for the padded array
     
     ψₓ_type = basis != :cis && ψₚ_isreal ? R : complex(R) # `ψ` are real if elements of `ψₚ` are real and if the basis is real (sin/cos). If basis is real but `ψₚ` are complex, this will yield complex function as expected.
@@ -179,8 +177,9 @@ Thus, in both cases this function can be called repeatedly (e.g. for different `
 """
 function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {Storage, R, T, S}
     xh.basis != :cis && error("Hamiltonian must be periodic. Construct a new one using the cis basis and try again.")
-    (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
+    (;B, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
     D = length(xlims)
+    
     if Storage == :dense
         makesparse = false
         threshold = zero(R) # the value does not matter since it is not used when `makesparse=false`
@@ -189,7 +188,6 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
         threshold = xh.fft_threshold
     end
 
-    B = (2M + 1)^D # block size
     nsaves = nev == 0 ? B : nev # number of eigenvalues and eigenvectors to allocate
     xh.ε_q = Array{S}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # ε_q[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
     xh.V_q = Array{T}(undef, B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # V_q[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
@@ -209,7 +207,7 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
             buff2 = nothing
         end
 
-        ft = FourierTransformerP(xlims, M; basis=:cis)
+        ft = FourierTransformerP(xlims, xh.ft.M; basis=:cis) # here we need a rank-2 transformer because we will be constructing Hamiltonian blocks
 
         K = Union{typeof(H), Diagonal{T, Vector{T}}, Nothing}[nothing for _ in CartesianIndices(𝐴)] # Matrix of dimensions like 𝐴 for storing corresponding kinetic operators -iδ∂ᵢ - 𝐴ᵢ
         U = Union{typeof(H), Nothing}[nothing for _ in axes(𝑈, 1)] # for storing terms 𝑈ᵢᵢ
@@ -358,6 +356,34 @@ end
 
 ################ GPE-related methods ################
 
+"Apply Hamiltonian `ph` to an x-space vector `f`."
+@views function LA.mul!(f′::AbstractVector{<:Number}, ph::PSpaceHamiltonian{Storage, R, T}, f::AbstractVector{<:Number}) where {Storage, R, T}
+    (;B, nc, H, ft) = ph
+
+    # choose which buffers to use -- real or complex
+    if ft.basis == :cis || T <: Complex || eltype(f) <: Complex
+        uₚ_buff = ph.uₚ_buff_complex
+        uₚ_buff2 = ph.uₚ_buff_complex2
+    else
+        uₚ_buff = ph.uₚ_buff_real
+        uₚ_buff2 = ph.uₚ_buff_real2
+    end
+
+    buff_size = size(ft.buff)
+    for c in 1:nc
+        window = (c-1)B+1:c*B
+        transform!(ft, reshape(f[window], buff_size); direction=:forward)
+        fft_to_state!(uₚ_buff[window], ft; direction=:forward)
+    end
+    mul!(uₚ_buff2, H, uₚ_buff)
+    for c in 1:nc
+        window = (c-1)B+1:c*B
+        transform!(ft, reshape(uₚ_buff2[window], buff_size); direction=:backward)
+        fft_to_state!(f′[window], ft; direction=:backward, makereal=(eltype(f′) <: Real))
+    end
+    return f′
+end
+
 """
 For a state `v`, return `E, μ, η`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each component,
 and `η` is a vector of relative particle numbers of each component.
@@ -366,14 +392,12 @@ By default, `makereal=true` so that the returned `E` and `μ` are made real (by 
 """
 function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc);
                  v_is_pspace=true, makereal=true) where {Storage, R}
-    (;xlims, M, nc, basis) = xh
-    B = size(xh.H, 1) ÷ nc  
+    (;nc, B, basis, ft) = xh
      
     if v_is_pspace # if `v` is in p-space, then make `vₚ` point to `v`
         vₚ = v
     else # if `v` is in x-space, then perform FT to transition to p-space
         v_isreal = eltype(v) <: Real
-        ft = FourierTransformerP(xlims, M; basis, target_real=v_isreal, target_rank=1)
         v_type = !v_isreal ? Complex{R} : eltype(ft.buff) # if v in x-space is complex, then result will be complex; otherwise the same as determined in `ft`
         vₚ = Vector{v_type}(undef, length(v))
         @views for c in 1:nc
@@ -392,7 +416,6 @@ function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
     if !iszero(g)
         # we need `ft` object to get the coordinates
         v_isreal = eltype(v) <: Real
-        ft = FourierTransformerP(xlims, M; basis, target_real=v_isreal, target_rank=1)
         dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
         if v_is_pspace # if `v` is in p-space, then perform FT to x-space
             # create an array of arrays holding squared x-space densities |𝜓(𝑥)|² for each component

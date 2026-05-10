@@ -13,11 +13,10 @@ mutable struct FourierTransformerP{R, T, PlanForward, PlanBackward, D} # T is th
 end
 
 """
-`target_real` is only used in the sin and cos case: set to false if you plan to calculate DST or DCT for complex functions.
 Set `target_rank=1` if you are making the transform for building a Fourier-space state (using `fft_to_state`),
 set `target_rank=2` if you are making the transform for building a Fourier-space operator (using `fft_to_operator`). The latter needs twice the number of harmonics.
 """
-function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_real::Bool=true, target_rank::Integer=2) where R <: AbstractFloat
+function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_rank::Integer=2) where R <: AbstractFloat
     D = length(xlims) # number of spatial dimensions
     L = Vector{R}(undef, D) # periods in each dimension. Only needed here, to calculate the normalisation factor
     dx = Vector{R}(undef, D) # dx's in each dimension
@@ -44,7 +43,7 @@ function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
                 xs[:, i] .= range(xlims[i][1], xlims[i][2], N)
             end
             buff = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
-            buff_im = similar(buff, ntuple(Returns(target_real ? 0 : N), D)) # if `target_real`, then this buffer is not needed; make it 0x0 (in `D` dimesions)
+            buff_im = similar(buff)
             plan_forward = FFTW.plan_r2r!(buff, FFTW.REDFT00) # note that `REDFT00` is its own inverse
             plan_backward = plan_forward # same plan for backward
         else # basis == :sin && target_rank == 1 # the only case when we need DST
@@ -56,7 +55,7 @@ function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
                 xs[:, i] .= range(xlims[i][1]+dx[i], xlims[i][2]-dx[i], N)
             end
             buff = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
-            buff_im = similar(buff, ntuple(Returns(target_real ? 0 : N), D)) # if `target_real`, then this buffer is not needed; make it 0x0 (in `D` dimesions)
+            buff_im = similar(buff)
             plan_forward = FFTW.plan_r2r!(buff, FFTW.RODFT00) # note that `RODFT00` is its own inverse
             plan_backward = plan_forward # same plan for backward
         end

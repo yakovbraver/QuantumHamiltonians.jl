@@ -21,9 +21,9 @@ export StateVector, XSpaceHamiltonian
 
 include("PSpaceHamiltonian.jl")
 include("Wanniers.jl")
+include("FourierTransformerP.jl")
 include("DenseHamiltonian.jl")
 include("SparseHamiltonian.jl")
-include("FourierTransformerP.jl")
 include("momentum.jl")
 
 include("pspace_gpe_dynamics.jl")
