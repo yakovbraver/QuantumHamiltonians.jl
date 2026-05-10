@@ -1,8 +1,12 @@
+################ p-space operators ################
+
+# The following methods create matrices of momentum operators in p-space, such as ⟨𝑗′ʸ𝑗′ˣ|𝑝²|𝑗ʸ𝑗ˣ⟩. These are used in the p-space approach.
+
 """
 Return the momentum-squared matrix (𝛿𝑝)² = -𝛿²Δ in `D = length(L)` dimensions. If `basis=:cis`, then return (𝛿𝑝 + 𝑞)² with quasimomenta provided in `qs`.
 A real `Diagonal` matrix is returned.
 """
-function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zeros(R, length(L))) where R <: AbstractFloat
+function make_p²_matrix(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zeros(R, length(L))) where R <: AbstractFloat
     D = length(L)
     PI = R(π) # for type stability. Otherwise 2*π*2f0 gets converted to Float64 (and so does 2f0*2π, while 2f0*2*π does not...)
     if basis == :cis
@@ -26,20 +30,21 @@ function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zer
             return [(bx*jˣ)^2 + (by*jʸ)^2 for jʸ in j₁:M for jˣ in j₁:M] |> Diagonal
         end
     end
-    return Diagonal(R[]) # for type stability
+    error("make_p²_matrix not implemented for $D dimensions and $basis basis.")
 end
 
 "Return the matrix of 𝑝ⁱ = -i𝛿𝜕ⁱ if `basis=:cis` and 𝛿𝜕ⁱ otherwise. The output is real in both cases."
-function make_p_i(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, i::Integer) where R <: AbstractFloat
+function make_pⁱ_matrix(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, i::Integer) where R <: AbstractFloat
     if i == 1
-        return make_p_x(L, M, δ, basis)
+        return make_pˣ_matrix(L, M, δ, basis)
     elseif i == 2
-        return make_p_y(L, M, δ, basis)
+        return make_pʸ_matrix(L, M, δ, basis)
     end
+    error("make_pⁱ_matrix not implemented for $i=1.")
 end
 
 "Return the matrix of 𝑝ˣ = -i𝛿𝜕ˣ if `basis=:cis` and 𝛿𝜕ˣ otherwise. The output is real in both cases."
-function make_p_x(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
+function make_pˣ_matrix(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
     D = length(L)
     Lˣ = L[1]
     if basis == :cis
@@ -77,12 +82,12 @@ function make_p_x(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where 
         end
         return ∂ˣ_cos
     end
+    error("make_pˣ_matrix not implemented for $D dimensions and $basis basis.")
 end
 
 "Return the matrix of 𝑝ʸ = -i𝛿𝜕ʸ if `basis=:cis` and 𝛿𝜕ʸ otherwise. The output is real in both cases."
-function make_p_y(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
+function make_pʸ_matrix(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
     D = length(L)
-    # D == 1 && @error "Only D ≥ 2 supported. For D = 1, use make_p_x."; return
     Lʸ = L[2]
     if basis == :cis
         PI = R(π)
@@ -111,13 +116,14 @@ function make_p_y(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where 
         end
         return ∂ʸ_cos
     end
+    error("make_pʸ_matrix not implemented for $D dimensions and $basis basis.")
 end
 
 """
 Return the momentum-squared tensor (𝛿𝑝)² = -𝛿²Δ in `D = length(L)` dimensions. If `basis=:cis`, then return (𝛿𝑝 + 𝑞)² with quasimomenta provided in `qs`.
-A real rank-D tensor is returned.
+A flattened vector is returned.
 """
-function make_p²_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zeros(R, length(L))) where R <: AbstractFloat
+function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zeros(R, length(L))) where R <: AbstractFloat
     D = length(L)
     PI = R(π) # for type stability. Otherwise 2*π*2f0 gets converted to Float64 (and so does 2f0*2π, while 2f0*2*π does not...)
     if basis == :cis
@@ -144,26 +150,31 @@ function make_p²_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol,
             return [(bx*jˣ)^2 + (by*jʸ)^2 for jʸ in j₁:M for jˣ in j₁:M]
         end
     end
-    return R[] # for type stability
+    error("make_p² not implemented for $D dimensions and $basis basis.")
 end
 
+################ Fourier (p-space) images ################
+
+# The following methods create flattened vectors representing Fourier images of momentum operators, such as ℱ[𝑝²(𝑥, 𝑦)](𝑗ʸ𝑗ˣ). These are used in the x-space approach.
+
 """
-Return the tensor of 𝑝ᵢ = -iδ𝜕ᵢ if `basis=:cis` and δ𝜕ᵢ otherwise. The output is real in both cases."
-A real rank-D tensor is returned.
+Return the Fourier image of 𝑝ⁱ = -i𝛿𝜕ⁱ if `basis=:cis` and 𝛿𝜕ⁱ otherwise. The output is real in both cases.
+A flattened vector is returned.
 """
-function make_p_i_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, i::Integer) where R <: AbstractFloat
+function make_pⁱ(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, i::Integer) where R <: AbstractFloat
     if i == 1
-        return make_p_x_tensor(L, M, δ, basis)
+        return make_pˣ(L, M, δ, basis)
     elseif i == 2
-        return make_p_y_tensor(L, M, δ, basis)
+        return make_pʸ(L, M, δ, basis)
     end
+    error("make_pⁱ not implemented for i=$i.")
 end
 
 """
-Return the tensor of 𝑝ₓ = -iδ𝜕ₓ if `basis=:cis` and δ𝜕ₓ otherwise. The output is real in both cases.
-A real rank-D tensor is returned.
+Return the Fourier image of 𝑝ˣ = -i𝛿𝜕ˣ if `basis=:cis` and 𝛿𝜕ˣ otherwise. The output is real in both cases.
+A flattened vector is returned.
 """
-function make_p_x_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
+function make_pˣ(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
     D = length(L)
     PI = R(π)
     if basis == :cis
@@ -183,15 +194,15 @@ function make_p_x_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol)
             return [bx*jˣ for jʸ in j₁:M for jˣ in j₁:M]
         end
     end
+    error("make_pˣ not implemented for $D dimensions and $basis basis.")
 end
 
 """
-Return the tensor of 𝑝ʸ = -i𝛿𝜕ʸ if `basis=:cis` and 𝛿𝜕ʸ otherwise. The output is real in both cases.
-A real rank-D tensor is returned.
+Return the Fourier image of 𝑝ʸ = -i𝛿𝜕ʸ if `basis=:cis` and 𝛿𝜕ʸ otherwise. The output is real in both cases.
+A flattened vector is returned.
 """
-function make_p_y_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
+function make_pʸ(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
     D = length(L)
-    # D == 1 && @error "Only D ≥ 2 supported. For D = 1, use make_p_x."; return
     PI = R(π)
     if basis == :cis
         M_range = [0:M-1; -M:-1]
@@ -204,4 +215,5 @@ function make_p_y_tensor(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol)
             return [by*jʸ for jʸ in j₁:M for jˣ in j₁:M]
         end
     end
+    error("make_pʸ not implemented for $D dimensions and $basis basis.")
 end

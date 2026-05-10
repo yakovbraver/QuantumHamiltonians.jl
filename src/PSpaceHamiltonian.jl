@@ -230,7 +230,7 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
 
         # fill the buffers `K`
         for i in 1:D # iterate over projections of 𝐴
-            pᵢ = make_p_i(L, M, δ, :cis, i)
+            pᵢ = make_pⁱ_matrix(L, M, δ, :cis, i)
             for c in 1:nc
                 if isnothing(𝐴[c, i]) # then add 𝑝ᵢ
                     K[c, i] = pᵢ
@@ -258,7 +258,7 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
 
         # update diagonal blocks
         if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
-            p² = make_p²(L, M, δ, :cis, QS) |> parent # `parent` returns the diagonal as a vector TODO make in-place
+            p² = make_p²_matrix(L, M, δ, :cis, QS) |> parent # `parent` returns the diagonal as a vector TODO make in-place
             for c in 1:nc
                 H_diag[(c-1)B+1:c*B] .= p² .+ U_diags[c]
             end

@@ -75,7 +75,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
         end
         # Add 𝑝² if basis is sin/cos. But if there are no 𝐴's at all, add in the cis case too (if 𝐴's are present, then 𝑝ᵢ²'s will be added together with 𝐴ᵢ's)
         if basis != :cis || all(𝐴ᵢ_present .== false)
-            h .+= make_p²(L, M, δ, basis)
+            h .+= make_p²_matrix(L, M, δ, basis)
             h_set = true
             # @debug "Added 𝑝² to H[$jH, $jH]"
         end
@@ -98,7 +98,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
             if !𝐴ᵢ_present[i] && basis != :cis # if the projection 𝐴ᵢ is zero for all components, then skip 𝐴ᵢ. However, if basis is cis, we cannot skip because also need to add 𝑝ᵢ²
                 continue
             end
-            pᵢ = make_p_i(L, M, δ, basis, i)
+            pᵢ = make_pⁱ_matrix(L, M, δ, basis, i)
             for c in 1:nc
                 if isnothing(𝐴[c, i]) # then there is nothing to do, except adding 𝑝ᵢ² in the cis case
                     if basis == :cis

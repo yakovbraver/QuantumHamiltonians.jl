@@ -179,8 +179,8 @@ surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_ra
 heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Diagonalisation in x-space: faster than p-space
-@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64);
-@time diagonalize!(xh, nev=1, verbose=true); # M=64, nev=1: 1.4 s
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=128);
+@time diagonalize!(xh, nev=1, verbose=true, maxdim=30); # M=64, nev=1: 1.4 s. M=128, nev=1: 12.8s with `maxdim=30`
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, stateno=1);
 heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)

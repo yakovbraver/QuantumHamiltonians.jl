@@ -1,6 +1,6 @@
 """
 A type representing a spatial, 𝐷-dimensional, 𝑛-component, possibly quasimomentum-dependent Hamiltonian (𝐻ᵃᵇ)
-    𝐻ᵃᵃ(𝐱) = [-i𝛿∇ + 𝐪 - 𝐀ᵃ(𝐱)]² + 𝑈ᵃᵃ(𝐱) - iΓᵃ/2
+    𝐻ᵃᵃ(𝐱) = [-i𝛿∇ - 𝐀ᵃ(𝐱) + 𝐪]² + 𝑈ᵃᵃ(𝐱) - iΓᵃ/2
     𝐻ᵃᵇ(𝐱) = 𝑈ᵃᵇ(𝐱)
 as a matrix-free 𝑥-space operator. Here  1 ≤ 𝑎, 𝑏 ≤ 𝑛,  𝐱 = (𝑥¹, …, 𝑥ᴰ),  𝐀ᵃ = (𝐴ᵃ¹, …, 𝐴ᵃᴰ),  𝐪 = (𝑞¹, …, 𝑞ᴰ). 
 `R` is the underlying real scalar type -- typically `Float64` or `Float32`;
@@ -20,11 +20,11 @@ mutable struct XSpaceHamiltonian{R, T, S, FourierTransformer} <: LM.LinearMap{T}
     U::Matrix{Vector{T}} # diagonal elements will contain 𝑈ᵃᵃ + (𝐀ᵃ)² + i𝛿∇𝐀ᵃ - iΓᵃ/2; hence `U` is complex if 𝐴 or Γ is present
     𝐴::Matrix{<:Union{Function, Nothing}} # `𝐴[c, i]` is `i`th projection of the `c`th component of the vector potential
     A::Matrix{Vector{R}} # `A[c, i]` is `i`th projection of the `c`th component of the vector potential
-    ∇::Vector{Vector{R}} # `∇[i]` is the p-space rank-D tensor of 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and δ𝜕ᵢ otherwise. Real in both cases.
-    ∇²::Vector{R} # p-space rank-D tensor of 𝑝² = -𝛿²Δ
-    Γ::Vector{R} # decay rates
-    ε::Vector{S} # eigenvalues, can be complex for nonhermitian `H`, hence additional type `S`
-    V::Matrix{T} # eigenvectors matrix
+    ∇::Vector{Vector{R}} # `∇[i]` is the p-space flattened vector of 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise. Real in both cases.
+    ∇²::Vector{R} # p-space flattened vector of 𝑝² = -𝛿²Δ
+    Γ::Vector{R}  # decay rates
+    ε::Vector{S}  # eigenvalues, can be complex for nonhermitian Hamiltonian, hence additional type `S`
+    V::Matrix{T}  # eigenvectors matrix
     ft::FourierTransformer
     buff_real::Vector{R}
     buff_complex::Vector{Complex{R}}
@@ -67,8 +67,9 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
     D = length(xlims) # number of spatial dimensions
     L = [lims[2] - lims[1] for lims in xlims]
 
-    # `H_isreal` will show if the resulting `H` will be real
+    # `H_isreal` will show if the resulting Hamiltonian map will be real
     𝐴_present = !all(isnothing.(𝐴))
+    # 𝐴 with sin/cos not implemented because that features first-order derivative.
     𝐴_present && basis != :cis && error("XSpaceHamiltonians do not support 𝐴 for $basis basis. Only cis basis is supported.")
     U_isreal = all( 𝑢([xlims[i][1] for i in eachindex(xlims)]...) isa Real for 𝑢 in 𝑈 if !isnothing(𝑢) ) # check if all functions in 𝑈 are real
     H_isreal = U_isreal && !𝐴_present && iszero(Γ) # without checking we assume that all 𝐴 are real. Can be generalised for the exotic cases of complex 𝐴.
@@ -82,8 +83,8 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
     𝑈_diag_allequal = allequal(diagview(𝑈))
     𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing
 
-    ∇ = [make_p_i_tensor(L, M, δ, basis, i) for i in 1:D]
-    ∇² = make_p²_tensor(L, M, δ, basis)
+    ∇ = [make_pⁱ(L, M, δ, basis, i) for i in 1:D]
+    ∇² = make_p²(L, M, δ, basis)
     # U[i, j] contains a D-dimensional array with diagonal entries representing 𝑈ᵢⱼ and off-diagonal entries representing 𝑈ᵢᵢ + 𝐴ᵢ² + i𝛿∇𝐴ᵢ - iΓᵢ/2
     U = [T[] for _ in 1:nc, _ in 1:nc] # by default, make a rank-D 0×0×… tensor
     # A[c, i] contains a D-dimensional array representing `i`th projection of the `c`th component of 𝐴
@@ -153,67 +154,6 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
     V = T[;;] # eigenvectors matrix
 
     return XSpaceHamiltonian(xlims, L, B, δ, nc, basis, ishermitian, 𝑈, U, 𝐴, A, ∇, ∇², Γ, ε, V, ft, buff_real, buff_complex, buff_complex2, buff_complex3, (nc*B, nc*B))
-end
-
-function (xh::XSpaceHamiltonian{R, T})(f_in::StateVector{S, D}) where {R, T, D, S}
-    (;nc, basis, U, A, ∇, ∇², ft) = xh
-    
-    f_in_isreal = S <: Real
-    f_out_isreal = f_in_isreal && T <: Real
-    f_out = similar(f_in, (f_out_isreal ? R : Complex{R}))
-
-    buff = (basis == :cis || !f_in_isreal) ? xh.buff_complex : xh.buff_real
-    buff2 = xh.buff_complex2
-    buff3 = xh.buff_complex3
-
-    # apply Hamiltonian to each component
-    for c in 1:nc
-        # --- apply Laplacian -𝛿²Δ
-        if f_in_isreal && basis == :cis
-            copyto!(buff2, f_in[c]) # `ft` can only act on complex vectors, so need to copy real `f_in[c]` into a complex buffer
-            transform!(buff, ft, buff2; direction=:forward)
-        else
-            transform!(buff, ft, f_in[c]; direction=:forward)
-        end
-
-        # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3`. We use it below for calculating 2i𝛿∑ᵢ𝐴ᵢ∇ᵢ𝑓
-        𝐴_present = row_has_something(A, c)
-        𝐴_present && copy!(buff3, buff)
-
-        @. buff *= ∇²
-
-        if f_out_isreal && basis == :cis
-            # cannot write directly to `f_out[c]` because it is real; write into a complex buffer `buff2` instead
-            transform!(buff2, ft, buff; direction=:backward)
-            vec(f_out[c]) .= real.(buff2)
-        else
-            transform!(f_out[c], ft, buff; direction=:backward, normalise=true)
-        end
-        # --- 
-
-        # appply `U`: diagonal elements U[c, c] also include 𝐴², i𝛿∇𝐴 and decay
-        for b in 1:nc
-            if !iszero(U[c, b])
-                vec(f_out[c]) .+= U[c, b] .* vec(f_in[b])
-            end
-        end
-        
-        # add 2i𝛿∑ᵢ𝐴ᵢ∇ᵢ𝑓 (sum over projections)
-        for i in 1:D
-            if !iszero(A[c, i])
-                # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
-                @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `f_in[c]`
-                transform!(buff, ft, buff2; direction=:backward, normalise=true)
-                if basis == :cis
-                    vec(f_out[c]) .-= 2 .* A[c, i] .* buff # if 𝑓 is real, 𝐴ᵢ∇ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f_out` is complex anyway, so we don't bother
-                else
-                    vec(f_out[c]) .+= 2 .* A[c, i] .* buff .* im
-                end
-            end
-        end
-    end
-    
-    return f_out
 end
 
 "Update `f′` by acting with `xh` on `f`. `f` must be a flattened x-space vector."
@@ -374,6 +314,75 @@ function make_wavefunction(xh::XSpaceHamiltonian{R, T}, v::AbstractVector{T}) wh
     return ntuple(i -> xh.ft.xs[:, i], size(xh.ft.xs, 2))..., ψ # first part splits xs into a tuple (𝑥, 𝑦, …)
 end
 
+################ StateVector approach ################
+
+# The methods below enable diagonalisation whereby an instance of `XSpaceHamiltonian` acts on an instance of `StateVector`,
+# which is a wrapper of an nc-component vector holding D-dimensional tensors. In practice, this is not more convenient than the flattened approach.
+
+"""
+Act with `xh` on a `StateVector`, producing a new `StateVector`.
+Note that components of `f_in` are D-dimensional tensors, while `xh` uses the flattened approach. Therefore, we use `vec`-reshaping on `f_in`.
+"""
+function (xh::XSpaceHamiltonian{R, T})(f_in::StateVector{S, D}) where {R, T, D, S}
+    (;nc, basis, U, A, ∇, ∇², ft) = xh
+    
+    f_in_isreal = S <: Real
+    f_out_isreal = f_in_isreal && T <: Real
+    f_out = similar(f_in, (f_out_isreal ? R : Complex{R}))
+
+    buff = (basis == :cis || !f_in_isreal) ? xh.buff_complex : xh.buff_real
+    buff2 = xh.buff_complex2
+    buff3 = xh.buff_complex3
+
+    # apply Hamiltonian to each component
+    for c in 1:nc
+        # --- apply Laplacian -𝛿²Δ
+        if f_in_isreal && basis == :cis
+            copyto!(buff2, f_in[c]) # `ft` can only act on complex vectors, so need to copy real `f_in[c]` into a complex buffer
+            transform!(buff, ft, buff2; direction=:forward)
+        else
+            transform!(buff, ft, f_in[c]; direction=:forward)
+        end
+
+        # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3`. We use it below for calculating 2i𝛿∑ᵢ𝐴ᵢ∇ᵢ𝑓
+        𝐴_present = row_has_something(A, c)
+        𝐴_present && copy!(buff3, buff)
+
+        @. buff *= ∇²
+
+        if f_out_isreal && basis == :cis
+            # cannot write directly to `f_out[c]` because it is real; write into a complex buffer `buff2` instead
+            transform!(buff2, ft, buff; direction=:backward)
+            vec(f_out[c]) .= real.(buff2)
+        else
+            transform!(f_out[c], ft, buff; direction=:backward, normalise=true)
+        end
+        # --- 
+
+        # appply `U`: diagonal elements U[c, c] also include 𝐴², i𝛿∇𝐴 and decay
+        for b in 1:nc
+            if !iszero(U[c, b])
+                vec(f_out[c]) .+= U[c, b] .* vec(f_in[b])
+            end
+        end
+        
+        # add 2i𝛿∑ᵢ𝐴ᵢ∇ᵢ𝑓 (sum over projections)
+        for i in 1:D
+            if !iszero(A[c, i])
+                # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
+                @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `f_in[c]`
+                transform!(buff, ft, buff2; direction=:backward, normalise=true)
+                if basis == :cis
+                    vec(f_out[c]) .-= 2 .* A[c, i] .* buff # if 𝑓 is real, 𝐴ᵢ∇ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f_out` is complex anyway, so we don't bother
+                else
+                    vec(f_out[c]) .+= 2 .* A[c, i] .* buff .* im
+                end
+            end
+        end
+    end
+    
+    return f_out
+end
 
 """
 Calculate `nev` eigenvectors and eigenvalues via action on a custom `StateVector` type.

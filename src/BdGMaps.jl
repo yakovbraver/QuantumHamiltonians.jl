@@ -130,7 +130,7 @@ Currently, assumes that Hamiltonian is just the Laplacian. The body is to be rep
 function update_H!(bdg_map::BdGMap{T}, xh::PSpaceHamiltonian, q::AbstractVector{<:Real}) where {T}
     Hₚ_diag  = diagview(bdg_map.Hₚ)
     H⁺ₚ_diag = diagview(bdg_map.H⁺ₚ)
-    p²  = make_p²(xh.L, xh.M, xh.δ, :cis, q) |> parent # `parent` returns the diagonal as a vector
+    p²  = make_p²_matrix(xh.L, xh.M, xh.δ, :cis, q) |> parent # `parent` returns the diagonal as a vector
     B = size(xh.H, 2)÷xh.nc # block size
     for c in 1:xh.nc
         Hₚ_diag[(c-1)B+1:c*B]  .= p²
@@ -352,7 +352,7 @@ function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
 
         # block (1, 1)
         copyto!(A, block(1, 1), H, block(1, 1))
-        p² = make_p²(xh.L, xh.M, xh.δ, basis, q) |> parent
+        p² = make_p²_matrix(xh.L, xh.M, xh.δ, basis, q) |> parent
         A₁₁[diagind(A₁₁)] .= p² .+ U_diags[1] .- μs[1]
         @. A₁₁ += 2g[1,1]V₁² + g[1,2]V₂²
 
