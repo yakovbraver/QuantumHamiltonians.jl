@@ -26,13 +26,12 @@ include("DenseHamiltonian.jl")
 include("SparseHamiltonian.jl")
 include("momentum.jl")
 
-include("pspace_gpe_dynamics.jl")
-include("pspace_gpe_stationary.jl")
-include("BdGMaps.jl")
-
 include("StateVector.jl")
 include("FourierTransformerX.jl")
 include("XSpaceHamiltonian.jl")
-include("XSpaceGPEDynamics.jl")
+
+include("gpe_stationary.jl")
+include("pspace_gpe_dynamics.jl")
+include("BdGMaps.jl")
 
 end

@@ -314,6 +314,143 @@ function make_wavefunction(xh::XSpaceHamiltonian{R, T}, v::AbstractVector{T}) wh
     return ntuple(i -> xh.ft.xs[:, i], size(xh.ft.xs, 2))..., ψ # first part splits xs into a tuple (𝑥, 𝑦, …)
 end
 
+# TODO these two methods work both with PSpaceHamiltonian and XSpaceHamiltonian, move to furute QuantumHamiltonian.jl
+
+"""
+Calculate inner product ∫𝑣𝑤d𝑥 (but without d𝑥) between `v` and `w` representing single-component x-space vectors.
+For cis and sin basis, this is just a dot, but for cos we have to treat the edges.
+The information of the basis and problem dimensions is contained in `qh`.
+"""
+@views function inner_prod(v::AbstractVector{<:Number}, w::AbstractVector{<:Number}, qh)
+    s = if qh.basis != :cos
+        dot(v, w)
+    else
+        D = length(qh.xlims)
+        if D == 1
+            dot(v, w) - (v[1]w[1] + v[end]w[end]) / 2
+        elseif D == 2
+            # create reshaped views for convenient indexing
+            v_tensor = reshape(v, size(qh.ft.plan_forward))
+            w_tensor = reshape(w, size(qh.ft.plan_forward))
+            dot.(v, w) -
+            ( dot(v_tensor[1, 2:end-1]  , w_tensor[1, 2:end-1])   +
+              dot(v_tensor[end, 2:end-1], w_tensor[end, 2:end-1]) +
+              dot(v_tensor[2:end-1, 1]  , w_tensor[2:end-1, 1])   +
+              dot(v_tensor[2:end-1, end], w_tensor[2:end-1, end])) / 2 -
+            (v_tensor[1, 1]'*w_tensor[1, 1] + v_tensor[1, end]'*w_tensor[1, end] + v_tensor[end, 1]'*w_tensor[end, 1] + v_tensor[end, end]'*w_tensor[end, end]) * 3/4
+        else
+            error("inner_prod not implemented for cos basis in $D dimensions.")
+        end
+    end
+    dV = prod(qh.ft.xs[2, i] - qh.ft.xs[1, i] for i in axes(qh.ft.xs, 2)) # volume element
+    return s*dV
+end
+
+"""
+Calculate the squared norm ‖𝑣‖² = ∫|𝑣|²d𝑉 for `v` representing single-component x-space vectors.
+For cis and sin basis, this is `sum(abs2, v)`, but for cos we have to treat the edges.
+The information of the basis and problem dimensions is contained in `xh`.
+"""
+@views function norm²(v::AbstractVector{<:Number}, qh)
+    s = if qh.basis != :cos
+        sum(abs2, v)
+    else
+        D = length(qh.xlims)
+        if D == 1
+            sum(abs2, v) - (abs2(v[1]) + abs2(v[end])) / 2
+        elseif D == 2
+            # create reshaped views for convenient indexing
+            v_tensor = reshape(v, size(qh.ft.plan_forward))
+            sum(abs2, v) -
+            (sum(abs2, v_tensor[1, 2:end-1]  )  +
+             sum(abs2, v_tensor[end, 2:end-1])  +
+             sum(abs2, v_tensor[2:end-1, 1]  )  +
+             sum(abs2, v_tensor[2:end-1, end])) / 2 -
+            (abs2(v_tensor[1, 1]) + abs2(v_tensor[1, end]) + abs2(v_tensor[end, 1]) + abs2(v_tensor[end, end])) * 3/4
+        else
+            error("norm² not implemented for cos basis in $D dimensions.")
+        end
+    end
+    dV = prod(qh.ft.xs[2, i] - qh.ft.xs[1, i] for i in axes(qh.ft.xs, 2)) # volume element
+    return s*dV
+end
+
+"""
+Calculate the integral ∫𝑣d𝑉 for `v` representing single-component x-space vectors.
+For cis and sin basis, this is `sum(v)`, but for cos we have to treat the edges.
+The information of the basis and problem dimensions is contained in `xh`.
+"""
+@views function integrate(v::AbstractVector{<:Number}, qh)
+    s = if qh.basis != :cos
+        sum(v)
+    else
+        D = length(qh.xlims)
+        if D == 1
+            sum(v) - (v[1] + v[end]) / 2
+        elseif D == 2
+            # create reshaped views for convenient indexing
+            v_tensor = reshape(v, size(qh.ft.plan_forward))
+            sum(v) -
+            (sum(v_tensor[1, 2:end-1]  )  +
+             sum(v_tensor[end, 2:end-1])  +
+             sum(v_tensor[2:end-1, 1]  )  +
+             sum(v_tensor[2:end-1, end])) / 2 -
+            (v_tensor[1, 1] + v_tensor[1, end] + v_tensor[end, 1] + v_tensor[end, end]) * 3/4
+        else
+            error("inner_prod_premultiplied not implemented for cos basis in $D dimensions.")
+        end
+    end
+    dV = prod(qh.ft.xs[2, i] - qh.ft.xs[1, i] for i in axes(qh.ft.xs, 2)) # volume element
+    return s*dV
+end
+
+"""
+For an x-space state `ψ` in the form of a flattened vector, return `E, μ, η`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each component,
+and `η` is a vector of relative particle numbers of each component.
+By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider a decaying state, whereby imaginary part is important.
+"""
+function get_Eμη(xh::XSpaceHamiltonian, ψ::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc); makereal=true)
+    (;nc, B) = xh
+     
+    η = [@views norm²(ψ[(c-1)B+1:c*B], xh) for c in 1:nc]
+    η_total = sum(η)
+
+    # calculate mean energy of every component 𝑒ᵢ = ⟨𝜓ᵢ|𝐻|𝜓ᵢ⟩
+    Hψ = similar(ψ, nc*B) # buffer for storing the result of 𝐻|𝜓ᵢ⟩; specify length manually because `ψ` might contain chemical potentials in the last `nc` elements
+    mul!(Hψ, xh, ψ)
+    e = [@views inner_prod(Hψ[(c-1)B+1:c*B], ψ[(c-1)B+1:c*B], xh) for c in 1:nc]
+    E = sum(e) / η_total
+    μ = e ./ η
+    
+    if !iszero(g)
+        # pre-calculate squared wf; a vector of vectors is a bit more convenient
+        ψ² = map(1:nc) do c
+            @views abs2.(ψ[(c-1)B+1:c*B])
+        end
+
+        # for each `i`th component: calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝜓ⱼ|², then multiply by |𝜓ᵢ|², then integrate
+        ψ²_sum = similar(ψ²[1])
+        for i in 1:nc
+            ψ²_sum .= 0
+            for j in 1:nc
+                g[i, j] == 0 && continue
+                @. ψ²_sum += g[i, j] * ψ²[j]
+            end
+            ψ²_sum .*= ψ²[i]
+            U = integrate(ψ²_sum, xh)
+            μ[i] += U / η[i]
+            E += U / 2η_total
+        end
+    end
+
+    if makereal
+        return real(E), real(μ), η
+    else
+        return E, μ, η
+    end
+end
+
+
 ################ StateVector approach ################
 
 # The methods below enable diagonalisation whereby an instance of `XSpaceHamiltonian` acts on an instance of `StateVector`,

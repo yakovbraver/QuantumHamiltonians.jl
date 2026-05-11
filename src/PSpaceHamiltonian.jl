@@ -392,7 +392,7 @@ By default, `makereal=true` so that the returned `E` and `μ` are made real (by 
 """
 function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc);
                  v_is_pspace=true, makereal=true) where {Storage, R}
-    (;nc, B, basis, ft) = xh
+    (;nc, B, ft) = xh
      
     if v_is_pspace # if `v` is in p-space, then make `vₚ` point to `v`
         vₚ = v
@@ -414,9 +414,6 @@ function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
     μ = e ./ η
     
     if !iszero(g)
-        # we need `ft` object to get the coordinates
-        v_isreal = eltype(v) <: Real
-        dV = prod(ft.xs[2, i] - ft.xs[1, i] for i in axes(ft.xs, 2)) # volume element
         if v_is_pspace # if `v` is in p-space, then perform FT to x-space
             # create an array of arrays holding squared x-space densities |𝜓(𝑥)|² for each component
             ψ² = map(1:nc) do c
@@ -439,8 +436,7 @@ function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
                 @. ψ²_sum += g[i, j] * ψ²[j]
             end
             ψ²_sum .*= ψ²[i]
-            U = sum(ψ²_sum) * dV # for sin, endpoints are not included but are zero, so this is equivalent to the trapezoid rule. For cis, rectangle rule is more appropriate because there is no boundary
-            basis == :cos && (U -= (ψ²_sum[1] + ψ²_sum[end])/2 * dV)
+            U = integrate(ψ²_sum, xh)
             μ[i] += U / η[i]
             E += U / 2η_total
         end
