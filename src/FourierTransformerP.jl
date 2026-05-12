@@ -72,6 +72,61 @@ function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
     return FourierTransformerP(xs, M, norm_forward, norm_backward, basis, buff, buff_im, did_complex_rxdft, plan_forward, plan_backward)
 end
 
+# TODO consider moving sample! to some other file
+
+"""
+Sample analytic D-argument function `𝑓` at points in `xs`, where first column is 𝑥, second is 𝑦, etc.
+Result is written into `buff`, which can be either D-dimensional or flattened.
+"""
+function sample!(buff::AbstractArray{<:Number}, 𝑓::Function, xs::AbstractVecOrMat{<:Number})
+    D = size(xs, 2)
+    buff_shaped = reshape(buff, ntuple(Returns(size(xs, 1)), D))
+    
+    if D == 1
+        buff_shaped .= 𝑓.(xs)
+    elseif D == 2
+        @views buff_shaped .= 𝑓.(xs[:, 1], xs[:, 2]') # structurally corresponds to f[i, j] = 𝑓(xs[i], ys[j]), i.e. first index is 𝑥, second is 𝑦. 𝑥↓ 𝑦→
+    elseif D == 3
+        for iz in axes(buff_shaped, 3), iy in axes(buff_shaped, 2), ix in axes(buff_shaped, 1)
+            buff_shaped[ix, iy, iz] = 𝑓(xs[ix, 1], xs[iy, 2], xs[iz, 3])
+        end
+    else
+        for I in Iterators.product(axes(buff_shaped)...)
+            buff_shaped[I...] = 𝑓(ntuple(d -> xs[I[d], d], D)...)
+        end
+    end
+    return buff
+end
+
+"""
+Sample analytic D-argument function `𝑓` at points in `xs`, where first column is 𝑥, second is 𝑦, etc.
+Real part of the result is written into `buff_re`, and imaginary to `buff_im`. They can be either D-dimensional or flattened.
+"""
+function sample!(buff_re::AbstractArray, buff_im::AbstractArray, 𝑓::Function, xs::AbstractVecOrMat{<:Number})
+    D = size(xs, 2)
+    buff_re_shaped = reshape(buff_re, ntuple(Returns(size(xs, 1)), D))
+    buff_im_shaped = reshape(buff_im, ntuple(Returns(size(xs, 1)), D))
+
+    if D == 1
+        for ix in axes(buff_re_shaped, 1)
+            buff_re_shaped[ix], buff_im_shaped[ix] = reim(𝑓(xs[ix]))
+        end
+    elseif D == 2
+        for iy in axes(buff_re_shaped, 2), ix in axes(buff_re_shaped, 1)
+            buff_re_shaped[ix, iy], buff_im_shaped[ix, iy] = reim(𝑓(xs[ix, 1], xs[iy, 2]))
+        end
+    elseif D == 3
+        for iz in axes(buff_re_shaped, 3), iy in axes(buff_re_shaped, 2), ix in axes(buff_re_shaped, 1)
+            buff_re_shaped[ix, iy, iz], buff_im_shaped[ix, iy, iz] = reim(𝑓(xs[ix, 1], xs[iy, 2], xs[iz, 3]))
+        end
+    else
+        for I in Iterators.product(axes(buff_re_shaped)...)
+            buff_re_shaped[I...], buff_im_shaped[I...] = reim(𝑓(ntuple(d -> xs[I[d], d], D)...))
+        end
+    end
+    return buff_re, buff_im
+end
+
 "Transform a callable function `𝑓` given in x-space to p-space or reverse."
 function transform!(ft::FourierTransformerP, 𝑓::Function; direction::Symbol=:forward)
     (;xs, norm_forward, norm_backward, basis, buff, buff_im, plan_forward, plan_backward) = ft
@@ -80,24 +135,15 @@ function transform!(ft::FourierTransformerP, 𝑓::Function; direction::Symbol=:
     D = size(xs, 2)
 
     if basis == :cis || 𝑓(xs[1, 1:D]...) isa Real
-        if D == 1
-            buff .= 𝑓.(xs) .* normalisation
-        elseif D == 2
-            @views buff .= 𝑓.(xs[:, 1], xs[:, 2]') .* normalisation # structurally corresponds to f[i, j] = 𝑓(xs[i], ys[j]), i.e. first index is 𝑥, second is 𝑦. 𝑥↓ 𝑦→
-        end
+        sample!(buff, 𝑓, xs)
+        buff .*= normalisation
         plan * buff # in-place transform, weird syntax
         ft.did_complex_rxdft = false
     else # if basis is sin/cos and `𝑓` is complex
         # `FFTW.RxDFT00` can only handle real input. So we transform Re and Im separately.
-        if D == 1
-            for (ix, x) in enumerate(xs)
-                buff[ix], buff_im[ix] = reim(𝑓(x)) .* normalisation
-            end
-        elseif D == 2
-            for iy in axes(xs, 1), ix in axes(xs, 1)
-                buff[ix, iy], buff_im[ix, iy] = reim(𝑓(xs[ix, 1], xs[iy, 2])) .* normalisation
-            end
-        end
+        sample!(buff, buff_im, 𝑓, xs)
+        @turbo buff .*= normalisation
+        @turbo buff_im .*= normalisation
         plan * buff
         plan * buff_im
         ft.did_complex_rxdft = true # will be used in fft_to_operator_*D! to include `buff_im` when constructing the matrix
@@ -199,7 +245,7 @@ end
 """
 Use the result of the D-dimensional transform contained in `ft.buff` to construct (fill) a p-space or x-space state `ψ`.
 For `direction=:forward`, use reshaping to construct a p-space state `ψ` as a 1D vector indexed by (⋯𝑗ʸ𝑗ˣ).
-For `direction=:backward`, construct an x-space state `ψ` as a D-dimensional array indexed by (x, y, ⋯).
+For `direction=:backward`, construct an x-space state `ψ`. If it is a D-dimensional array, then it will be filled as an array indexed by (x, y, ⋯). If it is a vector, if will be a flattened version of this array.
 Pass `makereal=true` to drop the imaginary part of `ft.buff` -- useful in the cis case when constructing x-space state if you know the state must be real.
 """
 function fft_to_state!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward) where D
@@ -209,8 +255,8 @@ function fft_to_state!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP; 
         if direction == :forward # `ψ` is in p-space, and is a 1D vector, so the buffer must be reshaped (linearised)
             FFTW.fftshift!(buff_im, buff) # using `buff_im` as a convenient buffer (specifically made for this case)
             copyto!(ψ, buff_im) # `copyto!` copies contiguously even though shapes are different (`ψ` is 1D vector, `buff_im` is D-dimensional); this is like `ψ = buff_im[:]`
-        else # `ψ` is in x-space, and already D-dimensional like the buffer, so just copy
-            copy!(ψ, buff)
+        else # `ψ` is in x-space, so just copy (contiguously)
+            copyto!(ψ, buff)
         end
     else # sin/cos
         if direction == :forward # `ψ` is in p-space, and is a 1D vector, so the buffer must be reshaped (linearised)
@@ -235,9 +281,9 @@ function fft_to_state!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP; 
             end
             copyto!(ψ, buff) # `copyto!` copies contiguously even though shapes are different; this is like `ψ = buff[:]`
             ft.did_complex_rxdft && (ψ .+= im .* reshape(buff_im, :))
-        else # `ψ` is in x-space, and already D-dimensional like the buffer, so just copy
-            copy!(ψ, buff)
-            ft.did_complex_rxdft && (ψ .+= im .* buff_im)
+        else # `ψ` is in x-space, so just copy (contiguously)
+            copyto!(ψ, buff)
+            ft.did_complex_rxdft && (ψ .+= im .* reshape(buff_im, :))
         end
     end
     return

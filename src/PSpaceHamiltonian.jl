@@ -2,7 +2,7 @@ abstract type PSpaceHamiltonian{Storage, R<:AbstractFloat, T<:Union{R, Complex{R
 # `R` - base real type, `T` - Hamiltonian, eigenvectors elements, `S` - eigenvalues
 # The types are restricted *here*, therefore no need to specify restrictions in functions (except for constructors). E.g. an object with complex R cannot be constructed.
 
-matrix_density(xh::PSpaceHamiltonian) = error("Matrix density calculation is available for sparse Hamiltonians only.")
+matrix_density(ph::PSpaceHamiltonian) = error("Matrix density calculation is available for sparse Hamiltonians only.")
 
 "General dense constructor. If the problem is 1D, 𝐴 may be passed as a vector, whose elements are treated as corresponding to the different components."
 function PSpaceHamiltonian{:dense}(xlims::AbstractVector{Tuple{R,R}},
@@ -65,13 +65,13 @@ Construct 1D coordinate-space eigenfunctions of state numbers `statenos` on a gr
 If a vector of quasimomentum indices `iqxs` is passed, then construct `ψ` for the state `statenos[1]` at the these quasimomenta.
 Return (`xs`, `ψ`) where `ψ[x, components, statenos]` or `ψ[x, components, iqxs]`
 """
-function make_eigenfunctions(xh::PSpaceHamiltonian{Storage,R}; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[]) where {Storage,R}
-    (;L, xlims, B, basis, V, V_q, nc) = xh
-    M = xh.ft.M
+function make_eigenfunctions(ph::PSpaceHamiltonian{Storage,R}; statenos::AbstractVector{<:Integer}, nx::Integer, iqxs::AbstractVector{<:Integer}=Int[]) where {Storage,R}
+    (;L, xlims, B, basis, V, V_q, nc) = ph
+    M = ph.ft.M
     Lx = L[1]
     xs = range(0, Lx, nx) # these are the differences `x - xlims[1]`, with `x ∈ xlims`
     ns = isempty(iqxs) ? length(statenos) : length(iqxs)
-    ψ_type = basis != :cis && eltype(xh.H) <: Real ? R : complex(R)  # `ψ` are real if elements of H are real and if the basis is real (sin/cos)
+    ψ_type = basis != :cis && eltype(ph.H) <: Real ? R : complex(R)  # `ψ` are real if elements of H are real and if the basis is real (sin/cos)
     ψ = Array{ψ_type}(undef, nx, nc, ns)
     if isempty(iqxs) # no quasimomentum index
         for (is, stateno) in enumerate(statenos)
@@ -106,23 +106,22 @@ end
 
 """
 Construct a D-dimensional x-space wave function using its p-space representation `ψₚ` (1D vector).
-Pass integer `pad` to pad `ψₚ` with zeros, interpolating the x-space function as if reconstructed using `2^pad*xh.M` harmonics (instead of `xh.M`).
+Pass integer `pad` to pad `ψₚ` with zeros, interpolating the x-space function as if reconstructed using `2^pad*ph.M` harmonics (instead of `ph.M`).
 Return a tuple (`xs`, `ψ`) where `ψ[component][x, y, …]` while `xs[:, 1]` contains sampled 𝑥, `xs[:, 2]` contains sampled 𝑦, etc..
 """
-function make_wavefunction(xh::PSpaceHamiltonian{Storage, R}, ψₚ::AbstractVector{T}; pad::Integer=0) where {Storage, R, T<:Number}
-    (;xlims, basis, nc) = xh
-    ψₚ_isreal = T <: Real
+function make_wavefunction(ph::PSpaceHamiltonian{Storage, R}, ψₚ::AbstractVector{T}; pad::Integer=0) where {Storage, R, T<:Number}
+    (;xlims, B, basis, nc) = ph
 
-    B = length(ψₚ) ÷ nc # original block-size
     # number of x points in each dimension
-    nx = basis == :cis ? 2xh.ft.M+1 :
-         basis == :sin ?    xh.ft.M : xh.ft.M+1
+    nx = basis == :cis ? 2ph.ft.M+1 :
+         basis == :sin ?    ph.ft.M : ph.ft.M+1
 
-    M = 2^pad * xh.ft.M
+    M = 2^pad * ph.ft.M
     ft = FourierTransformerP(xlims, M; basis, target_rank=1)
     nx_padded = size(ft.xs, 1) # number of x points in each dimension for the padded array
-    
-    ψₓ_type = basis != :cis && ψₚ_isreal ? R : complex(R) # `ψ` are real if elements of `ψₚ` are real and if the basis is real (sin/cos). If basis is real but `ψₚ` are complex, this will yield complex function as expected.
+
+    ψₚ_isreal = T <: Real    
+    ψₓ_type = basis != :cis && ψₚ_isreal ? R : Complex{R} # `ψ` are real if elements of `ψₚ` are real and if the basis is real (sin/cos). If basis is real but `ψₚ` are complex, this will yield complex function as expected.
     D = length(xlims) # number of spatial dimensions
     ψₓ = [Array{ψₓ_type}(undef, ntuple(Returns(nx_padded), D)) for _ in 1:nc]
     
@@ -155,15 +154,28 @@ end
 """
 Construct x-space wave function of eigenstate `stateno`.
 If a vector of quasimomenta indices `iqs = [iqx, iqy, …]` is provided, then construct the wave function at those indices for band number `stateno`.
-Pass integer `pad` to interpolate the x-space function as if reconstructed using `2^pad*xh.M` harmonics (instead of `xh.M`).
-Return a tuple (`xs`, `ψ`) where `ψ[component][x, y, …]` while `xs[:, 1]` contains sampled 𝑥, `xs[:, 2]` contains sampled 𝑦, etc..
+Pass integer `pad` to interpolate the x-space function as if reconstructed using `2^pad*ph.M` harmonics (instead of `ph.M`).
+Return a tuple `(xs, ψ)` where `ψ[component][x, y, …]` while `xs[:, 1]` contains sampled 𝑥, `xs[:, 2]` contains sampled 𝑦, etc..
 """
-function make_eigenfunction(xh::PSpaceHamiltonian{Storage, R}, stateno::Integer, iqs::Union{Nothing, AbstractVector{<:Integer}}=nothing; pad::Integer=0) where {Storage, R}
+function make_eigenfunction(ph::PSpaceHamiltonian{Storage, R}, stateno::Integer, iqs::Union{Nothing, AbstractVector{<:Integer}}=nothing; pad::Integer=0) where {Storage, R}
     if !isnothing(iqs) # if quasimomentum index has been passed
-        make_wavefunction(xh, xh.V_q[:, stateno, iqs...]; pad)
+        make_wavefunction(ph, ph.V_q[:, stateno, iqs...]; pad)
     else
-        make_wavefunction(xh, xh.V[:, stateno]; pad)
+        make_wavefunction(ph, ph.V[:, stateno]; pad)
     end
+end
+
+"""
+Construct D-dimensional x-space wave function by reshaping `ψ_flat` into `ψ` having the format `ψ[component][x, y, …]`.
+The two arrays share the same underlying data.
+Return a tuple `(xs, ys, …, ψ)`.
+"""
+function make_wavefunction_xspace(ph::PSpaceHamiltonian, ψ_flat::AbstractVector)
+    (;B, nc) = ph
+    ψ = map(1:nc) do c
+        @views reshape(ψ_flat[(c-1)B+1:c*B], size(ph.ft.plan_forward))
+    end
+    return ntuple(i -> ph.ft.xs[:, i], size(ph.ft.xs, 2))..., ψ # first part splits xs into a tuple (𝑥, 𝑦, …)
 end
 
 """
@@ -171,13 +183,13 @@ Calculate eigenenergies for all quasimomenta in `qs = [qxs, qys, ...]` where `qx
 Calculate `nev` lowest levels using `ArnoldiMethod`.
 Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 
-Note that `xh.H` is modified in the process. In the case when 𝐴 is absent, only the diagonal of `xh.H` is modified, and it is restored in the end (this is cheap, ~3 ms for M=50).
-When 𝐴 is present, the entire diagonal blocks of `xh.H` are modified, and they are not restored in the end. However, they are constructed from scratch when the function is called rather than using the contents of `xh.H`.
-Thus, in both cases this function can be called repeatedly (e.g. for different `qs`) without reconstructing `xh`.
+Note that `ph.H` is modified in the process. In the case when 𝐴 is absent, only the diagonal of `ph.H` is modified, and it is restored in the end (this is cheap, ~3 ms for M=50).
+When 𝐴 is present, the entire diagonal blocks of `ph.H` are modified, and they are not restored in the end. However, they are constructed from scratch when the function is called rather than using the contents of `ph.H`.
+Thus, in both cases this function can be called repeatedly (e.g. for different `qs`) without reconstructing `ph`.
 """
-function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {Storage, R, T, S}
-    xh.basis != :cis && error("Hamiltonian must be periodic. Construct a new one using the cis basis and try again.")
-    (;B, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
+function diagonalize!(ph::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVector{<:AbstractVector{<:Real}}; nev::Integer, verbose::Bool=false) where {Storage, R, T, S}
+    ph.basis != :cis && error("Hamiltonian must be periodic. Construct a new one using the cis basis and try again.")
+    (;B, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = ph
     D = length(xlims)
     
     if Storage == :dense
@@ -185,15 +197,15 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
         threshold = zero(R) # the value does not matter since it is not used when `makesparse=false`
     else
         makesparse = true
-        threshold = xh.fft_threshold
+        threshold = ph.fft_threshold
     end
 
     nsaves = nev == 0 ? B : nev # number of eigenvalues and eigenvectors to allocate
-    xh.ε_q = Array{S}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # ε_q[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
-    xh.V_q = Array{T}(undef, B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # V_q[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
+    ph.ε_q = Array{S}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # ε_q[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
+    ph.V_q = Array{T}(undef, B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # V_q[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
     
     if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
-        H_diag = diagview(xh.H)
+        H_diag = diagview(ph.H)
         H_diag_copy = copy(H_diag) # a copy for restoring after diagonalisation
         # from the diagonal of each diagonal block of `H`, extract (𝑈ᵢᵢ)₀ (the 0th harmonic of 𝑈ᵢᵢ) plus decay -iΓ/2
         U_diags = T[H_diag[(c-1)B + B÷2+1] for c in 1:nc] # generally, `Hᵢᵢ = -Δᵢᵢ + Uᵢᵢ - iΓ/2`, but Δᵢᵢ = 0 for the central element of the diagonal
@@ -207,7 +219,7 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
             buff2 = nothing
         end
 
-        ft = FourierTransformerP(xlims, xh.ft.M; basis=:cis) # here we need a rank-2 transformer because we will be constructing Hamiltonian blocks
+        ft = FourierTransformerP(xlims, ph.ft.M; basis=:cis) # here we need a rank-2 transformer because we will be constructing Hamiltonian blocks
 
         K = Union{typeof(H), Diagonal{T, Vector{T}}, Nothing}[nothing for _ in CartesianIndices(𝐴)] # Matrix of dimensions like 𝐴 for storing corresponding kinetic operators -iδ∂ᵢ - 𝐴ᵢ
         U = Union{typeof(H), Nothing}[nothing for _ in axes(𝑈, 1)] # for storing terms 𝑈ᵢᵢ
@@ -228,7 +240,7 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
 
         # fill the buffers `K`
         for i in 1:D # iterate over projections of 𝐴
-            pᵢ = make_pⁱ_matrix(L, M, δ, :cis, i)
+            pᵢ = make_pⁱ_matrix(L, ph.ft.M, δ, :cis, i)
             for c in 1:nc
                 if isnothing(𝐴[c, i]) # then add 𝑝ᵢ
                     K[c, i] = pᵢ
@@ -256,15 +268,15 @@ function diagonalize!(xh::PSpaceHamiltonian{Storage, R, T, S}, qs::AbstractVecto
 
         # update diagonal blocks
         if all(isnothing.(𝐴)) # very simple case (with no 𝐴) that we can treat separately
-            p² = make_p²_matrix(L, M, δ, :cis, QS) |> parent # `parent` returns the diagonal as a vector TODO make in-place
+            p² = make_p²_matrix(L, ph.ft.M, δ, :cis, QS) |> parent # `parent` returns the diagonal as a vector TODO make in-place
             for c in 1:nc
                 H_diag[(c-1)B+1:c*B] .= p² .+ U_diags[c]
             end
         else # the general case with 𝐴
-            update_diag!(xh, U, K, QS, 𝑈_diag_allequal, 𝐴ᵢ_allequal, D, buff1, buff2)
+            update_diag!(ph, U, K, QS, 𝑈_diag_allequal, 𝐴ᵢ_allequal, D, buff1, buff2)
         end
 
-        xh.ε_q[:, IQ...], xh.V_q[:, :, IQ...] = diagonalize(xh; nev, verbose)
+        ph.ε_q[:, IQ...], ph.V_q[:, :, IQ...] = diagonalize(ph; nev, verbose)
     end
     all(isnothing.(𝐴)) && copy!(H_diag, H_diag_copy) # restore the original diagonal
     return
@@ -275,10 +287,10 @@ end
 """
 Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
-The result is written into `xh.ε` and `xh.V`.
+The result is written into `ph.ε` and `ph.V`.
 """
-function diagonalize!(xh::PSpaceHamiltonian; nev::Integer, verbose::Bool=false)
-    xh.ε, xh.V = diagonalize(xh; nev, verbose)
+function diagonalize!(ph::PSpaceHamiltonian; nev::Integer, verbose::Bool=false)
+    ph.ε, ph.V = diagonalize(ph; nev, verbose)
     return
 end
 
@@ -287,21 +299,21 @@ Calculate `nev` lowest eigenvectors and eigenvalues using `ArnoldiMethod`.
 Pass `nev=0` for full diagonalisation using `LinearAlgebra`.
 Return a tuple (eigenvalues, eigenvectors).
 """
-function diagonalize(xh::PSpaceHamiltonian{:dense}; nev::Integer, verbose::Bool=false)
+function diagonalize(ph::PSpaceHamiltonian{:dense}; nev::Integer, verbose::Bool=false)
     if nev == 0
-        if xh.ishermitian
-            return eigen(Hermitian(xh.H)) # if `xh.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
+        if ph.ishermitian
+            return eigen(Hermitian(ph.H)) # if `ph.H` is real, the appropriate routine will be selected automatically, no need to use `Symmetric` instead of `Hermitian`
         else
-            return eigen(xh.H)
+            return eigen(ph.H)
         end
     else
-        if xh.ishermitian
-            ps, info = partialschur(dense_linear_map(Hermitian(xh.H)); nev, which=:LM)
+        if ph.ishermitian
+            ps, info = partialschur(dense_linear_map(Hermitian(ph.H)); nev, which=:LM)
             verbose && @show info
             ps.eigenvalues .= inv.(real.(ps.eigenvalues)) # invert back
-            return ps.eigenvalues, ps.Q # here `ps.eigenvalues` is Complex, but once returned it will be copied into real `xh.ε` with no error because imaginary part is zeroed out
+            return ps.eigenvalues, ps.Q # here `ps.eigenvalues` is Complex, but once returned it will be copied into real `ph.ε` with no error because imaginary part is zeroed out
         else
-            ps, info = partialschur(dense_linear_map(xh.H); nev, which=:LM)
+            ps, info = partialschur(dense_linear_map(ph.H); nev, which=:LM)
             verbose && @show info
             ε, V = partialeigen(ps)
             ε .= inv.(ε)
@@ -324,16 +336,16 @@ end
 Calculate `nev` lowest eigenvectors and eigenvalues.
 Return a tuple (eigenvalues, eigenvectors).
 """
-function diagonalize(xh::PSpaceHamiltonian{:sparse}; nev::Integer, verbose::Bool=false)
-    prob = LS.LinearProblem(xh.H, similar(xh.H, size(xh.H, 1)))
+function diagonalize(ph::PSpaceHamiltonian{:sparse}; nev::Integer, verbose::Bool=false)
+    prob = LS.LinearProblem(ph.H, similar(ph.H, size(ph.H, 1)))
     linsolve = LS.init(prob, LS.UMFPACKFactorization())
-    linmap = LinSolveLinMap{eltype(xh.H), typeof(linsolve)}(linsolve, size(xh.H))
+    linmap = LinSolveLinMap{eltype(ph.H), typeof(linsolve)}(linsolve, size(ph.H))
     ps, info = partialschur(linmap; nev, which=:LM);
     verbose && @show info
     ε, V = partialeigen(ps)
     reverse!(ε) # we want final eigenvalues in ascending order (by abs)
     reverse!(V; dims=2) # reverse the eigenvectors accordingly
-    if xh.ishermitian # if xh.H is Hermitian but complex, the solver returns complex eigenvalues
+    if ph.ishermitian # if ph.H is Hermitian but complex, the solver returns complex eigenvalues
         ε .= real.(inv.(ε)) # so we make them real manually
     else
         ε .= inv.(ε)
@@ -378,7 +390,7 @@ end
     mul!(uₚ_buff2, H, uₚ_buff)
     for c in 1:nc
         window = (c-1)B+1:c*B
-        transform!(ft, reshape(uₚ_buff2[window], buff_size); direction=:backward)
+        transform!(ft, uₚ_buff2[window]; direction=:backward)
         fft_to_state!(f′[window], ft; direction=:backward, makereal=(eltype(f′) <: Real))
     end
     return f′
@@ -390,9 +402,9 @@ and `η` is a vector of relative particle numbers of each component.
 `v_is_pspace=true` means that `v` is given in p-space, and x-space otherwise.
 By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider a decaying state, whereby imaginary part is important.
 """
-function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc);
+function get_Eμη(ph::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(ph.δ), ph.nc, ph.nc);
                  v_is_pspace=true, makereal=true) where {Storage, R}
-    (;nc, B, ft) = xh
+    (;nc, B, ft) = ph
      
     if v_is_pspace # if `v` is in p-space, then make `vₚ` point to `v`
         vₚ = v
@@ -402,14 +414,14 @@ function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
         vₚ = Vector{v_type}(undef, length(v))
         @views for c in 1:nc
             window = (c-1)B+1:c*B
-            transform!(ft, v[window]; direction=:forward)
+            transform!(ft, reshape(v[window], size(ft.buff)); direction=:forward)
             fft_to_state!(vₚ[window], ft; direction=:forward)
         end
     end
 
     η = [@views sum(abs2, vₚ[(c-1)B+1:c*B]) for c in 1:nc]
     η_total = sum(η)
-    e = [@views dot(vₚ[(c-1)B+1:c*B], xh.H[(c-1)B+1:c*B, :], vₚ[1:nc*B]) for c in 1:nc] # using `vₚ[1:nc*B]` instead of just `vₚ` because it might contain chemical potentials as the last `nc` elements
+    e = [@views dot(vₚ[(c-1)B+1:c*B], ph.H[(c-1)B+1:c*B, :], vₚ[1:nc*B]) for c in 1:nc] # using `vₚ[1:nc*B]` instead of just `vₚ` because it might contain chemical potentials as the last `nc` elements
     E = sum(e) / η_total
     μ = e ./ η
     
@@ -417,7 +429,7 @@ function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
         if v_is_pspace # if `v` is in p-space, then perform FT to x-space
             # create an array of arrays holding squared x-space densities |𝜓(𝑥)|² for each component
             ψ² = map(1:nc) do c
-                @views transform!(ft, v[(c-1)B+1:c*B]; direction=:backward)
+                @views transform!(ft, reshape(v[(c-1)B+1:c*B], size(ft.buff)); direction=:backward)
                 ψ = fft_to_state(ft; direction=:backward)
                 ψ .= abs2.(ψ)
                 return ψ
@@ -436,7 +448,7 @@ function get_Eμη(xh::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
                 @. ψ²_sum += g[i, j] * ψ²[j]
             end
             ψ²_sum .*= ψ²[i]
-            U = integrate(ψ²_sum, xh)
+            U = integrate(ψ²_sum, ph)
             μ[i] += U / η[i]
             E += U / 2η_total
         end

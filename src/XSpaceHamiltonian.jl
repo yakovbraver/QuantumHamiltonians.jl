@@ -80,14 +80,11 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
     xs = ft.xs
     B = length(ft.plan_forward) # "block size" -- number of points in the contiguous array corresponding to each component
 
-    𝑈_diag_allequal = allequal(diagview(𝑈))
-    𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing
-
     ∇ = [make_pⁱ(L, M, δ, basis, i) for i in 1:D]
     ∇² = make_p²(L, M, δ, basis)
-    # U[i, j] contains a D-dimensional array with diagonal entries representing 𝑈ᵢⱼ and off-diagonal entries representing 𝑈ᵢᵢ + 𝐴ᵢ² + i𝛿∇𝐴ᵢ - iΓᵢ/2
+    # U[a, c] contains a flattened vector with diagonal entries representing 𝑈ᵃᵃ + (𝐀ᵃ)² + i𝛿∇𝐀ᵃ - iΓᵃ/2 and off-diagonal entries representing 𝑈ᵃᶜ
     U = [T[] for _ in 1:nc, _ in 1:nc] # by default, make a rank-D 0×0×… tensor
-    # A[c, i] contains a D-dimensional array representing `i`th projection of the `c`th component of 𝐴
+    # A[c, i] contains a flattened vector representing `i`th projection of the `c`th component of 𝐀
     A = [R[] for _ in 1:nc, _ in 1:D]
     
     δ∇ⁱAᵇⁱ = similar(∇²) # temporary buffer
@@ -105,21 +102,15 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
                     U[b, c] = zeros(T, B) # then allocate zeros for storing 𝐴² or Γ
                 end
             else
-                if D == 1
-                    @views U[b, c] = 𝑈[b, c].(xs[:, 1])
-                elseif D == 2
-                    @views U[b, c] = vec(𝑈[b, c].(xs[:, 1], xs[:, 2]'))
-                end
+                U[b, c] = Vector{T}(undef, B)
+                sample!(U[b, c], 𝑈[b, c], xs)
             end
             # for a diagonal block, also add 𝐴² + i𝛿∇𝐴 - iΓ/2
             if b == c
                 for i in 1:D # for each projection of 𝐴: 𝐴[c, i] is `i`th projection of the `c`th component
                     if !isnothing(𝐴[b, i]) 
-                        if D == 1
-                            @views A[b, i] = 𝐴[b, i].(xs[:, 1])
-                        elseif D == 2
-                            @views A[b, i] = vec(𝐴[b, i].(xs[:, 1], xs[:, 2]'))
-                        end
+                        A[b, i] = Vector{R}(undef, B)
+                        sample!(A[b, i], 𝐴[b, i], xs)
                         
                         # compute 𝛿∇𝐴
                         if basis == :cis
@@ -296,25 +287,26 @@ end
 
 """
 Construct D-dimensional x-space wave function of eigenstate `stateno` having the format `ψ[component][x, y, …]`.
-Return a tuple (`xs`, `ys`, …, `ψ`).
+Return a tuple `(xs, ys, …, ψ)`.
 """
-function make_eigenfunction(xh::XSpaceHamiltonian{R, T}; stateno::Int) where {R, T}
+function make_eigenfunction(xh::XSpaceHamiltonian; stateno::Int)
     make_wavefunction(xh, xh.V[:, stateno])
 end
 
 """
-Construct D-dimensional x-space wave function of eigenstate `stateno` by reshaping xh.V[:, stateno] into `ψ` having the format `ψ[component][x, y, …]`.
-Return a tuple (`xs`, `ys`, …, `ψ`).
+Construct D-dimensional x-space wave function by reshaping `ψ_flat` into `ψ` having the format `ψ[component][x, y, …]`.
+The two arrays share the same underlying data.
+Return a tuple `(xs, ys, …, ψ)`.
 """
-function make_wavefunction(xh::XSpaceHamiltonian{R, T}, v::AbstractVector{T}) where {R, T}
+function make_wavefunction(xh::XSpaceHamiltonian, ψ_flat::AbstractVector)
     (;B, nc) = xh
     ψ = map(1:nc) do c
-        @views reshape(v[(c-1)B+1:c*B], size(xh.ft.plan_forward))
+        @views reshape(ψ_flat[(c-1)B+1:c*B], size(xh.ft.plan_forward))
     end
     return ntuple(i -> xh.ft.xs[:, i], size(xh.ft.xs, 2))..., ψ # first part splits xs into a tuple (𝑥, 𝑦, …)
 end
 
-# TODO these two methods work both with PSpaceHamiltonian and XSpaceHamiltonian, move to furute QuantumHamiltonian.jl
+# TODO these three methods work both with PSpaceHamiltonian and XSpaceHamiltonian, move to furute QuantumHamiltonian.jl
 
 """
 Calculate inner product ∫𝑣𝑤d𝑥 (but without d𝑥) between `v` and `w` representing single-component x-space vectors.
@@ -332,7 +324,7 @@ The information of the basis and problem dimensions is contained in `qh`.
             # create reshaped views for convenient indexing
             v_tensor = reshape(v, size(qh.ft.plan_forward))
             w_tensor = reshape(w, size(qh.ft.plan_forward))
-            dot.(v, w) -
+            dot(v, w) -
             ( dot(v_tensor[1, 2:end-1]  , w_tensor[1, 2:end-1])   +
               dot(v_tensor[end, 2:end-1], w_tensor[end, 2:end-1]) +
               dot(v_tensor[2:end-1, 1]  , w_tensor[2:end-1, 1])   +
@@ -449,7 +441,6 @@ function get_Eμη(xh::XSpaceHamiltonian, ψ::AbstractVector{<:Number}, g::Abstr
         return E, μ, η
     end
 end
-
 
 ################ StateVector approach ################
 

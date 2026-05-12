@@ -15,12 +15,12 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
             # sample each function in ψ₀ at points `ft.xs`
             ψ_input = Vector{R}(undef, nc*(B + !isnothing(natoms)))
             for c in 1:nc
-                ψ_input[(c-1)*B+1:c*B] .= ψ₀[c].(ft.xs)
+                @views sample!(ψ_input[(c-1)B+1:c*B], ψ₀[c], ft.xs)
             end
         else # equations in x-space are complex
             ψ_input = Vector{R}(undef, nc*(2B+!isnothing(natoms)))
-            for c in 1:nc, ix in 1:B
-                ψ_input[(c-1)*2B + ix], ψ_input[(c-1)*2B + B+ix] = reim(ψ₀[c].(ft.xs[ix]))
+            for c in 1:nc
+                @views sample!(ψ_input[(c-1)*2B+1:(c-1)*2B+B], ψ_input[(c-1)*2B+B+1:c*2B], ft.xs)
             end
         end
     end
