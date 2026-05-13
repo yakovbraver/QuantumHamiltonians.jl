@@ -397,46 +397,50 @@ end
 end
 
 """
-For a state `v`, return `E, μ, η`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each component,
-and `η` is a vector of relative particle numbers of each component.
-`v_is_pspace=true` means that `v` is given in p-space, and x-space otherwise.
+For a state `ψ`, return a tuple `(E, μ, N)`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each component,
+and `N` is a vector of particle numbers in each component.
+`state_is_pspace=true` means that `ψ` is a flattened vector in p-space, and a flattende x-space vector otherwise.
+If `ψ` is given in x-space, it is allowed to contain extra `nc` elements representing the chemical potetnials, as returned by [`find_stationary`](@ref).
 By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider a decaying state, whereby imaginary part is important.
 """
-function get_Eμη(ph::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(ph.δ), ph.nc, ph.nc);
-                 v_is_pspace=true, makereal=true) where {Storage, R}
+function get_EμN(ph::PSpaceHamiltonian{Storage, R}, ψ::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(ph.δ), ph.nc, ph.nc);
+                 state_is_pspace=true, makereal=true) where {Storage, R}
     (;nc, B, ft) = ph
      
-    if v_is_pspace # if `v` is in p-space, then make `vₚ` point to `v`
-        vₚ = v
-    else # if `v` is in x-space, then perform FT to transition to p-space
-        v_isreal = eltype(v) <: Real
-        v_type = !v_isreal ? Complex{R} : eltype(ft.buff) # if v in x-space is complex, then result will be complex; otherwise the same as determined in `ft`
-        vₚ = Vector{v_type}(undef, length(v))
+    if state_is_pspace # if `ψ` is in p-space
+        ψₚ = ψ # then make `ψₚ` point to `ψ`; `ψ` will not contain any extra elements (they only appear in x-space stationary solving, but this is p-space)
+    else # if `ψ` is in x-space, then perform FT to transition to p-space
+        v_isreal = eltype(ψ) <: Real
+        v_type = !v_isreal ? Complex{R} : eltype(ft.buff) # if ψ in x-space is complex, then result will be complex; otherwise the same as determined in `ft`
+        ψₚ = Vector{v_type}(undef, nc*B) # specify length manually because `ψ` might contain chemical potentials in the last `nc` elements
         @views for c in 1:nc
             window = (c-1)B+1:c*B
-            transform!(ft, reshape(v[window], size(ft.buff)); direction=:forward)
-            fft_to_state!(vₚ[window], ft; direction=:forward)
+            transform!(ft, reshape(ψ[window], size(ft.buff)); direction=:forward)
+            fft_to_state!(ψₚ[window], ft; direction=:forward)
         end
     end
 
-    η = [@views sum(abs2, vₚ[(c-1)B+1:c*B]) for c in 1:nc]
-    η_total = sum(η)
-    e = [@views dot(vₚ[(c-1)B+1:c*B], ph.H[(c-1)B+1:c*B, :], vₚ[1:nc*B]) for c in 1:nc] # using `vₚ[1:nc*B]` instead of just `vₚ` because it might contain chemical potentials as the last `nc` elements
-    E = sum(e) / η_total
-    μ = e ./ η
+    N = [@views sum(abs2, ψₚ[(c-1)B+1:c*B]) for c in 1:nc]
+    N_total = sum(N)
+
+    # calculate mean energy of every component 𝑒ᵢ = ⟨𝜓ᵢ|𝐻|𝜓ᵢ⟩
+    Hψₚ = ph.H * ψₚ # 𝐻|𝜓ᵢ⟩
+    e = [@views dot(Hψₚ[(c-1)B+1:c*B], ψₚ[(c-1)B+1:c*B]) for c in 1:nc]
+    E = sum(e) / N_total
+    μ = e ./ N
     
     if !iszero(g)
-        if v_is_pspace # if `v` is in p-space, then perform FT to x-space
+        if state_is_pspace # if `ψ` is in p-space, then perform FT to x-space
             # create an array of arrays holding squared x-space densities |𝜓(𝑥)|² for each component
             ψ² = map(1:nc) do c
-                @views transform!(ft, reshape(v[(c-1)B+1:c*B], size(ft.buff)); direction=:backward)
-                ψ = fft_to_state(ft; direction=:backward)
-                ψ .= abs2.(ψ)
-                return ψ
+                @views transform!(ft, reshape(ψ[(c-1)B+1:c*B], size(ft.buff)); direction=:backward)
+                ψₓ = fft_to_state(ft; direction=:backward)
+                ψₓ .= abs2.(ψₓ)
+                return ψₓ
             end
-        else # if `v` is in x-space, then calculate abs2 directly, but we need a vector of vectors instead of contiguous
+        else # if `ψ` is in x-space, then calculate abs2 directly, but we need a vector of vectors instead of contiguous
             ψ² = map(1:nc) do c
-                @views abs2.(v[(c-1)B+1:c*B])
+                @views abs2.(ψ[(c-1)B+1:c*B])
             end
         end
         # for each `i`th component: calculate the sum ∑ⱼ 𝑔ᵢⱼ|𝜓ⱼ|², then multiply by |𝜓ᵢ|², then integrate
@@ -449,13 +453,13 @@ function get_Eμη(ph::PSpaceHamiltonian{Storage, R}, v::AbstractVector{<:Number
             end
             ψ²_sum .*= ψ²[i]
             U = integrate(ψ²_sum, ph)
-            μ[i] += U / η[i]
-            E += U / 2η_total
+            μ[i] += U / N[i]
+            E += U / 2N_total
         end
     end
     if makereal
-        return real(E), real(μ), η
+        return real(E), real(μ), N
     else
-        return E, μ, η
+        return E, μ, N
     end
 end

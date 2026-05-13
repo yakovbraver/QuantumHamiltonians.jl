@@ -31,7 +31,7 @@ g = ones(Float, 2, 2)
 # Get stationary state starting from a basic tanh-sech trial
 @time xs, sol = find_stationary(ph_db, [tanh, sech], g, μs; abstol=1e-12, show_trace=Val(true))
 ψ_db = sol.u
-E, μs, ηs = get_Eμη(ph_db, ψ_db, g; v_is_pspace=false)
+E, μs, ηs = get_EμN(ph_db, ψ_db, g; state_is_pspace=false)
 plot_comps(xs, ψ_db)
 
 # Calculate BdG spectrum. Depending on the (random) init of ArnoldiMethod, this might yield -- in the best case -- a *real* array, with 6 eigenvalues ~1e-7.
@@ -63,7 +63,7 @@ T_max = 50 |> Float
 dt = 1e-3 |> Float
 @time sol = propagate(ph_db, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE.ETDRK2())
 V = sol.u[end]
-E, μs = get_Eμη(ph_db, V, g)
+E, μs = get_EμN(ph_db, V, g)
 xs, U = make_map_comps(ph_db, sol; itime=false)
 figs = [heatmap(xs, sol.t, abs2.(U[:, :, c])', c=CMAP, xlabel="x", ylabel="t") for c in 1:ph_db.nc]
 plot(figs..., layout=(ph_db.nc, 1))
@@ -145,7 +145,7 @@ g = [1    1
 # nlsolve
 @time xs, sol = find_stationary(ph, Ψ₀, g, μs, abstol=1e-11, show_trace=Val(true)) 
 ψ_lattice = sol.u
-get_Eμη(ph, ψ_lattice, g, v_is_pspace=false)
+get_EμN(ph, ψ_lattice, g, state_is_pspace=false)
 plot_comps(xs, ψ_lattice)
 
 @time vals, vecs = bdg_spectrum(ph, ψ_lattice, g, μs, verbose=true, nev=100)
@@ -217,7 +217,7 @@ g = [1 1
 @time xs, sol = find_stationary(ph, Ψ₀, g, μs; abstol=1e-10, show_trace=Val(true))
 ψ_lattice = sol.u
 plot_comps(xs, ψ_lattice)
-get_Eμη(ph, ψ_lattice, g, v_is_pspace=false)
+get_EμN(ph, ψ_lattice, g, state_is_pspace=false)
 
 ### BdG (Fig. 1)
 # using x-space, for this problem Arnoldi works fine
@@ -236,7 +236,7 @@ T_max = 1000 |> Float
 dt = 1e-3 |> Float
 @time sol = propagate(ph, [ψ_lattice[1:end÷2], ψ_lattice[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE.ETDRK2()) # takes ~45 seconds; the time point at which the instability sets in (𝑡 = 500 in the paper) depends on the accuracy of the ODE solver and the accuracy of the initial state
 V = sol.u[end]
-E, μ = get_Eμη(ph, V, g)
+E, μ = get_EμN(ph, V, g)
 xs, U = make_map_comps(ph, sol; itime=false)
 figs = [heatmap(xs, sol.t, abs2.(U[:, :, c])', c=CMAP, xlabel="x", ylabel="t") for c in 1:ph.nc]
 plot(figs..., layout=(ph.nc, 1))

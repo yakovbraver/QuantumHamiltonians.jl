@@ -71,7 +71,7 @@ end
             _, sol = find_stationary(qh, [𝜓₀], [g;;], μ₀; abstol=5e-13)
         end
         @test Int(sol.retcode) == 1 # test for success
-        E = get_Eμη(qh, sol.u, [g;;], v_is_pspace=false)[1]
+        E = get_EμN(qh, sol.u, [g;;], state_is_pspace=false)[1]
         @test E ≈ -0.1581185113871 atol=1e-12 # default NonlinearSolve tolerance for Float64 is ≈ 3e-13
 
         # Calculate BdG and test relevant eigenvalues (calculating all eigenvalues here)
@@ -120,7 +120,7 @@ end
 
     ### Testing for fixed 𝑁ᵢ's
 
-    natoms = get_Eμη(qh, ψ_db, [g;;], v_is_pspace=false)[3] # get numbers of atoms from the above state
+    natoms = get_EμN(qh, ψ_db, [g;;], state_is_pspace=false)[3] # get numbers of atoms from the above state
     # Get stationary state starting from a basic tanh-sech trial, this time for fixed number of atoms and using a guess for 𝜇 given by [2, 1]
     xs, sol = find_stationary(qh, [tanh, sech], [g;;], [2.0, 1.0], natoms; abstol=1e-9)
     @test Int(sol.retcode) == 1 # test for success
@@ -153,8 +153,8 @@ end
     @test Int(sol.retcode) == 1 # test for success
 
     # test energy conservation
-    E1 = get_Eμη(qh, sol.u[1], g)[1]
-    E2 = get_Eμη(qh, sol.u[end], g)[1]
+    E1 = get_EμN(qh, sol.u[1], g)[1]
+    E2 = get_EμN(qh, sol.u[end], g)[1]
     @test abs(E2 - E1) < 1e-5
 
     # test that density remains the same

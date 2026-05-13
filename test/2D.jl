@@ -309,3 +309,52 @@ end
     diagonalize!(qh, nev=1)
     @test qh.ε[1] ≈ 0.039 atol=1e-3
 end
+
+@testset "1-component real stationary state via Newton-Raphson" begin
+    # Ground state in a parabolic potential
+
+    𝑈(x::Real, y::Real) = x^2 + y^2
+
+    R = 5.0
+    xlimits = (-R, R)
+
+    # Newton-Raphson under fixed total number of particles
+    natoms = 1.0
+    𝜓₀(x, y) = exp(-x^2 - y^2) # initial guess
+    g = 100.0
+    μ₀ = 5.0
+
+    for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace)
+        M = basis == :cis ? 16 :
+            basis == :sin ? 31 : 32
+
+        if kind == :xspace
+            qh = XSpaceHamiltonian([xlimits, xlimits], 𝑈; basis, M)
+        else
+            (kind == :sparse && basis != :cis) && continue # sparse is only implemented for cis
+            kwargs = kind == :sparse ? (;fft_threshold=1e-3) : (;) # pass `fft_threshold` for sparse; otherwise pass an empty named tuple
+            qh = PSpaceHamiltonian{kind}([xlimits, xlimits], 𝑈; basis, 𝑈_iseven=true, M, kwargs...)
+        end
+        
+        xs, sol = find_stationary(qh, [𝜓₀], [g;;], μ₀, natoms)
+        if kind != :xspace
+            E, μ, N = get_EμN(qh, sol.u, [g;;]; state_is_pspace=false) # can pass `sol.u` despite it having extra elements
+        else
+            E, μ, N = get_EμN(qh, sol.u, [g;;]) # can pass `sol.u` despite it having extra elements
+        end
+
+        @test E ≈ 5.79206 atol=1e-5
+        @test μ[1] ≈ 8.28601 atol=1e-5
+        @test μ[1] ≈ sol.u[end] atol=1e-12 # this should be the same value, but μ[1] is calculated using sol.u
+        @test N[1] ≈ natoms atol=1e-12
+
+        if kind == :xspace
+            @views xs, ys, ψ = make_wavefunction(qh, sol.u[1:end-1])
+        else
+            @views xs, ys, ψ = QuantumHamiltonians.make_wavefunction_xspace(qh, sol.u[1:end-1])
+        end
+
+        @test ψ[1][end÷2, end÷2] ≈ 0.28 atol=0.01
+    end
+
+end

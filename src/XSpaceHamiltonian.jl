@@ -389,7 +389,7 @@ The information of the basis and problem dimensions is contained in `xh`.
              sum(v_tensor[2:end-1, end])) / 2 -
             (v_tensor[1, 1] + v_tensor[1, end] + v_tensor[end, 1] + v_tensor[end, end]) * 3/4
         else
-            error("inner_prod_premultiplied not implemented for cos basis in $D dimensions.")
+            error("integrate not implemented for cos basis in $D dimensions.")
         end
     end
     dV = prod(qh.ft.xs[2, i] - qh.ft.xs[1, i] for i in axes(qh.ft.xs, 2)) # volume element
@@ -397,22 +397,23 @@ The information of the basis and problem dimensions is contained in `xh`.
 end
 
 """
-For an x-space state `ψ` in the form of a flattened vector, return `E, μ, η`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each component,
-and `η` is a vector of relative particle numbers of each component.
+For an x-space state `ψ` in the form of a flattened vector, return a tuple `(E, μ, N)`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each component,
+and `N` is a vector of particle numbers in each component.
+The input state `ψ` is allowed to contain extra `nc` elements representing the chemical potetnials, as returned by [`find_stationary`](@ref).
 By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider a decaying state, whereby imaginary part is important.
 """
-function get_Eμη(xh::XSpaceHamiltonian, ψ::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc); makereal=true)
+function get_EμN(xh::XSpaceHamiltonian, ψ::AbstractVector{<:Number}, g::AbstractMatrix{<:Number}=zeros(typeof(xh.δ), xh.nc, xh.nc); makereal=true)
     (;nc, B) = xh
      
-    η = [@views norm²(ψ[(c-1)B+1:c*B], xh) for c in 1:nc]
-    η_total = sum(η)
+    N = [@views norm²(ψ[(c-1)B+1:c*B], xh) for c in 1:nc]
+    N_total = sum(N)
 
     # calculate mean energy of every component 𝑒ᵢ = ⟨𝜓ᵢ|𝐻|𝜓ᵢ⟩
     Hψ = similar(ψ, nc*B) # buffer for storing the result of 𝐻|𝜓ᵢ⟩; specify length manually because `ψ` might contain chemical potentials in the last `nc` elements
-    mul!(Hψ, xh, ψ)
+    @views mul!(Hψ, xh, ψ[1:nc*B]) # likewise make a view to exlude possible final elements
     e = [@views inner_prod(Hψ[(c-1)B+1:c*B], ψ[(c-1)B+1:c*B], xh) for c in 1:nc]
-    E = sum(e) / η_total
-    μ = e ./ η
+    E = sum(e) / N_total
+    μ = e ./ N
     
     if !iszero(g)
         # pre-calculate squared wf; a vector of vectors is a bit more convenient
@@ -430,15 +431,15 @@ function get_Eμη(xh::XSpaceHamiltonian, ψ::AbstractVector{<:Number}, g::Abstr
             end
             ψ²_sum .*= ψ²[i]
             U = integrate(ψ²_sum, xh)
-            μ[i] += U / η[i]
-            E += U / 2η_total
+            μ[i] += U / N[i]
+            E += U / 2N_total
         end
     end
 
     if makereal
-        return real(E), real(μ), η
+        return real(E), real(μ), N
     else
-        return E, μ, η
+        return E, μ, N
     end
 end
 

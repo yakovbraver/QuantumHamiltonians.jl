@@ -49,7 +49,7 @@ dt = 1 |> Float
 gs = 1 # guess number
 @time sol = propagate(ph, guesses[gs]; ψ₀_iseven=guesses_iseven[gs], T_max, dt, itime=true)
 v = sol.u[end]
-get_Eμη(ph, v)
+get_EμN(ph, v)
 
 xs, ψ = make_wavefunction(ph, v)
 plot(xs, real(ψ[1]))
@@ -64,7 +64,7 @@ T_max = 5 |> Float
 dt = 1e-4 |> Float
 @time sol = propagate(ph, one, g; T_max, dt, itime=true)
 V = sol.u[end]
-get_Eμη(ph, V, [g;;])
+get_EμN(ph, V, [g;;])
 
 xs, ψD = make_wavefunction(ph, V)
 plot(xs, real(ψD[1]), ylims=(-0.5, 0.5))
@@ -103,7 +103,7 @@ scatter!(ps, ph.ε, label="numerics")
 
 g = 500 |> Float # nonlinearity
 
-μ = get_Eμη(ph, ph.V[:, 1], [g;;])[2]
+μ = get_EμN(ph, ph.V[:, 1], [g;;])[2]
 xs, ψ = make_wavefunction(ph, ph.V[:, 1])
 vals, vecs = bdg_spectrum(ph, real(ψ[1]), g, μ[1])
 
@@ -166,7 +166,7 @@ T_max = 1 |> Float
 dt = 1e-4 |> Float
 @time sol = propagate(ph, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true)
 V = sol.u[end]
-E, μ₀ = get_Eμη(ph, V, [g;;])
+E, μ₀ = get_EμN(ph, V, [g;;])
 xs, ψ = make_wavefunction(ph, V)
 plot(xs, real(ψ[1]))
 plot!(xs, imag(ψ[1]))
@@ -175,7 +175,7 @@ plot!(xs, imag(ψ[1]))
 natoms = 1.0
 @time xs, sol = find_stationary(ph, [𝜓₀], [g;;], μ₀, natoms; show_trace=Val(true))
 ψ = sol.u[1:end-1] # last element is the chemical potential
-E, μ = get_Eμη(ph, ψ, [g;;], v_is_pspace=false)
+E, μ = get_EμN(ph, ψ, [g;;], state_is_pspace=false)
 plot!(xs, ψ)
 
 #### Real-time propagation of a displaced soliton
@@ -197,7 +197,7 @@ nsaves = 500
 @time sol = propagate(ph, ψ₀, g; T_max, dt, itime=false, nsaves)
 
 v = sol.u[end]
-get_Eμη(ph, v, [g;;])
+get_EμN(ph, v, [g;;])
 xs, ψ = make_wavefunction(ph, v)
 plot(xs, abs2.(ψ[1]))
 
@@ -245,7 +245,7 @@ g = -1 |> Float # nonlinearity
 μ₀ = -1 |> Float
 @time xs, sol = find_stationary(ph, [𝜓₀], [g;;], μ₀, show_trace=Val(true))
 ψ_nln = sol.u
-E, μ = get_Eμη(ph, sol.u, [g;;], v_is_pspace=false)
+E, μ = get_EμN(ph, sol.u, [g;;], state_is_pspace=false)
 plot(xs, ψ_nln)
 
 #### Calculate real-time dynamics ####

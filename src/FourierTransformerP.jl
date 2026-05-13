@@ -248,7 +248,7 @@ For `direction=:forward`, use reshaping to construct a p-space state `ψ` as a 1
 For `direction=:backward`, construct an x-space state `ψ`. If it is a D-dimensional array, then it will be filled as an array indexed by (x, y, ⋯). If it is a vector, if will be a flattened version of this array.
 Pass `makereal=true` to drop the imaginary part of `ft.buff` -- useful in the cis case when constructing x-space state if you know the state must be real.
 """
-function fft_to_state!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward) where D
+function fft_to_state!(ψ::AbstractArray{<:Number}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward)
     (;buff, buff_im, basis) = ft
     makereal && (buff .= real.(buff))
     if basis == :cis
@@ -260,6 +260,7 @@ function fft_to_state!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP; 
         end
     else # sin/cos
         if direction == :forward # `ψ` is in p-space, and is a 1D vector, so the buffer must be reshaped (linearised)
+            D = ndims(buff)
             # proper normalisation of the zeroth and last harmonic; do this for the D-dimensional buffer (more convenient than for linearised ψ)
             if basis == :cos
                 if D == 1

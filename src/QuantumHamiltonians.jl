@@ -16,7 +16,7 @@ using LoopVectorization: @turbo
 
 export PSpaceHamiltonian, diagonalize!, make_eigenfunction, make_eigenfunctions, matrix_density, make_wavefunction,
        compute_wanniers!, make_wannierfunctions, make_wanniers_real, compute_tunneling, compute_tb_hamiltonian,
-       propagate, get_Eμη, bdg_spectrum, find_stationary
+       propagate, get_EμN, bdg_spectrum, find_stationary
 export StateVector, XSpaceHamiltonian
 
 include("PSpaceHamiltonian.jl")

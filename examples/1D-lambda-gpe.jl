@@ -57,7 +57,7 @@ g = 100 |> Float # nonlinearity
 natoms = 1 |> Float
 @time xs, sol = find_stationary(xhD, [one], [g;;], μ, natoms; maxiters=100, abstol=1e-10, show_trace=Val(true))
 ψD = sol.u[1:end-1] # omit the last element of sol.u, which is μ
-E, μs, η = get_Eμη(xhD, ψD, [g;;], v_is_pspace=false)
+E, μs, η = get_EμN(xhD, ψD, [g;;], state_is_pspace=false)
 plot(xs, ψD[1:size(xhD.H, 1)])
 
 ################ 3-component system ################
@@ -91,8 +91,8 @@ g = [100 100 0
 
 # Newton-Raphson under the constraint of the total number of particles equal to 1; using `μs[1]` from above as the initial guess
 @time xs, sol = find_stationary(xh, Ψ₀, g, μs[1], natoms; maxiters=100, abstol=1e-10, show_trace=Val(true))
-ψ_nln = sol.u # note that last 3 elements contain μ's, but this does not bother most of our functions (such as `get_Eμη` or `plot_comps`)
-E, μs, η = get_Eμη(xh, ψ_nln, g, v_is_pspace=false)
+ψ_nln = sol.u # note that last 3 elements contain μ's, but this does not bother most of our functions (such as `get_EμN` or `plot_comps`)
+E, μs, η = get_EμN(xh, ψ_nln, g, state_is_pspace=false)
 plot_comps(xs, ψ_nln)
 
 ################ Fields off ################
@@ -105,7 +105,7 @@ nsaves = 1000
 T_max = 1 / τ |> Float # divide desired time in ms by τ
 dt = 2e-4 |> Float
 @time sol_dynamics = propagate(xh_2comp, [ψ_nln[1:B], ψ_nln[B+1:2B]], g; T_max, dt, itime=false, nsaves)
-get_Eμη(xh_2comp, sol_dynamics.u[end], g)[1] / get_Eμη(xh_2comp, sol_dynamics.u[1], g)[1] # relative change in energy (final/initial)
+get_EμN(xh_2comp, sol_dynamics.u[end], g)[1] / get_EμN(xh_2comp, sol_dynamics.u[1], g)[1] # relative change in energy (final/initial)
 
 xs, U = make_map_comps(xh_2comp, sol_dynamics)
 ts = sol_dynamics.t * τ
@@ -117,7 +117,7 @@ plot(figs..., layout=(1, xh_2comp.nc))
 # Find stationary state with the fields off, keeping the number of atoms `η` in the two commponents the same as in the fields-on 3-component case, and use the guess for μs from above
 @time xs, sol = find_stationary(xh_2comp, [ψ_nln[1:B], ψ_nln[B+1:2B]], g, μs[1:2], η[1:2]; show_trace=Val(true), abstol=1e-11)
 ψ_2comp = sol.u[1:2B] # note that last 2 elements contain μ's
-_, μ_2comp_stationary, _ = get_Eμη(xh_2comp, ψ_2comp, g, v_is_pspace=false)
+_, μ_2comp_stationary, _ = get_EμN(xh_2comp, ψ_2comp, g, state_is_pspace=false)
 plot_comps(xs, ψ_2comp)
 
 #### BdG ####
@@ -154,7 +154,7 @@ nsaves = 1000
 T_max = 1 / τ |> Float # divide desired time in ms by τ
 dt = 2e-4 |> Float
 @time sol_dynamics = propagate(xh_2comp, [ψ_2comp[1:B], ψ_2comp[B+1:2B]], g; T_max, dt, itime=false, nsaves)
-get_Eμη(xh_2comp, sol_dynamics.u[end], g)[1] / get_Eμη(xh_2comp, sol_dynamics.u[1], g)[1] # relative change in energy (final/initial)
+get_EμN(xh_2comp, sol_dynamics.u[end], g)[1] / get_EμN(xh_2comp, sol_dynamics.u[1], g)[1] # relative change in energy (final/initial)
 
 xs, U = make_map_comps(xh_2comp, sol_dynamics)
 ts = sol_dynamics.t * τ
