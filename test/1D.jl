@@ -203,3 +203,93 @@ end
     @test length(indx) == 4 # there should be 4 unstable eigenvalues
     @test isapprox.(sort(vals[indx]; by=imag), vals_true; atol=1e-2) |> all
 end
+
+# ~ 1 min 15 s
+@testset "1-component imaginary and real dynamics" begin
+    # Soliton in a harmonic potential; Na-23 parameters similar to https://doi.org/10.1103/PhysRevLett.87.130402 (https://arxiv.org/abs/cond-mat/0104549)
+
+    m = 3.8165e-26
+    aₛ = 2.5e-9
+    h = 6.62607015e-34
+    ħ = h / 2π
+    ω = 3.5 * 2π # 1D trap frequency
+    a₀ = √(ħ / (m*ω)) # [1/m] -- unit of length
+    α = 100 # ω⟂ / ω ratio
+    τ = 1/ω # [s] unit of time
+
+    n_atoms = 1e4
+    g = 2 * α * (aₛ/a₀) * n_atoms # coefficient of nonlinearity
+    R = 11.0 # trap half-length, in units of a₀
+
+    δ = √0.5 # coefficient of the momentum term
+
+    𝑈(x::Real) = x^2 / 2
+
+    xlimits = (-R, R)
+
+    # construct analytic soliton trial
+    natoms = 1.0
+    p = 1/√(2R) # value of wf in the bulk (= ground state solution for the free case)
+    ξ = √(1/(p^2 * g)) # healing length
+    𝜓₀(x) = p * tanh(x/ξ) # soliton trial
+    μ₀ = 40.0
+
+    for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace)
+        M = basis == :cis ? (kind == :xspace ? 64 : 62) :
+            basis == :sin ? 127 : 128
+
+        if kind == :xspace
+            qh = XSpaceHamiltonian([xlimits], 𝑈; basis, M, δ)
+        else
+            (kind == :sparse && basis != :cis) && continue # sparse is only implemented for cis
+            kwargs = kind == :sparse ? (;fft_threshold=1e-3) : (;) # pass `fft_threshold` for sparse; otherwise pass an empty named tuple
+            qh = PSpaceHamiltonian{kind}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ, kwargs...)
+        end
+        
+        # find soliton state using Newton-Raphson
+        xs, sol = find_stationary(qh, [𝜓₀], [g;;], μ₀, natoms)
+        if kind != :xspace
+            E_nr, μ_nr, N_nr = get_EμN(qh, sol.u, [g;;]; state_is_pspace=false) # can pass `sol.u` despite it having extra elements
+        else
+            E_nr, μ_nr, N_nr = get_EμN(qh, sol.u, [g;;]) # can pass `sol.u` despite it having extra elements
+        end
+
+        ### imaginary time test: calculate a soliton, compare with Newton-Raphson
+
+        # find soliton state using imaginary time
+        T_max = 1.0
+        dt = 1e-4
+        sol = propagate(qh, 𝜓₀, g; T_max, dt, itime=true, solver=QuantumHamiltonians.ODE.LawsonEuler(;krylov=true, m=5))
+        E_itime, μ_itime, N_itime = get_EμN(qh, sol.u[end], [g;;])
+
+        # compare itime agains NR
+        @test N_itime[1] ≈ natoms atol=1e-10
+        @test E_itime ≈ E_nr rtol=1e-5
+        @test μ_itime[1] ≈ μ_nr[1] rtol=5e-4
+
+        ### real time test: calculate half-period of oscillations, check energy conservation and check that wf minimum is at roughly -5
+
+        # get ground state
+        xs, sol = find_stationary(qh, [one], [g;;], μ₀, natoms)
+        ψ = @view sol.u[1:end-1] # last element is the chemical potential
+        # create a displaced soliton
+        ψ₀ = real(ψ) .* tanh.(9 .* (xs .- 5)) |> vec
+
+        T_max = π√2 # soliton oscillation half-period, in units of 1/ω
+        dt = 1e-3
+        nsaves = 2
+        G = kind == :xspace ? [g;;] : g # work-around for interface difference 
+        sol = propagate(qh, ψ₀, G; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE.ETDRK4(;krylov=true, m=5))
+
+        E_final = get_EμN(qh, sol.u[end], [g;;])[1]
+        E_initial = get_EμN(qh, sol.u[1], [g;;])[1]
+        @test E_final ≈ E_initial rtol=1e-4
+
+        xs, ψ = make_wavefunction(qh, sol.u[end])
+        window = -7 .< xs .< 7
+        xs_reduced = xs[window]
+        ψ²_min, ix_min = findmin(abs2, ψ[1][window]) # find minimum of the density on 𝑥 ∈ (-7, 7)
+        @test xs_reduced[ix_min] ≈ -5.3 atol=0.5
+        @test ψ²_min < 0.0021
+    end
+end
