@@ -148,7 +148,7 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
 end
 
 "Update `f′` by acting with `xh` on `f`. `f` must be a flattened x-space vector."
-function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T, D}, f::AbstractVector{S}) where {R, T, D, S}
+function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}) where {R, T, S}
     (;nc, B, basis, U, A, ∇, ∇², ft) = xh
     f_isreal = S <: Real
     f′_isreal = eltype(f′) <: Real
@@ -306,7 +306,7 @@ function make_wavefunction(xh::XSpaceHamiltonian, ψ_flat::AbstractVector)
     return ntuple(i -> xh.ft.xs[:, i], size(xh.ft.xs, 2))..., ψ # first part splits xs into a tuple (𝑥, 𝑦, …)
 end
 
-# TODO these three methods work both with PSpaceHamiltonian and XSpaceHamiltonian, move to furute QuantumHamiltonian.jl
+# TODO these four methods work both with PSpaceHamiltonian and XSpaceHamiltonian, move to furute QuantumHamiltonian.jl
 
 """
 Calculate inner product ∫𝑣𝑤d𝑥 (but without d𝑥) between `v` and `w` representing single-component x-space vectors.
@@ -394,6 +394,15 @@ The information of the basis and problem dimensions is contained in `xh`.
     end
     dV = prod(qh.ft.xs[2, i] - qh.ft.xs[1, i] for i in axes(qh.ft.xs, 2)) # volume element
     return s*dV
+end
+
+"""
+Normalise x-space 1-component flattened state `v` so that ∫|𝑣|²d𝑉 = 1.
+The information of the basis and problem dimensions is contained in `qh`.
+"""
+function LA.normalize!(v::AbstractVector{<:Number}, qh::XSpaceHamiltonian)
+    n = √norm²(v, qh)
+    v ./= n
 end
 
 """

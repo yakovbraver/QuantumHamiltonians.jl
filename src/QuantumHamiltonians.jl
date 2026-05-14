@@ -31,7 +31,8 @@ include("FourierTransformerX.jl")
 include("XSpaceHamiltonian.jl")
 
 include("gpe_stationary.jl")
-include("pspace_gpe_dynamics.jl")
+include("gpe_dynamics_pspace.jl")
+include("gpe_dynamics_xspace.jl")
 include("BdGMaps.jl")
 
 end
