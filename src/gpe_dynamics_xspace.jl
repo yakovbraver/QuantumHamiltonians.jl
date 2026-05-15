@@ -1,38 +1,43 @@
-"Convenience caller for the 1-component case, where `ψ₀` is an analytic function or a vector representing discretised functions, `g` is a number, and `ψ₀_iseven` is a Bool."
-function propagate(xh::XSpaceHamiltonian{R}, ψ₀::Function, g::R=zero(R);
-                  T_max::R, dt::R, itime::Bool=false,
-                   solver=(iszero(g) ? ODE.LinearExponential(;krylov=:simple, m=30) : itime ? ODE.LawsonEuler(;krylov=true) : ODE.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R}
+"Convenience caller for the 1-component case, where `ψ₀` is an analytic function or an array representing the discretised function, `g` is a number, and `ψ₀_iseven` is a Bool."
+function propagate(xh::XSpaceHamiltonian{R}, ψ₀::Union{Function, AbstractArray{<:Number}}, g::R;
+                   T_max::R, dt::R, itime::Bool=false,
+                   solver=(itime ? ODE.LawsonEuler(;krylov=true) : ODE.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R}
     propagate(xh, [ψ₀], [g;;]; T_max, dt, itime, solver, nsaves)
 end
 
 """
 Propagate the time-dependent Schrödinger or Gross-Pitaevskii (with nonlinearity matrix `g`) equation (SE and GPE, respectively) for the initial wave function `ψ₀`.
 `ψ₀` can be:
-    * a vector of x-space analytic functions (one for each component)
-    * a flattened, contiguous x-space vector representing the state
+    1. A vector of x-space analytic functions (one for each component);
+    2. A vector of etiher D-dimensional arrays or flattened vectors, one for each component, representing discretised x-space functions.
+    3. An x-space flattened vector, such as one obtained during diagonalisation. This is the format using throughout the solving; inputs of types 1 and 2 are converted to this type.
 Set `itime=true` for imaginary time propagation.
-`ψ₀_iseven[c]` matters only if basis is cis, `g`s are zero (SE case), and `ψ₀` is given in x-space. It shows whether `ψ₀[c]` is an even function (i.e. whether ψ(x) = ψ(-x)).
-If it is, then if `xh.H` is also real, the imaginary time propagation will be done for a real type.
-`solver` is a solver from DifferentialEquations.jl. For SE, recommended are `LinearExponential` (default) or state-independent ones from https://docs.sciml.ai/DiffEqDocs/stable/solvers/nonautonomous_linear_ode/.
-For GPE, recommended are the Semilinear Split ODE Solvers from https://docs.sciml.ai/DiffEqDocs/stable/solvers/split_ode_solve/.
-For imaginary-time GPE, the default is `LawsonEuler`, which is first order (and hence fast), but is sufficient when the time step is small.
-For real-time GPE, the default is `ETDRK4`; lower order variants can also be used for quick results. `HochOst4` seems to conserve the norm even better, but is a bit slower.
+`solver` is a DifferentialEquations.jl Semilinear Split ODE Solvers from https://docs.sciml.ai/DiffEqDocs/stable/solvers/split_ode_solve/, with Krylov iteration necessarily enabled.
+For imaginary-time GPE, the default is `LawsonEuler(;krylov=true)`, which is first order (and hence fast), but is sufficient when the time step is small.
+For real-time GPE, the default is `ETDRK4(;krylov=true)`; lower order variants can also be used for quick results. `HochOst4` seems to conserve the norm even better, but is a bit slower.
 Return the DifferentialEquations solution object. 
 """
-function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
+function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}, AbstractVector{<:AbstractArray{<:Number}}}, g::AbstractMatrix{R};
                    T_max::R, dt::R, itime::Bool=false,
-                   solver=(iszero(g) ? ODE.LinearExponential(;krylov=:simple, m=30) : itime ? ODE.LawsonEuler(;krylov=true) : ODE.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R, T}
+                   solver=(itime ? ODE.LawsonEuler(;krylov=true) : ODE.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R, T}
     (;xlims, B, nc, ft) = xh
 
     # determine if equation is real (in x-space)
     eq_isreal = itime && T <: Real # below `eq_isreal` might change if initial state is complex
 
-    # Prepare the input wf.
-    if ψ₀ isa AbstractVector{<:Number} # `ψ₀` is given in p-space
+    # prepare the input wf
+    if ψ₀ isa AbstractVector{<:Number} # `ψ₀` is already a flattened vector, but we might need to copy it into a complex array
         ψ₀_isreal = eltype(ψ₀) <: Real
         eq_isreal &= ψ₀_isreal
         ψ_input = ψ₀_isreal && !eq_isreal ? complex(ψ₀) : ψ₀  # if the passed initial is real but equation is not, then convert; otherwise take as-is
-    else  # `ψ₀` a vector of analytic functions
+    elseif ψ₀ isa AbstractVector{<:AbstractArray{<:Number}} # then need to flatten each and put into a contiguous array
+        ψ₀_arereal = all(eltype(ψ) <: Real for ψ in ψ₀)
+        eq_isreal &= ψ₀_arereal
+        ψ_input = Vector{eq_isreal ? R : Complex{R}}(undef, nc*B)
+        for c in 1:nc
+            copyto!(ψ_input, (c-1)B+1, ψ₀[c], 1, B) # copy `B` (= all) elements of `ψ₀[c]`, starting at 1st, to `ψ_input`, starting at element (c-1)B+1. `ψ₀[c]` might be D-dimensional, but `copyto!` automatically flattens it (i.e. treats it as a contiguous vector)
+        end
+    else # `ψ₀` a vector of analytic functions
         ψ₀_arereal = [ ψ([xlims[i][1] for i in eachindex(xlims)]...) isa Real for ψ in ψ₀ ]
         eq_isreal &= all(ψ₀_arereal)
         ψ_input = Vector{eq_isreal ? R : Complex{R}}(undef, nc*B)
@@ -58,11 +63,7 @@ function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Fu
     params = (g_input, xh, H_factor)
     xh_op = SciMLOperators.FunctionOperator(XSpaceHamiltonianGPE!, similar(ψ_input); u=ψ_input, p=params, isconstant=true)
 
-    if iszero(g) # nonlinearity absent
-        prob = ODE.ODEProblem(xh_op, ψ_input, tspan, params)
-    else # nonlinearity present
-        prob = ODE.SplitODEProblem(xh_op, gpe_1comp!, ψ_input, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
-    end
+    prob = ODE.SplitODEProblem(xh_op, gpe_1comp!, ψ_input, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
 
     if itime
         # prepare the callback that remormalises wf at every step

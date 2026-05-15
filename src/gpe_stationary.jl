@@ -10,25 +10,23 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
     
     # Prepare the input wf `ψ_input`. By default, its length is `nc*B`, but if `natoms` is passed then we need additional `nc` elements to represent the 𝜇s that are being optimised.
     # Even if only total 𝑁 is fixed (and hence there is only one 𝜇 to be optimised), we still add `nc` elements to keep the general structure
-    if ψ₀ isa AbstractVector{<:Function} # `ψ₀` is a vector of analytic functions: need to sample them
-        if eq_isreal
-            # sample each function in ψ₀ at points `ft.xs`
-            ψ_input = Vector{R}(undef, nc*(B + !isnothing(natoms)))
-            for c in 1:nc
-                @views sample!(ψ_input[(c-1)B+1:c*B], ψ₀[c], ft.xs)
-            end
-        else # equations in x-space are complex
-            ψ_input = Vector{R}(undef, nc*(2B+!isnothing(natoms)))
-            for c in 1:nc
-                @views sample!(ψ_input[(c-1)*2B+1:(c-1)*2B+B], ψ_input[(c-1)*2B+B+1:c*2B], ft.xs)
-            end
+    if eq_isreal
+        # sample each function in ψ₀ at points `ft.xs`
+        ψ_input = Vector{R}(undef, nc*(B + !isnothing(natoms)))
+        for c in 1:nc
+            @views sample!(ψ_input[(c-1)B+1:c*B], ψ₀[c], ft.xs)
+        end
+    else # equations in x-space are complex
+        ψ_input = Vector{R}(undef, nc*(2B+!isnothing(natoms)))
+        for c in 1:nc
+            @views sample!(ψ_input[(c-1)*2B+1:(c-1)*2B+B], ψ_input[(c-1)*2B+B+1:c*2B], ft.xs)
         end
     end
 
     find_stationary(qh, ψ_input, g, μ, natoms; solver, kwargs...)
 end
 
-"A version of `find_stationary` accepting `ψ₀` as a vector of D-dimensional arrays (one for each component) representing discretised x-space functions."
+"A version of `find_stationary` accepting `ψ₀` as a vector of etiher D-dimensional arrays or flattened vectors, one for each component, representing discretised x-space functions."
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:AbstractArray},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{R}}=nothing;
                          solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
@@ -42,7 +40,7 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
     # Even if only total 𝑁 is fixed (and hence there is only one 𝜇 to be optimised), we still add `nc` elements to keep the general structure
     ψ_input = Vector{eq_isreal ? R : Complex{R}}(undef, nc*(B+!isnothing(natoms)))
     for c in 1:nc
-        copyto!(ψ_input, (c-1)B+1, ψ₀[c], 1, B) # copy `B` (= all) elements of `ψ₀[c]`, starting at 1st, to `ψ_input`, starting at elements ((c-1)B+1). `ψ₀[c]` is D-dimensional, but `copyto!` automatically flattens it (i.e. treats it as a contiguous vector)
+        copyto!(ψ_input, (c-1)B+1, ψ₀[c], 1, B) # copy `B` (= all) elements of `ψ₀[c]`, starting at 1st, to `ψ_input`, starting at element (c-1)B+1. `ψ₀[c]` might be D-dimensional, but `copyto!` automatically flattens it (i.e. treats it as a contiguous vector)
     end
 
     find_stationary(qh, ψ_input, g, μ, natoms; solver, kwargs...)
@@ -65,7 +63,7 @@ The solver support 3 modes:
             ∑ᵢ∫𝑢ᵢ²d𝑥 - 𝑁 = 0
 `ψ₀` can be:
     1. A vector of x-space analytic functions (one for each component);
-    2. A vector of D-dimensional arrays (one for each component) representing discretised x-space functions.
+    2. A vector of etiher D-dimensional arrays or flattened vectors, one for each component, representing discretised x-space functions.
     3. An x-space flattened vector, such as one obtained during diagonalisation. This is the format using throughout the solving; inputs of types 1 and 2 are converted to this type.
 `solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodiff will fail because it doesn't work with FFT, which we are using.
 Therefore, when passing the solver, always turn off concrete Jacobian and/or set linear solving to an iterative method.
