@@ -1,49 +1,49 @@
 "A version of `find_stationary` accepting `ψ₀` as a vector of analytic functions (one for each component)."
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:Function},
-                         g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{R}}=nothing;
+                         g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{R}}=nothing; searchreal=false,
                          solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
-    (;xlims, B, nc, ft) = qh
+    (;B, nc, ft) = qh
 
-    # determine if equation is real
-    ψ₀_arereal = all( ψ([xlims[i][1] for i in eachindex(xlims)]...) isa Real for ψ in ψ₀ )
-    eq_isreal = ψ₀_arereal && all(isnothing.(qh.𝐴)) # equations are real if Hamiltonian and wfs are real
-    
     # Prepare the input wf `ψ_input`. By default, its length is `nc*B`, but if `natoms` is passed then we need additional `nc` elements to represent the 𝜇s that are being optimised.
     # Even if only total 𝑁 is fixed (and hence there is only one 𝜇 to be optimised), we still add `nc` elements to keep the general structure
-    if eq_isreal
+    if searchreal
         # sample each function in ψ₀ at points `ft.xs`
         ψ_input = Vector{R}(undef, nc*(B + !isnothing(natoms)))
         for c in 1:nc
             @views sample!(ψ_input[(c-1)B+1:c*B], ψ₀[c], ft.xs)
         end
-    else # equations in x-space are complex
-        ψ_input = Vector{R}(undef, nc*(2B+!isnothing(natoms)))
+    else # equations in x-space are complex: we need double the length
+        ψ_input = Vector{R}(undef, 2nc*(B+!isnothing(natoms)))
         for c in 1:nc
-            @views sample!(ψ_input[(c-1)*2B+1:(c-1)*2B+B], ψ_input[(c-1)*2B+B+1:c*2B], ft.xs)
+            @views sample!(ψ_input[(c-1)*2B+1:(c-1)*2B+B], ψ_input[(c-1)*2B+B+1:c*2B], ψ₀[c], ft.xs)
         end
     end
 
-    find_stationary(qh, ψ_input, g, μ, natoms; solver, kwargs...)
+    find_stationary(qh, ψ_input, g, μ, natoms; searchreal, solver, kwargs...)
 end
 
 "A version of `find_stationary` accepting `ψ₀` as a vector of etiher D-dimensional arrays or flattened vectors, one for each component, representing discretised x-space functions."
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:AbstractArray},
-                         g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{R}}=nothing;
+                         g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{R}}=nothing; searchreal=false,
                          solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
     (;B, nc) = qh
 
-    # determine if equation is real
-    ψ₀_arereal = all(eltype(ψ) <: Real for ψ in ψ₀)
-    eq_isreal = ψ₀_arereal && all(isnothing.(qh.𝐴)) # equations are real if Hamiltonian and wfs are real
-    
     # Prepare the input wf `ψ_input`. By default, its length is `nc*B`, but if `natoms` is passed then we need additional `nc` elements to represent the 𝜇s that are being optimised.
     # Even if only total 𝑁 is fixed (and hence there is only one 𝜇 to be optimised), we still add `nc` elements to keep the general structure
-    ψ_input = Vector{eq_isreal ? R : Complex{R}}(undef, nc*(B+!isnothing(natoms)))
-    for c in 1:nc
-        copyto!(ψ_input, (c-1)B+1, ψ₀[c], 1, B) # copy `B` (= all) elements of `ψ₀[c]`, starting at 1st, to `ψ_input`, starting at element (c-1)B+1. `ψ₀[c]` might be D-dimensional, but `copyto!` automatically flattens it (i.e. treats it as a contiguous vector)
+    if searchreal
+        ψ_input = Vector{R}(undef, nc*(B+!isnothing(natoms)))
+        for c in 1:nc
+            copyto!(ψ_input, (c-1)B+1, ψ₀[c], 1, B) # copy `B` (= all) elements of `ψ₀[c]`, starting at 1st, to `ψ_input`, starting at element (c-1)B+1. `ψ₀[c]` might be D-dimensional, but `copyto!` automatically flattens it (i.e. treats it as a contiguous vector)
+        end
+    else
+        ψ_input = Vector{R}(undef, 2nc*(B+!isnothing(natoms)))
+        for c in 1:nc
+            ψ_input[(c-1)*2B+1:(c-1)*2B+B] .= real.(vec(ψ₀[c])) # `ψ₀[c]` might be D-dimensional, but `copyto!` automatically flattens it (i.e. treats it as a contiguous vector)
+            ψ_input[(c-1)*2B+B+1:c*2B] .= imag.(vec(ψ₀[c]))
+        end
     end
 
-    find_stationary(qh, ψ_input, g, μ, natoms; solver, kwargs...)
+    find_stationary(qh, ψ_input, g, μ, natoms; searchreal, solver, kwargs...)
 end
 
 """
@@ -75,46 +75,83 @@ Any additional keyword arguments will be passed directly to `NonlinearSolve.solv
 Return the tuple consisting of the coordinates and the NonlinearSolution object.
 """
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:Number},
-                         g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing;
+                         g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing; searchreal=false,
                          solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
     (;B, nc, ft) = qh
 
-    # make `μs_or_Ns` point to the right thing and prepare input state
-    if isnothing(natoms) # = numbers of atoms are not fixed, but chemical potentials are
-        μs_or_Ns = μ # so just pass the fixed chemical potentials
-
-        ψ_input = ψ₀ # make a reference
-    else  # total number of atoms or number of atoms in each component is fixed
-        μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
-
-        if length(ψ₀) == nc*B + nc # `ψ₀` already has `nc` extra elements for 𝜇s
-            ψ_input = ψ₀ # then just make a reference
-        else # `ψ₀` does not have the required `nc` extra elements for 𝜇s
-            ψ_input = similar(ψ₀, nc*B + nc) # make an array of required length
-            copyto!(ψ_input, ψ₀)
+    if searchreal
+        nc_effective = nc
+        g_input = g
+        # make `μs_or_Ns` point to the right thing and prepare input state
+        if isnothing(natoms) # = numbers of atoms are not fixed, but chemical potentials are
+            μs_or_Ns = μ # so just pass the fixed chemical potentials
+            ψ_input = ψ₀ # make a reference
+        else  # total number of atoms or number of atoms in each component is fixed
+            μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
+            if length(ψ₀) == nc*B + nc # `ψ₀` already has `nc` extra elements for 𝜇s
+                ψ_input = ψ₀ # then just make a reference
+            else # `ψ₀` does not have the required `nc` extra elements for 𝜇s
+                ψ_input = similar(ψ₀, nc*B + nc) # make an array of required length
+                copyto!(ψ_input, ψ₀)
+            end
+            # now can set final `nc` elements
+            ψ_input[end-nc+1:end] .= μ # use the passed `μ` as the initial guess (a single number if total 𝑁 is fixed or a vector otherwise; broadcast handles both cases)
         end
-        # now can set final `nc` elements
-        ψ_input[end-nc+1:end] .= μ # use the passed `μ` as the initial guess (a single number if total 𝑁 is fixed or a vector otherwise; broadcast handles both cases)
+    else
+        nc_effective = 2nc
+        g_input = kron(g, ones(nc_effective, nc_effective))
+        # make `μs_or_Ns` point to the right thing and determine the length that the input state must have
+        if isnothing(natoms) # = numbers of atoms are not fixed, but chemical potentials are
+            μs_or_Ns = kron(μ, ones(nc_effective)) # does e.g. [μ₁, μ₂] -> [μ₁, μ₁, μ₂, μ₂]
+            working_length = nc_effective*B
+        else  # total number of atoms or number of atoms in each component is fixed
+            μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
+            working_length = nc_effective*(B+1) # initial state must have `nc_effective` extra elements for 𝜇s
+        end
+
+        if length(ψ₀) == working_length # = user used the helper methods, so ψ₀ already has the correct length
+            ψ_input = ψ₀
+        else # = user passed a flattened state directly (rather than using the helper methods)
+            ψ_input = Vector{R}(undef, working_length)
+            @views for c in 1:nc
+                ψ_input[(c-1)*2B+1:(c-1)*2B+B] .= real.(ψ₀[(c-1)B+1:c*B])
+                ψ_input[(c-1)*2B+B+1:c*2B] .= imag.(ψ₀[(c-1)B+1:c*B])
+            end 
+        end
+        
+        if !isnothing(natoms) # now can set final `nc` elements
+            ψ_input[end-nc_effective+1:end] .= kron(μ, ones(nc_effective)) # use the passed `μ` as the initial guess (a single number if total 𝑁 is fixed or a vector otherwise; kron handles both cases)
+        end
     end
 
-    if nc == 1 # the 1-component case can be treated more efficiently
+    if nc_effective == 1 # the 1-component case can be treated more efficiently
         params = (qh, g[1], μs_or_Ns)
         nlfunction = NLS.NonlinearFunction(nls_gpe_real_1comp!; jvp=jvp_gpe_real_1comp!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
     else
         # initialise the buffers for holding all double products
         u²_sum = Vector{R}(undef, B)
-        u² = [similar(u²_sum) for _ in 1:nc]
-        uⱼvⱼ = [similar(u²_sum) for _ in 1:nc]
-        params = (qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ)
+        u² = [similar(u²_sum) for _ in 1:nc_effective]
+        uⱼvⱼ = [similar(u²_sum) for _ in 1:nc_effective]
+        params = (qh, g_input, μs_or_Ns, nc_effective, u², u²_sum, uⱼvⱼ, searchreal)
         nlfunction = NLS.NonlinearFunction(nls_gpe_real!; jvp=jvp_gpe_real!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params) # use specialisation `NonlinearProblem{true, SciMLBase.FullSpecialize}` for production!
     end
 
     # we will pass on user's kwargs to NLS.solve, but we override some of NLS's defaults. User's kwargs will in turn override ours.
     finalkwargs = (;verbose=false, termination_condition=NLS.AbsNormSafeBestTerminationMode(Base.Fix1(maximum, abs)), kwargs...)
-    
-    return ft.xs, NLS.solve(prob, solver; finalkwargs...)
+    sol = NLS.solve(prob, solver; finalkwargs...)
+
+    if searchreal
+        u_input = sol.u
+    else
+        u_input = Vector{Complex{R}}(undef, B*nc)
+        for c in 1:nc
+            u_input[(c-1)B+1:c*B] .= complex.(sol.u[(c-1)*2B+1:(c-1)*2B+B], sol.u[(c-1)*2B+B+1:c*2B])
+        end 
+    end
+
+    return ft.xs, sol, u_input
 end
 
 """
@@ -188,16 +225,29 @@ If only the total number of atoms 𝑁 is fixed, then there is a single 𝜇, so
 Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝐻, and hence also 𝑢ᵢ, is real in x-space.
 """
-@views function nls_gpe_real!(du, u, params)
-    qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ = params
+@views function nls_gpe_real!(du, u::AbstractVector{R}, params) where R <: Real
+    qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ, searchreal = params
     B = qh.B
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if 𝜇s are fixed, or last elements of `u` otherwise
     μs_arefixed = length(u) == B*nc # is 𝜇s are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇s
     μ = μs_arefixed ? μs_or_Ns : u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
     
     ### Linear part
-    mul!(du[1:B*nc], qh, u[1:B*nc])
-    
+    if searchreal
+        mul!(du[1:B*nc], qh, u[1:B*nc]) # taking a view because might contain extra elements for 𝜇
+    else
+        u_input = Vector{Complex{R}}(undef, B*nc÷2)
+        for c in 1:nc÷2
+            u_input[(c-1)B+1:c*B] .= complex.(u[(c-1)*2B+1:(c-1)*2B+B], u[(c-1)*2B+B+1:c*2B])
+        end 
+        u_output = similar(u_input)
+        mul!(u_output, qh, u_input)
+        for c in 1:nc÷2
+            du[(c-1)*2B+1:(c-1)*2B+B] .= real.(u_output[(c-1)B+1:c*B])
+            du[(c-1)*2B+B+1:c*2B] .= imag.(u_output[(c-1)B+1:c*B])
+        end 
+    end
+
     ### Nonlinear part
     # pre-calculate 𝑢ᵢ² for each component and store in `u²`
     for i in 1:nc
@@ -245,15 +295,28 @@ Equations (𝐽𝑣)ᵢ are the same, while the additional 𝑛 (identical) equa
 Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝐻, and hence also 𝑢ᵢ and 𝑣ᵢ, is real in x-space.
 """
-@views function jvp_gpe_real!(Jv, v, u, params)
-    qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ = params
+@views function jvp_gpe_real!(Jv, v::AbstractVector{R}, u, params) where R <: Real
+    qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ, searchreal = params
     B = qh.B
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if 𝜇s are fixed, or last elements of `u` otherwise
     μs_arefixed = length(u) == B*nc # is 𝜇s are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇s
     μ = μs_arefixed ? μs_or_Ns : u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
     
     ### Linear part
-    mul!(Jv[1:B*nc], qh, v[1:B*nc])
+    if searchreal
+        mul!(Jv[1:B*nc], qh, v[1:B*nc]) # taking a view because might contain extra elements for 𝜇
+    else
+        v_input = Vector{Complex{R}}(undef, B*nc÷2)
+        for c in 1:nc÷2
+            v_input[(c-1)B+1:c*B] .= complex.(v[(c-1)*2B+1:(c-1)*2B+B], v[(c-1)*2B+B+1:c*2B])
+        end 
+        v_output = similar(v_input)
+        mul!(v_output, qh, v_input)
+        for c in 1:nc÷2
+            Jv[(c-1)*2B+1:(c-1)*2B+B] .= real.(v_output[(c-1)B+1:c*B])
+            Jv[(c-1)*2B+B+1:c*2B] .= imag.(v_output[(c-1)B+1:c*B])
+        end 
+    end
     
     ### Nonlinear part
     # pre-calculate products `uⱼvⱼ` and `uⱼ²`
