@@ -72,7 +72,8 @@ You can also try using BICSTAB and/or Eisenstat-Walker forcing as in `NewtonRaph
 Forcing might fail to converge, but it accelerates solving since otherwise the linear system is solved to the same accuracy as the nonlinear system, which is often (but not always!) reundant.
 Default termination mode is `AbsNormSafeBestTerminationMode` with L-inf norm with `abstol` defined in NonlinearSolve.
 Any additional keyword arguments will be passed directly to `NonlinearSolve.solve()`.
-Return the tuple consisting of the coordinates and the NonlinearSolution object.
+Return the tuple `(xs, ys, …, ψ, μs)`, where `ψ` is a flattened x-space vector holding all components, while `μs` is a vector/scalar of the 
+found chemical potentials; if solving was performed under fixed 𝜇s given by the input `μ`, then the same input values are returned, i.e. `μs = μ`.
 """
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:Number},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing; searchreal=false,

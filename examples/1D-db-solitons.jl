@@ -29,8 +29,7 @@ g = ones(Float, 2, 2)
 μs = [μ₀, (μ₀+η^2)/2] # actual chemical potentials of the two components
 
 # Get stationary state starting from a basic tanh-sech trial
-@time xs, sol = find_stationary(ph_db, [tanh, sech], g, μs; abstol=1e-12, show_trace=Val(true))
-ψ_db = sol.u
+@time xs, ψ_db, μs = find_stationary(ph_db, [tanh, sech], g, μs; searchreal=true, abstol=1e-12, show_trace=Val(true))
 E, μs, ηs = get_EμN(ph_db, ψ_db, g; state_is_pspace=false)
 plot_comps(xs, ψ_db)
 
@@ -76,12 +75,13 @@ plot(figs..., layout=(ph_db.nc, 1))
 
 using ProgressMeter
 """
-For each 𝑔ᵢ in `gs` find the stationary state and compute BdG. The initial trial is taken as `sol.u`, and each next step uses the previous solution as a trial.
+For each 𝑔ᵢ in `gs` find the stationary state and compute BdG. The initial trial is taken as `ψ`, and each next step uses the previous solution as a trial.
 x-space approach is faster because it succeeds in doing partialschur, while in p-space it fails (yields random numbers) and hence requires doing full diagonalisation.
+Here "x-space" means doing BdG in x-space, athough we are using a p-space Hamiltonian here.
 `whichg=12` will replace elements g₁₂ and g₂₁, while `whichg=22` will replace g₂₂.
 `qs` are in the format [qxs, qys, …], where elements are vectors.
 """
-function scan_gs(gs, sol, qs=nothing; whichg=12, nev=0, abstol=1e-8, bdg_verbose=false, xspace=true)
+function scan_gs(gs, ψ, qs=nothing; whichg=12, nev=0, abstol=1e-8, bdg_verbose=false, xspace=true)
      D = length(ph.xlims)
      B = (2M + 1)^D # block size
      nsaves = nev == 0 ? 2B*ph.nc : nev # number of eigenvalues and eigenvectors to store: if `nev` is zero (or not passed), then store all
@@ -93,24 +93,23 @@ function scan_gs(gs, sol, qs=nothing; whichg=12, nev=0, abstol=1e-8, bdg_verbose
           else
                g[2, 2] = gi
           end
-          xs, sol = find_stationary(ph, [sol.u[1:end÷2], sol.u[end÷2+1:end]], g, μs; abstol)
-          Int(sol.retcode) != 1 && println("\n i = $i: sol.retcode = $(sol.retcode)\n maximum(resid) = $(maximum(sol.resid))") # print retcode if unsuccessful
+          xs, ψ, _ = find_stationary(ph, ψ, g, μs; searchreal=true, abstol)
           if xspace
                if isnothing(qs)
-                    vals, _ = bdg_spectrum(ph, sol.u, g, μs; nev, verbose=bdg_verbose)
+                    vals, _ = bdg_spectrum(ph, ψ, g, μs; nev, verbose=bdg_verbose)
                     data[:, i] = vals[1:nsaves]
                else
-                    vals, _ = bdg_spectrum(ph, sol.u, g, μs, qs; nev, verbose=bdg_verbose)
+                    vals, _ = bdg_spectrum(ph, ψ, g, μs, qs; nev, verbose=bdg_verbose)
                     data[:, i] = reshape(vals, :)
                end
           else
                if isnothing(qs)
-                    vals, _ = QuantumHamiltonians.bdg_spectrum_pspace(ph_half, [sol.u[1:end÷2] sol.u[end÷2+1:end]], g, μs; nev)
+                    vals, _ = QuantumHamiltonians.bdg_spectrum_pspace(ph_half, [ψ[1:end÷2] ψ[end÷2+1:end]], g, μs; nev)
                     sp = sortperm(vals, by=abs)
                     data[:, i] = vals[sp[1:nsaves]]
                else
                     for (iq, q) in enumerate(qs[1]) # specific for 1 dimension
-                         vals, _ = QuantumHamiltonians.bdg_spectrum_pspace(ph_half, [sol.u[1:end÷2] sol.u[end÷2+1:end]], g, μs, [q]; nev)
+                         vals, _ = QuantumHamiltonians.bdg_spectrum_pspace(ph_half, [ψ[1:end÷2] ψ[end÷2+1:end]], g, μs, [q]; nev)
                          sp = sortperm(vals, by=abs)
                          data[(iq-1)nsaves+1:iq*nsaves, i] = vals[sp[1:nsaves]]
                     end
@@ -143,8 +142,7 @@ g = [1    1
      1 0.95] .|> Float
 
 # nlsolve
-@time xs, sol = find_stationary(ph, Ψ₀, g, μs, abstol=1e-11, show_trace=Val(true)) 
-ψ_lattice = sol.u
+@time xs, ψ_lattice, _ = find_stationary(ph, Ψ₀, g, μs; searchreal=true, abstol=1e-11, show_trace=Val(true))
 get_EμN(ph, ψ_lattice, g, state_is_pspace=false)
 plot_comps(xs, ψ_lattice)
 
@@ -152,20 +150,19 @@ plot_comps(xs, ψ_lattice)
 # @time vals, vecs = QuantumHamiltonians.bdg_spectrum_pspace(ph_half, [ψ_lattice[1:end÷2] ψ_lattice[end÷2+1:end]], g, μs; verbose=true, nev=100)
 
 scatter(vals, legend=false, markersize=2, markerstrokewidth=0)
-
 smallindx = findall(x -> abs(x) < 1e-2, vals)
 vals[smallindx]
 
 # scanning g without quasimomentum, cf. Fig. 7, left plots
 g12s = range(1, 0.5, 50)
 g12s = range(1, 1.5, 50)
-data = scan_gs(g12s, sol; nev=0, abstol=1e-11) # use nev=0 in x-space (Arnoldi yields noise, so need full diagonalisation)
-data = scan_gs(g12s, sol; nev=100, abstol=1e-11, xspace=false) # in p-space, Arnoldi works fine, so can use e.g. nev=100. Remember to increase M compared to x-space
+data = scan_gs(g12s, ψ_lattice; nev=0, abstol=1e-11) # use nev=0 in x-space (Arnoldi yields noise, so need full diagonalisation)
+data = scan_gs(g12s, ψ_lattice; nev=100, abstol=1e-11, xspace=false) # in p-space, Arnoldi works fine, so can use e.g. nev=100. Remember to increase M compared to x-space
 
 # scanning g without quasimomentum, cf. Fig. 7, right plots
 qs = range(-π/2R, π/2R, 11)
-data = scan_gs(g12s, sol, [qs]; nev=0, abstol=1e-11, bdg_verbose=false)
-data = scan_gs(g12s, sol, [qs]; nev=100, abstol=1e-11, bdg_verbose=false, xspace=false)
+data = scan_gs(g12s, ψ_lattice, [qs]; nev=0, abstol=1e-11, bdg_verbose=false)
+data = scan_gs(g12s, ψ_lattice, [qs]; nev=100, abstol=1e-11, bdg_verbose=false, xspace=false)
 
 fig_real = plot(); fig_imag = plot();
 scatter!(fig_real, g12s, real.(data)', c=1, legend=false, markersize=2, markerstrokewidth=0, ylims=(0, 0.1));
@@ -214,8 +211,7 @@ plot(xs, abs2∘Ψ₀[1]); plot!(xs, abs2∘Ψ₀[2])
 g = [1 1
      1 1.05] .|> Float
 
-@time xs, sol = find_stationary(ph, Ψ₀, g, μs; abstol=1e-10, show_trace=Val(true))
-ψ_lattice = sol.u
+@time xs, ψ_lattice, _ = find_stationary(ph, Ψ₀, g, μs; searchreal=true, abstol=1e-10, show_trace=Val(true))
 plot_comps(xs, ψ_lattice)
 get_EμN(ph, ψ_lattice, g, state_is_pspace=false)
 
@@ -223,7 +219,7 @@ get_EμN(ph, ψ_lattice, g, state_is_pspace=false)
 # using x-space, for this problem Arnoldi works fine
 g22s = range(0.95, 1.125, 50)
 nev = 100
-data = scan_gs(g22s, sol; whichg=22, nev, abstol=1e-10)
+data = scan_gs(g22s, ψ_lattice; whichg=22, nev, abstol=1e-10)
 
 fig_real = plot(); fig_imag = plot();
 scatter!(fig_real, g22s, real.(data)', c=1, legend=false, markersize=2, markerstrokewidth=0, ylims=(0, 0.3));

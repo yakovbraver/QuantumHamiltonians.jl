@@ -82,7 +82,7 @@ function make_map_comps(xh, sol; itime=false, pad=0)
 
     # determine number of x-point for each component (if padding is used, then it's not simply length(sol.u[1]÷nc))
     D = length(xh.xlims) # number of spatial dimensions
-    M = 2^pad * xh.M
+    M = 2^pad * xh.ft.M
     B_padded = xh.basis == :cis ? (2M+1)^D :
                xh.basis == :sin ?      M^D : (M+1)^D
 

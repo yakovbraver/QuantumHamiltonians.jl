@@ -65,23 +65,18 @@ end
         𝜓₀(x) = sech(x)
         g = -1 |> Float64
         μ₀ = -1 |> Float64
-        if basis == :sin
-            _, sol = find_stationary(qh, [𝜓₀], [g;;], μ₀; abstol=5e-13)
-        else
-            _, sol = find_stationary(qh, [𝜓₀], [g;;], μ₀; abstol=5e-13)
-        end
-        @test Int(sol.retcode) == 1 # test for success
-        E = get_EμN(qh, sol.u, [g;;], state_is_pspace=false)[1]
+        _, ψ_nr, _ = find_stationary(qh, [𝜓₀], [g;;], μ₀; searchreal=true, abstol=5e-13)
+        E = get_EμN(qh, ψ_nr, [g;;], state_is_pspace=false)[1]
         @test E ≈ -0.1581185113871 atol=1e-12 # default NonlinearSolve tolerance for Float64 is ≈ 3e-13
 
         # Calculate BdG and test relevant eigenvalues (calculating all eigenvalues here)
-        vals, vecs = bdg_spectrum(qh, sol.u, g, μ₀)
+        vals, vecs = bdg_spectrum(qh, ψ_nr, g, μ₀)
         @test maximum(imag, vals) ≈ 0.3306185 atol=1e-7 # default ArnoldiMethod tolerance for Float64 is √eps ≈ 1.5e-8
 
         # also test BdG in p-space. Skip sin case because that requires 2M+1 harmonics for dimensions to match, but the result is then inaccurate
         if basis != :sin
             xh_half = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M=M÷2, δ)
-            vals, vecs = QuantumHamiltonians.bdg_spectrum_pspace(xh_half, sol.u, g, μ₀; ψ_iseven=true)
+            vals, vecs = QuantumHamiltonians.bdg_spectrum_pspace(xh_half, ψ_nr, g, μ₀; ψ_iseven=true)
             @test maximum(imag, vals) ≈ 0.3306185 atol=1e-5 # using larger atol because with twice less harmonics this is less accurate
         end
     end
@@ -109,9 +104,7 @@ end
     ### Testing for fixed 𝜇's
 
     # Get stationary state starting from a basic tanh-sech trial
-    xs, sol = find_stationary(qh, [tanh, sech], g, μs; abstol=1e-9)
-    @test Int(sol.retcode) == 1 # test for success
-    ψ_db = sol.u
+    xs, ψ_db, _ = find_stationary(qh, [tanh, sech], g, μs; searchreal=true, abstol=1e-9)
 
     # Test against analytical solution (testing against abs because might converge to a different sign)
     𝛹 = [x -> abs( √μ₀ * tanh(D*x) ), x -> abs( η * sech(D*x) )]
@@ -122,12 +115,9 @@ end
 
     natoms = get_EμN(qh, ψ_db, [g;;], state_is_pspace=false)[3] # get numbers of atoms from the above state
     # Get stationary state starting from a basic tanh-sech trial, this time for fixed number of atoms and using a guess for 𝜇 given by [2, 1]
-    xs, sol = find_stationary(qh, [tanh, sech], [g;;], [2.0, 1.0], natoms; abstol=1e-9)
-    @test Int(sol.retcode) == 1 # test for success
-    # check chemical potentials contained in the last two elements of sol.u
-    @test sol.u[end-1] ≈ μs[1] atol=1e-9
-    @test sol.u[end] ≈ μs[2] atol=1e-9
-    ψ_db = sol.u[1:end-2]
+    xs, ψ_db, μs_nr = find_stationary(qh, [tanh, sech], [g;;], [2.0, 1.0], natoms; searchreal=true, abstol=1e-9)
+    @test μs_nr[1] ≈ μs[1] atol=1e-9
+    @test μs_nr[2] ≈ μs[2] atol=1e-9
 
     # Again test against analytical solution (testing against abs because might converge to a different sign)
     @test sum(abs, Ψ_exact - abs.(ψ_db)) / length(ψ_db) < 1e-8
@@ -185,8 +175,7 @@ end
     g = [1   0.8
          0.8 0.95] .|> Float
 
-    xs, sol = find_stationary(qh, Ψ₀, g, μs, abstol=1e-11) 
-    ψ_lattice = sol.u
+    xs, ψ_lattice, _ = find_stationary(qh, Ψ₀, g, μs; searchreal=true, abstol=1e-11)
 
     qs = [π/4R] # quasimomentum chosen for the test
     vals_true = [0.009, 0.016, 0.031, 0.029].*im # true values of the imaginary parts of the unstable modes
@@ -247,11 +236,11 @@ end
         end
         
         # find soliton state using Newton-Raphson
-        xs, sol = find_stationary(qh, [𝜓₀], [g;;], μ₀, natoms)
+        xs, ψ_nr, _ = find_stationary(qh, [𝜓₀], [g;;], μ₀, natoms; searchreal=true)
         if kind != :xspace
-            E_nr, μ_nr, N_nr = get_EμN(qh, sol.u, [g;;]; state_is_pspace=false) # can pass `sol.u` despite it having extra elements
+            E_nr, μ_nr, N_nr = get_EμN(qh, ψ_nr, [g;;]; state_is_pspace=false)
         else
-            E_nr, μ_nr, N_nr = get_EμN(qh, sol.u, [g;;]) # can pass `sol.u` despite it having extra elements
+            E_nr, μ_nr, N_nr = get_EμN(qh, ψ_nr, [g;;])
         end
 
         ### imaginary time test: calculate a soliton, compare with Newton-Raphson
@@ -270,8 +259,7 @@ end
         ### real time test: calculate half-period of oscillations, check energy conservation and check that wf minimum is at roughly -5
 
         # get ground state
-        xs, sol = find_stationary(qh, [one], [g;;], μ₀, natoms)
-        ψ = @view sol.u[1:end-1] # last element is the chemical potential
+        xs, ψ, _ = find_stationary(qh, [one], [g;;], μ₀, natoms; searchreal=true)
         # create a displaced soliton
         ψ₀ = real(ψ) .* tanh.(9 .* (xs .- 5)) |> vec
 

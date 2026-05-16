@@ -336,25 +336,25 @@ end
             qh = PSpaceHamiltonian{kind}([xlimits, xlimits], 𝑈; basis, 𝑈_iseven=true, M, kwargs...)
         end
         
-        xs, sol = find_stationary(qh, [𝜓₀], [g;;], μ₀, natoms)
+        xs, ys, ψ_nr, μ_nr = find_stationary(qh, [𝜓₀], [g;;], μ₀, natoms; searchreal=true)
         if kind != :xspace
-            E, μ, N = get_EμN(qh, sol.u, [g;;]; state_is_pspace=false) # can pass `sol.u` despite it having extra elements
+            E, μ, N = get_EμN(qh, ψ_nr, [g;;]; state_is_pspace=false)
         else
-            E, μ, N = get_EμN(qh, sol.u, [g;;]) # can pass `sol.u` despite it having extra elements
+            E, μ, N = get_EμN(qh, ψ_nr, [g;;])
         end
 
         @test E ≈ 5.79206 atol=1e-5
         @test μ[1] ≈ 8.28601 atol=1e-5
-        @test μ[1] ≈ sol.u[end] atol=1e-12 # this should be the same value, but μ[1] is calculated using sol.u
+        @test μ[1] ≈ μ_nr[1] atol=1e-12
         @test N[1] ≈ natoms atol=1e-12
 
         if kind == :xspace
-            @views xs, ys, ψ = make_wavefunction(qh, sol.u[1:end-1])
+            @views xs, ys, ψ = make_wavefunction(qh, ψ_nr)
         else
-            @views xs, ys, ψ = QuantumHamiltonians.make_wavefunction_xspace(qh, sol.u[1:end-1])
+            @views xs, ys, ψ = QuantumHamiltonians.make_wavefunction_xspace(qh, ψ_nr)
         end
 
-        @test ψ[1][end÷2, end÷2] ≈ 0.28 atol=0.01
+        @test ψ[1][end÷2, end÷2] ≈ 0.28 atol=0.01 # checking wf value at the centre
     end
 
 end
