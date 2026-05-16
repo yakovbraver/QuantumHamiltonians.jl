@@ -77,7 +77,7 @@ Return the tuple consisting of the coordinates and the NonlinearSolution object.
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:Number},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing; searchreal=false,
                          solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
-    (;B, nc, ft) = qh
+    (;B, nc) = qh
 
     if searchreal
         nc_effective = nc
@@ -98,7 +98,7 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
             ψ_input[end-nc+1:end] .= μ # use the passed `μ` as the initial guess (a single number if total 𝑁 is fixed or a vector otherwise; broadcast handles both cases)
         end
     else
-        nc_effective = 2nc
+        nc_effective = 2nc # real and imaginary parts are treated as two components
         g_input = kron(g, ones(nc_effective, nc_effective))
         # make `μs_or_Ns` point to the right thing and determine the length that the input state must have
         if isnothing(natoms) # = numbers of atoms are not fixed, but chemical potentials are
@@ -109,7 +109,7 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
             working_length = nc_effective*(B+1) # initial state must have `nc_effective` extra elements for 𝜇s
         end
 
-        if length(ψ₀) == working_length # = user used the helper methods, so ψ₀ already has the correct length
+        if length(ψ₀) == working_length # = user used the helper methods, so `ψ₀` already has the correct length
             ψ_input = ψ₀
         else # = user passed a flattened state directly (rather than using the helper methods)
             ψ_input = Vector{R}(undef, working_length)
@@ -119,22 +119,30 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
             end 
         end
         
-        if !isnothing(natoms) # now can set final `nc` elements
+        if !isnothing(natoms) # now can set final `nc` elements containing unknown 𝜇s
             ψ_input[end-nc_effective+1:end] .= kron(μ, ones(nc_effective)) # use the passed `μ` as the initial guess (a single number if total 𝑁 is fixed or a vector otherwise; kron handles both cases)
         end
     end
 
     if nc_effective == 1 # the 1-component case can be treated more efficiently
         params = (qh, g[1], μs_or_Ns)
-        nlfunction = NLS.NonlinearFunction(nls_gpe_real_1comp!; jvp=jvp_gpe_real_1comp!)
+        nlfunction = NLS.NonlinearFunction(gpe_stationary_1comp!; jvp=jvp_gpe_stationary_1comp!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
     else
         # initialise the buffers for holding all double products
         u²_sum = Vector{R}(undef, B)
         u² = [similar(u²_sum) for _ in 1:nc_effective]
         uⱼvⱼ = [similar(u²_sum) for _ in 1:nc_effective]
-        params = (qh, g_input, μs_or_Ns, nc_effective, u², u²_sum, uⱼvⱼ, searchreal)
-        nlfunction = NLS.NonlinearFunction(nls_gpe_real!; jvp=jvp_gpe_real!)
+        # if solving complex equations, then we need two buffers for applying the Hamiltonian
+        if searchreal
+            complex_buff1 = complex_buff2 = nothing
+        else
+            complex_buff1 = Vector{Complex{R}}(undef, B*nc)
+            complex_buff2 = similar(complex_buff1)
+        end
+         
+        params = (qh, g_input, μs_or_Ns, nc_effective, u², u²_sum, uⱼvⱼ, complex_buff1, complex_buff2)
+        nlfunction = NLS.NonlinearFunction(gpe_stationary!; jvp=jvp_gpe_stationary!)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params) # use specialisation `NonlinearProblem{true, SciMLBase.FullSpecialize}` for production!
     end
 
@@ -143,20 +151,33 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
     sol = NLS.solve(prob, solver; finalkwargs...)
 
     if searchreal
-        u_input = sol.u
+        if length(sol.u) > B*nc # solution has extra elements for 𝜇s -- extract them
+            u_sol = sol.u[1:B*nc]
+            μ_sol = sol.u[end-nc+1:end]
+        else # solution has no extra elements; 𝜇s have been fixed by the user
+            u_sol = sol.u
+            μ_sol = μ # for consistency, return back user's 𝜇s
+        end
     else
-        u_input = Vector{Complex{R}}(undef, B*nc)
+        u_sol = complex_buff1 # make a reference
+        # fill with the solution
         for c in 1:nc
-            u_input[(c-1)B+1:c*B] .= complex.(sol.u[(c-1)*2B+1:(c-1)*2B+B], sol.u[(c-1)*2B+B+1:c*2B])
+            u_sol[(c-1)B+1:c*B] .= complex.(sol.u[(c-1)*2B+1:(c-1)*2B+B], sol.u[(c-1)*2B+B+1:c*2B])
+        end
+        if length(sol.u) > B*nc_effective # solution has extra elements for 𝜇s -- extract them
+            μ_sol = sol.u[end-nc_effective+1:2:end] # take every second element because each 𝜇 is repeated twice
+        else # solution has no extra elements; 𝜇s have been fixed by the user
+            μ_sol = μ # for consistency, return back user's 𝜇s
         end 
     end
 
-    return ft.xs, sol, u_input
+    return ntuple(i -> qh.ft.xs[:, i], size(qh.ft.xs, 2))..., u_sol, μ_sol # first part splits `xs` into a tuple (𝑥, 𝑦, …)
 end
 
 """
-Update the x-space 𝑢′ vector of the 1-component GPE
+Update the x-space 𝑢′ vector of the 1-component real GPE
     𝑢′ = 𝐻𝑢 + 𝑔𝑢²𝑢 - 𝜇𝑢
+(complex GPE is treated as two components, so [`gpe_stationary!`](@ref) is used instead).
 
 If the number of atoms 𝑁 is fixed, then 𝜇 is unknown and is contained in the last element of `u`. The last element of `du` contains the residual 𝜇′ for the chemical potential.
 An additional equation reads
@@ -167,7 +188,7 @@ which is coded as
 Used for finding the steady state with nonlinear solve (by solving for 𝑢′ = 𝜇′ = 0).
 Suitable for the case when 𝐻, and hence also 𝑢, is real in x-space.
 """
-@views function nls_gpe_real_1comp!(du, u, params)
+@views function gpe_stationary_1comp!(du, u, params)
     qh, g, μ_or_N = params
     B = qh.B
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if 𝜇 is fixed, or last element of `u` otherwise
@@ -193,7 +214,7 @@ where 𝑀 is the last element of `v`, 𝜇 is the last element of `u`, and an a
 Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝐻, and hence also 𝑢 and 𝑣, is real in x-space.
 """
-@views function jvp_gpe_real_1comp!(Jv, v, u, params)
+@views function jvp_gpe_stationary_1comp!(Jv, v, u, params)
     qh, g, μ_or_N = params
     B = qh.B
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if 𝜇 is fixed, or last element of `u` otherwise
@@ -225,26 +246,24 @@ If only the total number of atoms 𝑁 is fixed, then there is a single 𝜇, so
 Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝐻, and hence also 𝑢ᵢ, is real in x-space.
 """
-@views function nls_gpe_real!(du, u::AbstractVector{R}, params) where R <: Real
-    qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ, searchreal = params
+@views function gpe_stationary!(du, u::AbstractVector{R}, params) where R <: Real
+    qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ, complex_buff1, complex_buff2 = params
     B = qh.B
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if 𝜇s are fixed, or last elements of `u` otherwise
     μs_arefixed = length(u) == B*nc # is 𝜇s are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇s
     μ = μs_arefixed ? μs_or_Ns : u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
     
     ### Linear part
-    if searchreal
+    if isnothing(complex_buff1) # true in the "searchreal" case
         mul!(du[1:B*nc], qh, u[1:B*nc]) # taking a view because might contain extra elements for 𝜇
     else
-        u_input = Vector{Complex{R}}(undef, B*nc÷2)
         for c in 1:nc÷2
-            u_input[(c-1)B+1:c*B] .= complex.(u[(c-1)*2B+1:(c-1)*2B+B], u[(c-1)*2B+B+1:c*2B])
+            complex_buff1[(c-1)B+1:c*B] .= complex.(u[(c-1)*2B+1:(c-1)*2B+B], u[(c-1)*2B+B+1:c*2B])
         end 
-        u_output = similar(u_input)
-        mul!(u_output, qh, u_input)
+        mul!(complex_buff2, qh, complex_buff1)
         for c in 1:nc÷2
-            du[(c-1)*2B+1:(c-1)*2B+B] .= real.(u_output[(c-1)B+1:c*B])
-            du[(c-1)*2B+B+1:c*2B] .= imag.(u_output[(c-1)B+1:c*B])
+            du[(c-1)*2B+1:(c-1)*2B+B] .= real.(complex_buff2[(c-1)B+1:c*B])
+            du[(c-1)*2B+B+1:c*2B] .= imag.(complex_buff2[(c-1)B+1:c*B])
         end 
     end
 
@@ -295,26 +314,24 @@ Equations (𝐽𝑣)ᵢ are the same, while the additional 𝑛 (identical) equa
 Used for finding the steady state with nonlinear solve.
 Suitable for the case when 𝐻, and hence also 𝑢ᵢ and 𝑣ᵢ, is real in x-space.
 """
-@views function jvp_gpe_real!(Jv, v::AbstractVector{R}, u, params) where R <: Real
-    qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ, searchreal = params
+@views function jvp_gpe_stationary!(Jv, v::AbstractVector{R}, u, params) where R <: Real
+    qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ, complex_buff1, complex_buff2 = params
     B = qh.B
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if 𝜇s are fixed, or last elements of `u` otherwise
     μs_arefixed = length(u) == B*nc # is 𝜇s are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇s
     μ = μs_arefixed ? μs_or_Ns : u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
     
     ### Linear part
-    if searchreal
+    if isnothing(complex_buff1) # true in the "searchreal" case
         mul!(Jv[1:B*nc], qh, v[1:B*nc]) # taking a view because might contain extra elements for 𝜇
     else
-        v_input = Vector{Complex{R}}(undef, B*nc÷2)
         for c in 1:nc÷2
-            v_input[(c-1)B+1:c*B] .= complex.(v[(c-1)*2B+1:(c-1)*2B+B], v[(c-1)*2B+B+1:c*2B])
+            complex_buff1[(c-1)B+1:c*B] .= complex.(v[(c-1)*2B+1:(c-1)*2B+B], v[(c-1)*2B+B+1:c*2B])
         end 
-        v_output = similar(v_input)
-        mul!(v_output, qh, v_input)
+        mul!(complex_buff2, qh, complex_buff1)
         for c in 1:nc÷2
-            Jv[(c-1)*2B+1:(c-1)*2B+B] .= real.(v_output[(c-1)B+1:c*B])
-            Jv[(c-1)*2B+B+1:c*2B] .= imag.(v_output[(c-1)B+1:c*B])
+            Jv[(c-1)*2B+1:(c-1)*2B+B] .= real.(complex_buff2[(c-1)B+1:c*B])
+            Jv[(c-1)*2B+B+1:c*2B] .= imag.(complex_buff2[(c-1)B+1:c*B])
         end 
     end
     
