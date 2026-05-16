@@ -46,33 +46,36 @@ function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Fu
         end
     end
 
-    # Initialise the coupling matrix with the appropriate sign and `im` factor.
     # The equation i∂ₜ𝜓 = 𝐻𝜓 + g|𝜓|²𝜓 is coded as ∂ₜ𝜓 = -i𝐻𝜓 -i𝑔|𝜓|²𝜓.
-    # In imaginary time, the equation is ∂ₜ𝜓 = -𝐻𝜓 -𝑔|𝜓|²𝜓. The factor multiplying 𝐻 is `H_factor`
-    if itime
-        H_factor = -1
-        g_input = -g
+    # In imaginary time, the equation is ∂ₜ𝜓 = -𝐻𝜓 -𝑔|𝜓|²𝜓. The factor multiplying 𝐻 and 𝑔 is called here `rhs_factor`
+    rhs_factor = itime ? -1 : -im
+    
+    # Initialise the coupling matrix and problem parameters.
+    # The split problem passes one shared parameter tuple to both the linear operator (`FunctionOperator`) and nonlinear part (encoded in `prob`).
+    if nc == 1
+        g_input = rhs_factor * g[1] # make a scalar `g_input`
+        params = (g_input, xh, rhs_factor)
     else
-        H_factor = -im
-        g_input = -im * g
+        # if all 𝑔ᵢⱼ are equal, then make `g_input` a scalar; a specialisation of `u∑gu²_complex!` exists for this case
+        g_input = allequal(g) ? rhs_factor * g[1] : rhs_factor .* g
+        # initialise required buffers
+        ∑gu² = Vector{itime ? R : Complex{R}}(undef, B) # for real-time GPE, 𝑔 is complex because it contains `im`, so then must initialise as complex
+        u² = [Vector{R}(undef, B) for _ in 1:nc] # each element will contain a vector of abs2 values, so guaranteed to be real
+        params = (g_input, xh, rhs_factor, u², ∑gu²)
     end
 
     # initialise the problem
     tspan = (zero(R), T_max)
-    # the split problem passes one shared parameter tuple to both the linear operator (`FunctionOperator`) and nonlinear part (encoded in `prob`)
-    params = (g_input, xh, H_factor)
     xh_op = SciMLOperators.FunctionOperator(XSpaceHamiltonianGPE!, similar(ψ_input); u=ψ_input, p=params, isconstant=true)
 
-    prob = ODE.SplitODEProblem(xh_op, gpe_1comp!, ψ_input, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
-
+    prob = ODE.SplitODEProblem(xh_op, (nc == 1 ? gpe_1comp! : gpe!), ψ_input, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
+    
     if itime
-        # prepare the callback that remormalises wf at every step
+        # prepare the callback that renormalises wf at every step
         condition = Returns(true) # condition is checked at the end of each time step; we want this to be always true
         cb = ODE.DiscreteCallback(condition, affect_xspace!) # will save every step before and after the callback (`save_positions=(true, true)`); docs say this is mandatory when change of `u` is discontinuous
         sol = ODE.solve(prob, solver; callback=cb, save_everystep=false, save_start=true, dt)
-        for c in 1:xh.nc
-            @views normalize!(sol.u[end][(c-1)xh.B+1:c*xh.B], xh)
-        end
+        normalize!(sol.u[end], xh)
         return sol
     else
         # when `saveat` is set, saving happens at points `tspan[1]:saveat:tspan[2]`
@@ -83,23 +86,20 @@ end
 
 """
 Helper function for wrapping `XSpaceHamiltonian` as a SciMLOperator, representing the action |𝑤⟩ = 𝑎𝐻|𝑣⟩ during GPE solving.
-`params[1]` containg GPE `g` matrix and is not used (but passed to ODE problem).
+`params[1]` containg GPE `g` matrix and is not used here (but passed to ODE problem).
 `params[2]` contains a `XSpaceHamiltonian` object.
-`params[3]` contains a the number 𝑎, which is -1 for imaginary time problem, and `-im` for usual real-time propagation.
+`params[3]` contains the number 𝑎, which is -1 for imaginary time problem, and `-im` for usual real-time propagation.
 """
 function XSpaceHamiltonianGPE!(w, v, u, params, t)
-    xh = params[2]
-    H_factor = params[3]
+    _, xh, rhs_factor = params
     mul!(w, xh, v)
-    w .*= H_factor
+    w .*= rhs_factor
     return
 end
 
 function affect_xspace!(integrator)
     xh = integrator.p[2]
-    for c in 1:xh.nc
-        @views normalize!(integrator.u[(c-1)xh.B+1:c*xh.B], xh)
-    end
+    normalize!(integrator.u, xh)
     return
 end
 
@@ -111,5 +111,52 @@ The 𝑔 must contain `im` (for real-time propagation) and the proper sign.
 function gpe_1comp!(du, u, params, t)
     g = params[1]
     @. du = g * abs2(u) * u
+    return
+end
+
+"""
+Update the 𝑢′ vector of the nonlinear part of the GPE
+    𝑢′ᵢ = 𝑢ᵢ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|²
+Here 𝑔ᵢⱼ's must contain `im` (for real-time propagation) and the proper sign.
+"""
+function gpe!(du, u, params, t)
+    g, xh, _, u², ∑gu² = params
+    (;B, nc) = xh
+    # for each `i`th component, calculate |𝑢ᵢ|² and store in `u²`
+    for i in 1:nc
+        @views @. u²[i] = abs2(u[(i-1)B+1:i*B])
+    end
+    # for each `i`th component, calculate 𝑢ᵢ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² storing the result in the appropriate block of `du`.
+    u∑gu²!(du, u, u², ∑gu², g, nc, B) # if all 𝑔ᵢⱼ are equal, then `g` is a number, and a special method will be called.
+    return
+end
+
+"""
+For each `i`th component, calculate 𝑢ᵢ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² and store the result in the 𝑖th block of `du`.
+"""
+function u∑gu²!(du, u, u², ∑gu², g::AbstractMatrix{<:Number}, nc, B)
+    @views for i in 1:nc
+        @. ∑gu² = g[i, 1] * u²[1] # better to check whether `g[i, 1]` is zero and fill with zeros?
+        for j in 2:nc
+            g[i, j] == 0 && continue
+            @. ∑gu² += g[i, j] * u²[j]
+        end
+        @. du[(i-1)B+1:i*B] = u[(i-1)B+1:i*B] * ∑gu²
+    end
+    return
+end
+
+"""
+Calculate 𝑔∑ⱼ|𝑢ⱼ|² and multiply by each 𝑖th block of `u`, storing the result in the 𝑖th block of `du`. Here `g` is the same for all components and is a number.
+"""
+function u∑gu²!(du, u, u², ∑gu², g::Number, nc, B) # `∑gu²` is not used but kept for compatibility with the other method
+    # accumulate ∑ⱼ|𝑢ⱼ|² in `u²[1]`
+    for j in 2:nc
+        @turbo u²[1] .+= u²[j]
+    end
+    u²[1] .*= g
+    for i in 1:nc
+        @views @. du[(i-1)B+1:i*B] = u[(i-1)B+1:i*B] * u²[1]
+    end
     return
 end

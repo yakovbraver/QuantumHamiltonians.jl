@@ -104,3 +104,14 @@ function make_animation(U, xs)
         plot!(xs, abs2.(U[:, it, 2]))
     end
 end
+
+function plot_comps_2D(xs, ys, ψ)
+    nc = length(ψ)
+    theme(:dark, size=(600, 200nc+20))
+    figs = [plot() for _ in 1:2nc]
+    for c in 1:nc
+        figs[2(c-1)+1] = heatmap(xs, ys, abs2.(ψ[c])', c=CMAP)
+        figs[2(c-1)+2] = heatmap(xs, ys, angle.(ψ[c])', c=:coolwarm);
+    end
+    plot(figs..., layout=(nc, 2))
+end

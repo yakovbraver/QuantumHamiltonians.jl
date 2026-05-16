@@ -397,12 +397,16 @@ The information of the basis and problem dimensions is contained in `xh`.
 end
 
 """
-Normalise x-space 1-component flattened state `v` so that ∫|𝑣|²d𝑉 = 1.
+Normalise an x-space flattened multi-component state `v` so that ∑ᶜ∫|𝑣ᶜ|²d𝑉 = 1.
 The information of the basis and problem dimensions is contained in `qh`.
 """
-function LA.normalize!(v::AbstractVector{<:Number}, qh::XSpaceHamiltonian)
-    n = √norm²(v, qh)
-    v ./= n
+function LA.normalize!(v::AbstractVector{T}, qh::XSpaceHamiltonian) where T <: Number
+    (;B, nc) = qh
+    N = zero(real(T))
+    for c in 1:nc
+        N += norm²(v[(c-1)B+1:c*B], qh)
+    end
+    v ./= √N
 end
 
 """
