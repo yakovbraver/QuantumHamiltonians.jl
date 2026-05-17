@@ -80,10 +80,10 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
                          solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
     (;B, nc) = qh
 
+    # make `μs_or_Ns` point to the right thing and prepare input state
     if searchreal
         nc_effective = nc
         g_input = g
-        # make `μs_or_Ns` point to the right thing and prepare input state
         if isnothing(natoms) # = numbers of atoms are not fixed, but chemical potentials are
             μs_or_Ns = μ # so just pass the fixed chemical potentials
             ψ_input = ψ₀ # make a reference
@@ -101,12 +101,14 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
     else
         nc_effective = 2nc # real and imaginary parts are treated as two components
         g_input = kron(g, ones(nc_effective, nc_effective))
-        # make `μs_or_Ns` point to the right thing and determine the length that the input state must have
         if isnothing(natoms) # = numbers of atoms are not fixed, but chemical potentials are
-            μs_or_Ns = kron(μ, ones(nc_effective)) # does e.g. [μ₁, μ₂] -> [μ₁, μ₁, μ₂, μ₂]
+            μs_or_Ns = kron(μ, ones(nc_effective)) # do [μ₁, μ₂] -> [μ₁, μ₁, μ₂, μ₂]
             working_length = nc_effective*B
-        else  # total number of atoms or number of atoms in each component is fixed
+        elseif natoms isa Number # total number of atoms is fixed
             μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
+            working_length = nc_effective*(B+1) # initial state must have `nc_effective` extra elements for 𝜇s
+        else # number of atoms in each component is fixed
+            μs_or_Ns = kron(natoms, ones(nc_effective, nc_effective)) # do [𝑁₁, 𝑁₂] -> [𝑁₁, 𝑁₁, 𝑁₂, 𝑁₂]
             working_length = nc_effective*(B+1) # initial state must have `nc_effective` extra elements for 𝜇s
         end
 
@@ -284,7 +286,7 @@ Suitable for the case when 𝐻, and hence also 𝑢ᵢ, is real in x-space.
         duᵢ = du[window] # must create a view separately for @turbo to work in the next line
         @turbo @. duᵢ += (u²_sum - μ[i]) * u[window]
     end
-    if !μs_arefixed # then update last `nc` elements of `du` representing residuals ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ. In this case, `μs_or_Ns` contains 𝑁ᵢ's.
+    if !μs_arefixed # then update last `nc` elements of `du` representing residuals ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ. In this case, `μs_or_Ns` contains 𝑁ᵢs.
         if μs_or_Ns isa Number # then only total number of atoms is fixed -- will place (∑ᵢ∫𝑢ᵢ²d𝑥 - 𝑁) into `nc` last elements of `du`
             u²_sum = zero(μs_or_Ns) # for storing the sum ∑ᵢ∫𝑢ᵢ²d𝑥
             for i in 1:nc
@@ -292,8 +294,18 @@ Suitable for the case when 𝐻, and hence also 𝑢ᵢ, is real in x-space.
             end
             du[end-nc+1:end] .= u²_sum - μs_or_Ns # place the sum in the residuals array; we have `nc` identical elements to keep the general structure
         else # numbers of atoms in each component are fixed -- will place (∫𝑢ᵢ²d𝑥 - 𝑁ᵢ) into `nc` last elements of `du` respectively
-            for i in 1:nc
-                du[end-nc+i] = integrate(u²[i], qh) - μs_or_Ns[i]
+            if isnothing(complex_buff1) # true in the "searchreal" case
+                for i in 1:nc
+                    du[end-nc+i] = integrate(u²[i], qh) - μs_or_Ns[i]
+                end
+            else # complex case: the integrals are ∫(𝑢ᵢ²+𝑢ᵢ₊₁²)d𝑥, but every second is the same 
+                for i in 1:nc
+                    if isodd(i) # then calculate ∫(𝑢ᵢ²+𝑢ᵢ₊₁²)d𝑥 - 𝑁ᵢ
+                        du[end-nc+i] = (integrate(u²[i], qh) + integrate(u²[i+1], qh)) - μs_or_Ns[i]
+                    else # then use the result from the previous iteration
+                        du[end-nc+i] = du[end-nc+i-1]
+                    end
+                end
             end
         end
     end
@@ -367,15 +379,25 @@ Suitable for the case when 𝐻, and hence also 𝑢ᵢ and 𝑣ᵢ, is real in 
         @turbo @. Jvᵢ += (u²_sum - μ[i]) * vᵢ
     end
     if !μs_arefixed # then update last `nc` elements of `Jv` corresponding to the chemical potentials. In this case, `μs_or_Ns` contains 𝑁ᵢ's.
-        if μs_or_Ns isa Number # then only total number of atoms is fixed -- will place 2∑ᵢ∫𝑢ᵢvᵢd𝑥 into `nc` last elements of `Jv`
-            uᵢvᵢ_sum = zero(μs_or_Ns) # for storing the sum ∑ᵢ∫𝑢ᵢvᵢd𝑥
+        if μs_or_Ns isa Number # then only total number of atoms is fixed -- will place 2∑ᵢ∫𝑢ᵢ𝑣ᵢd𝑥 into `nc` last elements of `Jv`
+            uᵢvᵢ_sum = zero(μs_or_Ns) # for storing the sum ∑ᵢ∫𝑢ᵢ𝑣ᵢd𝑥
             for i in 1:nc
                 uᵢvᵢ_sum += integrate(uⱼvⱼ[i], qh)
             end
             Jv[end-nc+1:end] .= 2uᵢvᵢ_sum # put the sum into place; we have `nc` identical elements to keep the general structure
-        else # numbers of atoms in each component are fixed -- will place 2∫𝑢ᵢvᵢd𝑥 into `nc` last elements of `du` respectively
-            for i in 1:nc
-                Jv[end-nc+i] = 2integrate(uⱼvⱼ[i], qh)
+        else # numbers of atoms in each component are fixed -- will place 2∫𝑢ᵢ𝑣ᵢd𝑥 into `nc` last elements of `du` respectively
+            if isnothing(complex_buff1) # true in the "searchreal" case
+                for i in 1:nc
+                    Jv[end-nc+i] = 2integrate(uⱼvⱼ[i], qh)
+                end
+            else
+                for i in 1:nc
+                    if isodd(i) # then calculate 2∫(𝑢ᵢ𝑣ᵢ + 𝑢ᵢ₊₁𝑣ᵢ₊₁)d𝑥
+                        Jv[end-nc+i] = 2(integrate(uⱼvⱼ[i], qh) + integrate(uⱼvⱼ[i+1], qh))
+                    else # then use the result from the previous iteration
+                        Jv[end-nc+i] = Jv[end-nc+i-1]
+                    end
+                end
             end
         end
     end
