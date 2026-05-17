@@ -60,7 +60,8 @@ end
 "Plot components for the case of real `ψ`."
 function plot_comps(xs, ψ; stateno=1)
     # determine the number of components
-    nc = ndims(ψ) == 1 ? length(ψ) ÷ length(xs) : size(ψ, 2)
+    nc = ndims(ψ) == 3 ? size(ψ, 2) :
+    ψ isa Vector{<:Vector} ? length(ψ) : length(ψ) ÷ length(xs)
     figs = [plot() for _ in 1:nc]
     if ndims(ψ) == 3 # for ψ returned by make_eigenfunctions
         for c in 1:nc
