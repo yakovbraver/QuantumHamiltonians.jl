@@ -280,10 +280,12 @@ Suitable for the case when 𝐻, and hence also 𝑢ᵢ, is real in x-space.
     end
     # add (∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ)𝑢ᵢ to `duᵢ`
     for i in 1:nc
-        @turbo @. u²_sum = g[i, 1] * u²[1]
-        for j in 2:nc
-            g[i, j] == 0 && continue
-            @turbo @. u²_sum += g[i, j] * u²[j]
+        if isnothing(complex_buff1) || isodd(i) # if "searchreal" case or if odd, then recalculate `u²_sum`; on the contrary, for the complex case, on each even iteration this is not needed because can use `u²_sum` from the previous iteration 
+            @turbo @. u²_sum = g[i, 1] * u²[1]
+            for j in 2:nc
+                g[i, j] == 0 && continue
+                @turbo @. u²_sum += g[i, j] * u²[j]
+            end
         end
         window = (i-1)B+1:i*B
         duᵢ = du[window] # must create a view separately for @turbo to work in the next line
