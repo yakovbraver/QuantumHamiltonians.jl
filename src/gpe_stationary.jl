@@ -122,9 +122,11 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
             end 
         end
         
-        if !isnothing(natoms) # now can set final `nc` elements containing unknown 𝜇s
-            @show length(ψ_input) nc_effective
-            ψ_input[end-nc_effective+1:end] .= kron(μ, ones(2)) # use the passed `μ` as the initial guess (a single number if total 𝑁 is fixed or a vector otherwise; kron handles both cases)
+        # now can set final `nc` elements containing unknown 𝜇s, using the passed `μ` as the initial guess
+        if natoms isa Number
+            ψ_input[end-nc_effective+1:end] .= μ # broadcast the number to all elements
+        elseif natoms isa Vector
+            ψ_input[end-nc_effective+1:end] .= kron(μ, ones(2)) # repeat each 𝜇 twice and assign
         end
     end
 
