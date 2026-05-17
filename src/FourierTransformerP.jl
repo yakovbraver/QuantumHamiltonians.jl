@@ -367,7 +367,7 @@ function fft_to_operator_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer
                 end
             end
         else
-            @turbo for jˣ in 1:M
+            for jˣ in 1:M # @turbo would give up to 4x speed-up, but won't work for complex `A`. Anyway, the time here is ~0.1 ms, and this is not performed repeatedly, so we don't bother.
                 for jˣ′ in 1:M
                     jˣ⁻ = abs(jˣ′-jˣ)
                     A[jˣ′, jˣ] = buff[jˣ⁻+1] - buff[jˣ′+jˣ+1]
@@ -385,7 +385,7 @@ function fft_to_operator_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer
                 end
             end
         else
-            @turbo for jˣ in 0:M
+            for jˣ in 0:M
                 ζˣ = ifelse(jˣ == 0, 2, 1)
                 for jˣ′ in 0:M
                     ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
