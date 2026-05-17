@@ -20,24 +20,29 @@ function get_overlap(ψ₁, ψ₂, dx, basis; nc=1)
     return O
 end
 
-"Plot components for the case of complex `ψ`: abs and phase side by side."
+"""
+Plot components for the case of complex `ψ`: abs and phase side by side.
+`ψ` is either the return of `make_eigenfunctions` or `make_wavefunction`.
+"""
 function plot_comps_complex(xs, ψ; stateno=1)
-    ncomps = size(ψ, 2)
-    figs = [plot() for _ in 1:2ncomps]
     if ndims(ψ) == 3 # for ψ returned by make_eigenfunctions
+        ncomps = size(ψ, 2)
+        figs = [plot() for _ in 1:2ncomps]
         for i in 1:2:2ncomps
             c = (i+1) ÷ 2 # component number
-            figs[i]   = plot(xs, abs2.(ψ[:, c, stateno]), xlabel=L"x", ylabel=L"y", title=L"|\psi_{%$c}|^2");
-            figs[i+1] = plot(xs, angle.(ψ[:, c, stateno]) ./ π, xlabel=L"x", ylabel=L"y", title=L"\arg(\psi_{%$c})");
+            figs[i]   = plot(xs, abs2.(ψ[:, c, stateno]), xlabel=L"x", ylabel=L"y", title=L"|\psi_{%$c}|^2")
+            figs[i+1] = plot(xs, angle.(ψ[:, c, stateno]) ./ π, xlabel=L"x", ylabel=L"y", title=L"\arg(\psi_{%$c})")
         end
     elseif ndims(ψ) == 1 # for ψ returned by make_wavefunction
+        ncomps = length(ψ)
+        figs = [plot() for _ in 1:2ncomps]
         for i in 1:2:2ncomps
             c = (i+1) ÷ 2 # component number
-            figs[i]   = plot(xs, abs2.(ψ[c]), xlabel=L"x", ylabel=L"y", title=L"|\psi_{%$c}|^2");
-            figs[i+1] = plot(xs, angle.(ψ[c]) ./ π, xlabel=L"x", ylabel=L"y", title=L"\arg(\psi_{%$c})");
+            figs[i]   = plot(xs, abs2.(ψ[c]), xlabel=L"x", ylabel=L"y", title=L"|\psi_{%$c}|^2")
+            figs[i+1] = plot(xs, angle.(ψ[c]) ./ π, xlabel=L"x", ylabel=L"y", title=L"\arg(\psi_{%$c})")
         end
     else
-        println("ndims = $ndims not supported.")
+        println("ndims(ψ) = $ndims not supported.")
         return
     end
     plot(figs..., layout=(ncomps, 2), legend=false)
