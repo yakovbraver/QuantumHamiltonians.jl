@@ -100,15 +100,15 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
         end
     else
         nc_effective = 2nc # real and imaginary parts are treated as two components
-        g_input = kron(g, ones(nc_effective, nc_effective))
+        g_input = kron(g, ones(2, 2))
         if isnothing(natoms) # = numbers of atoms are not fixed, but chemical potentials are
-            μs_or_Ns = kron(μ, ones(nc_effective)) # do [μ₁, μ₂] -> [μ₁, μ₁, μ₂, μ₂]
+            μs_or_Ns = kron(μ, ones(2)) # do [μ₁, μ₂] -> [μ₁, μ₁, μ₂, μ₂]
             working_length = nc_effective*B
         elseif natoms isa Number # total number of atoms is fixed
             μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
             working_length = nc_effective*(B+1) # initial state must have `nc_effective` extra elements for 𝜇s
         else # number of atoms in each component is fixed
-            μs_or_Ns = kron(natoms, ones(nc_effective, nc_effective)) # do [𝑁₁, 𝑁₂] -> [𝑁₁, 𝑁₁, 𝑁₂, 𝑁₂]
+            μs_or_Ns = kron(natoms, ones(2)) # do [𝑁₁, 𝑁₂] -> [𝑁₁, 𝑁₁, 𝑁₂, 𝑁₂]
             working_length = nc_effective*(B+1) # initial state must have `nc_effective` extra elements for 𝜇s
         end
 
@@ -123,7 +123,8 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
         end
         
         if !isnothing(natoms) # now can set final `nc` elements containing unknown 𝜇s
-            ψ_input[end-nc_effective+1:end] .= kron(μ, ones(nc_effective)) # use the passed `μ` as the initial guess (a single number if total 𝑁 is fixed or a vector otherwise; kron handles both cases)
+            @show length(ψ_input) nc_effective
+            ψ_input[end-nc_effective+1:end] .= kron(μ, ones(2)) # use the passed `μ` as the initial guess (a single number if total 𝑁 is fixed or a vector otherwise; kron handles both cases)
         end
     end
 
