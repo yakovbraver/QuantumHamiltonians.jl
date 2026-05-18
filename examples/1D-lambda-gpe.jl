@@ -50,11 +50,20 @@ xlimits = (-3π, 3π) .|> Float
 
 @time phD = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M)
 
+######## Linear analysis ########
+
+@time diagonalize!(phD; nev=3)
+phD.ε
+xs, ψD = make_eigenfunction(phD, 1)
+plot(xs, ψD)
+
+######## Non-Linear analysis (GPE) ########
+
 g = 100 |> Float # nonlinearity
 
 # Ground state using Newton-Raphson, under the constraint of total number of atoms
 μ₀ = 36 |> Float # initial guess
-natoms = 1 |> Float
+natoms = 1 |> Float # wave function is normalised to unity; actual number of atoms is incorporated into `g`
 @time xs, ψD, μD = find_stationary(phD, [one], [g;;], μ₀, natoms; searchreal=true, maxiters=100, abstol=1e-10, show_trace=Val(true))
 E, μs, η = get_EμN(phD, ψD, [g;;], state_is_pspace=false)
 plot(xs, ψD)
@@ -70,8 +79,16 @@ plot(xs, ψD)
      nothing nothing 𝛺₂
      nothing nothing nothing]
 
-# @time ph = PSpaceHamiltonian{:dense}([xlimits], 𝑉; basis, M, Γ=[0, 0, Γ₃])
-@time ph = PSpaceHamiltonian{:dense}([xlimits], 𝑉; basis, M)
+ph = PSpaceHamiltonian{:dense}([xlimits], 𝑉; basis, M)
+
+######## Linear analysis ########
+
+@time diagonalize!(ph; nev=3)
+ph.ε # should agree with `phD.ε`
+xs, ψ = make_eigenfunction(ph, 1)
+plot_comps(xs, ψ)
+
+######## Non-Linear analysis ########
 
 # Rb-87 case
 g = [100   98 0
@@ -83,15 +100,26 @@ g = [100 100 0
        0   0 0] .|> Float
 
 # make trial wf from the dark-state wf
-ψ1 = @.( ψD / √(1 + 1/ϵ^2 * sin(xs)^2) ) |> real |> vec 
-ψ2 = @.( -ψ1 * 1/ϵ * sin(xs) ) |> real |> vec
+ψ1 = @.( ψD / √(1 + 1/ϵ^2 * sin(xs)^2) ) |> vec 
+ψ2 = @.( -ψ1 * 1/ϵ * sin(xs) ) |> vec
 
 Ψ₀ = [ψ1, ψ2, zeros(Float, length(ψ1))]
 
-# Newton-Raphson under the constraint of the total number of particles equal to 1; using `μD` from above as the initial guess
+# Newton-Raphson under the constraint that the total number of particles shoud be equal to 1; using `μD` from above as the initial guess
 @time xs, ψ_3comp, μ_3comp = find_stationary(ph, Ψ₀, g, μD, natoms; searchreal=true, abstol=1e-10, show_trace=Val(true))
 E, μs, η_3comp = get_EμN(ph, ψ_3comp, g, state_is_pspace=false)
 plot_comps(xs, ψ_3comp)
+
+######## With decay ########
+
+phΓ = PSpaceHamiltonian{:dense}([xlimits], 𝑉; basis, M, Γ=[0, 0, Γ₃])
+diagonalize!(phΓ; nev=3)
+phΓ.ε # real parts should agree with `phD.ε`. The imaginary part for the ground state is ~1e-7
+
+# Run Newton-Raphson for 50 iterations. The solver works with real 𝜇; since actual is complex, it cannot reach abstol=1e-10. Will stop at abstol≈1e-3; this is L-inf norm, meaning the imaginary part of 𝜇 does not exceed 1e-3
+xs, ψΓ, μΓ = find_stationary(phΓ, ψ_3comp, g, μD, natoms; maxiters=50, abstol=1e-10, show_trace=Val(true))
+E, μs, ηΓ = get_EμN(phΓ, ψΓ, g, state_is_pspace=false, makereal=false)
+plot_comps_complex(xs, ψΓ)
 
 ################ Fields off ################
 
