@@ -1,21 +1,20 @@
 # Helper functions for plotting 1D multicomponent wave functions and dynamics maps
 using LinearAlgebra: dot
 
-"Return optimal number `M` of harmonics for `basis`, approximately 2^p. Relevant for GPE-related calculations, where FFT is performed repeatedly."
+"Return optimal number `M` of harmonics for `basis`, approximately 2^p. Relevant for p-space GPE-related calculations, where FFT is performed repeatedly."
 function get_M(basis, p=7)
     basis == :cis ? (p == 7 ? 62 : p == 8 ? 122 : p == 9 ? 247 : p == 10 ? 500 : 1012) : # cis uses 2M+1 internally, which is odd and not a power of two, but there are some good choices
     basis == :sin ? 2^p-1 : 2^p
 end
 
-"Compute overlap ⟨𝜓₁|𝜓₂⟩"
-function get_overlap(ψ₁, ψ₂, dx, basis; nc=1)
+"Compute overlap ⟨𝜓₁|𝜓₂⟩ for flattened x-space vectors"
+function get_overlap(ψ₁, ψ₂, qh)
     O = zero(eltype(ψ₁))
-    B = length(ψ₁) ÷ nc
-    for i in 1:nc
+    B = qh.B
+    for i in 1:qh.nc
         ψ₁ᵢ = @view ψ₁[(i-1)B+1:i*B]
         ψ₂ᵢ = @view ψ₂[(i-1)B+1:i*B]
-        O += dot(ψ₁ᵢ, ψ₂ᵢ) * dx
-        basis == :cos && (O -= (ψ₁ᵢ[1]'*ψ₂ᵢ[1] + ψ₁ᵢ[end]'*ψ₂ᵢ[end])/2 * dx)
+        O += QuantumHamiltonians.inner_prod(ψ₁ᵢ, ψ₂ᵢ, qh)
     end
     return O
 end
@@ -120,9 +119,10 @@ function make_animation(U, xs)
     end
 end
 
-function plot_comps_2D(xs, ys, ψ)
+"Plot all 𝑛 components of ψ in 𝑛 rows, in two columns: abs2 and angle. `addheight` increases height"
+function plot_comps_2D(xs, ys, ψ; addheight=0)
     nc = length(ψ)
-    theme(:dark, size=(600, 200nc+20))
+    theme(:dark, size=(600, 200nc+20 + addheight))
     figs = [plot() for _ in 1:2nc]
     for c in 1:nc
         figs[2(c-1)+1] = heatmap(xs, ys, abs2.(ψ[c])', c=CMAP)
