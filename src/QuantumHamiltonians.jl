@@ -2,6 +2,8 @@ module QuantumHamiltonians
 
 import FFTW
 import OrdinaryDiffEq as ODE
+import OrdinaryDiffEqLinear as ODE_LIN
+import OrdinaryDiffEqExponentialRK as ODE_EXP
 import SciMLOperators
 import KrylovKit
 using ArnoldiMethod: partialschur, partialeigen

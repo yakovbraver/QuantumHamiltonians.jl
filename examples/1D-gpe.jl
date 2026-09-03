@@ -252,7 +252,7 @@ dt = 1e-3 |> Float
 nsaves = 500
 
 ψ_rand = ψ_nr .+ 1e-5 .* rand(length(ψ_nr))
-@time sol = propagate(ph, [ψ_rand], [g;;]; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE.ETDRK4())
+@time sol = propagate(ph, [ψ_rand], [g;;]; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE_EXP.ETDRK4())
 
 xs, U = make_map(ph, sol)
 ts = range(0, T_max, nsaves+1)

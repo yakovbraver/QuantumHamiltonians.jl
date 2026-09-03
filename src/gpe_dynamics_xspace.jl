@@ -1,7 +1,7 @@
 "Convenience caller for the 1-component case, where `ψ₀` is an analytic function or an array representing the discretised function, `g` is a number, and `ψ₀_iseven` is a Bool."
 function propagate(xh::XSpaceHamiltonian{R}, ψ₀::Union{Function, AbstractArray{<:Number}}, g::R;
                    T_max::R, dt::R, itime::Bool=false,
-                   solver=(itime ? ODE.LawsonEuler(;krylov=true) : ODE.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R}
+                   solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true) : ODE_EXP.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R}
     propagate(xh, [ψ₀], [g;;]; T_max, dt, itime, solver, nsaves)
 end
 
@@ -19,7 +19,7 @@ Return the DifferentialEquations solution object.
 """
 function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}, AbstractVector{<:AbstractArray{<:Number}}}, g::AbstractMatrix{R};
                    T_max::R, dt::R, itime::Bool=false,
-                   solver=(itime ? ODE.LawsonEuler(;krylov=true) : ODE.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R, T}
+                   solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true) : ODE_EXP.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R, T}
     (;xlims, B, nc, ft) = xh
 
     # determine if equation is real (in x-space)

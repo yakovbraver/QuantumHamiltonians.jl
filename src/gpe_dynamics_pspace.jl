@@ -1,7 +1,7 @@
 "Convenience caller for the 1-component case, where `ψ₀` is an analytic function or a vector representing discretised functions, `g` is a number, and `ψ₀_iseven` is a Bool."
 function propagate(xh::PSpaceHamiltonian{Storage, R}, ψ₀::Union{Function, AbstractVector}, g::R=zero(R);
                    ψ₀_iseven::Bool=false, T_max::R, dt::R, itime::Bool=false,
-                   solver=(iszero(g) ? ODE.LinearExponential() : itime ? ODE.LawsonEuler() : ODE.ETDRK4()), nsaves::Integer=0) where {Storage, R}
+                   solver=(iszero(g) ? ODE_LIN.LinearExponential() : itime ? ODE_EXP.LawsonEuler() : ODE_EXP.ETDRK4()), nsaves::Integer=0) where {Storage, R}
     propagate(xh, [ψ₀], [g;;]; ψ₀_iseven=[ψ₀_iseven], T_max, dt, itime, solver, nsaves)
 end
 
@@ -22,7 +22,7 @@ Return the DifferentialEquations solution object.
 """
 function propagate(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
                    ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), T_max::R, dt::R, itime::Bool=false,
-                   solver=(iszero(g) ? ODE.LinearExponential() : itime ? ODE.LawsonEuler() : ODE.ETDRK4()), nsaves::Integer=0) where {Storage, R, T}
+                   solver=(iszero(g) ? ODE_LIN.LinearExponential() : itime ? ODE_EXP.LawsonEuler() : ODE_EXP.ETDRK4()), nsaves::Integer=0) where {Storage, R, T}
     (;xlims, L, B, basis, nc, ft) = xh
 
     # determine if equation can be solved using real types. Note that for cis with nonzero `g` it cannot because intermediate FFT's will be yielding complex results

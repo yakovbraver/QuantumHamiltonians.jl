@@ -60,7 +60,7 @@ vals[smallindx]
 nsaves = 100
 T_max = 50 |> Float
 dt = 1e-3 |> Float
-@time sol = propagate(ph_db, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE.ETDRK2())
+@time sol = propagate(ph_db, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE_EXP.ETDRK2())
 V = sol.u[end]
 E, μs = get_EμN(ph_db, V, g)
 xs, U = make_map_comps(ph_db, sol; itime=false)
@@ -230,7 +230,7 @@ plot(fig_real, fig_imag, layout=(2, 1))
 nsaves = 100
 T_max = 1000 |> Float
 dt = 1e-3 |> Float
-@time sol = propagate(ph, [ψ_lattice[1:end÷2], ψ_lattice[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE.ETDRK2()) # takes ~45 seconds; the time point at which the instability sets in (𝑡 = 500 in the paper) depends on the accuracy of the ODE solver and the accuracy of the initial state
+@time sol = propagate(ph, [ψ_lattice[1:end÷2], ψ_lattice[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE_EXP.ETDRK2()) # takes ~45 seconds; the time point at which the instability sets in (𝑡 = 500 in the paper) depends on the accuracy of the ODE solver and the accuracy of the initial state
 V = sol.u[end]
 E, μ = get_EμN(ph, V, g)
 xs, U = make_map_comps(ph, sol; itime=false)

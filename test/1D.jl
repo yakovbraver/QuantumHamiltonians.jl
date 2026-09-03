@@ -139,7 +139,7 @@ end
     nsaves = 2
     T_max = 50 |> Float
     dt = 1e-3 |> Float
-    sol = propagate(qh, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE.ETDRK2())
+    sol = propagate(qh, [ψ_db[1:end÷2], ψ_db[end÷2+1:end]], g; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE_EXP.ETDRK2())
     @test Int(sol.retcode) == 1 # test for success
 
     # test energy conservation
@@ -248,7 +248,7 @@ end
         # find soliton state using imaginary time
         T_max = 1.0
         dt = 1e-4
-        sol = propagate(qh, 𝜓₀, g; T_max, dt, itime=true, solver=QuantumHamiltonians.ODE.LawsonEuler(;krylov=true, m=5))
+        sol = propagate(qh, 𝜓₀, g; T_max, dt, itime=true, solver=QuantumHamiltonians.ODE_EXP.LawsonEuler(;krylov=true, m=5))
         E_itime, μ_itime, N_itime = get_EμN(qh, sol.u[end], [g;;])
 
         # compare itime agains NR
@@ -267,7 +267,7 @@ end
         dt = 1e-3
         nsaves = 2
         G = kind == :xspace ? [g;;] : g # work-around for interface difference 
-        sol = propagate(qh, ψ₀, G; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE.ETDRK4(;krylov=true, m=5))
+        sol = propagate(qh, ψ₀, G; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE_EXP.ETDRK4(;krylov=true, m=5))
 
         E_final = get_EμN(qh, sol.u[end], [g;;])[1]
         E_initial = get_EμN(qh, sol.u[1], [g;;])[1]
