@@ -2,17 +2,18 @@
 A lazy linear map describing the action of the BdG operator on an x-space vector
     𝑐 = (𝑎₁(x), …, 𝑎ₙ(x), 𝑏₁(x), …, 𝑏ₙ(x))
 """
-struct BdGMap{T, H, P, R, FT} <: LM.LinearMap{T}
+struct BdGMap{T, H, P, R, FourierTransformer} <: LM.LinearMap{T}
     Hₚ::H # Hamiltonian matrix in p-space; can be dense or sparse
     H⁺ₚ::H # p-space matrix corresponding to the conjugated x-space Hamiltonian; can be dense or sparse
     G::Matrix{Vector{P}} # An analogue of the BdG matrix
     nc::Int # number of components 
     B::Int # block size
+    # TODO consider removing the buffers and `ft` and referencing `ph` instead (but `xh` has only one real buffer)
     ψₚ_buff1_real::Vector{R} # real buffer for storing ψₚ, needed in the sin/cos cases when acting on real vectors
     ψₚ_buff2_real::Vector{R} # real buffer for storing Hₚ*ψₚ, needed in the sin/cos cases when acting on real vectors
     ψₚ_buff1_complex::Vector{Complex{R}} # complex buffer for storing ψₚ, needed when acting on complex vectors
     ψₚ_buff2_complex::Vector{Complex{R}} # complex buffer for storing Hₚ*ψₚ, needed when acting on complex vectors
-    ft::FT # Fourier transformer supporting both forward and backward transforms
+    ft::FourierTransformer # Fourier transformer supporting both forward and backward transforms
     size::Dims{2} # size that the map would have were it a concrete matrix. For us it's double the size of `Hₚ`
 end
 
@@ -65,9 +66,6 @@ function BdGMap(xh::PSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
         error("BdGMap not implemented for $(xh.nc) components")
     end
 
-    # prepare the plan that can transform either real or complex vectors (hence `target_real=false`), because the map might need to act on complex ones during diagonalisation
-    ft = FourierTransformerP(xh.xlims, xh.M; xh.basis, target_real=false, target_rank=1)
-    
     ψₚ_buff1_real = similar(f, R)
     ψₚ_buff2_real = similar(f, R)
     ψₚ_buff1_complex = similar(f, Complex{R})
@@ -76,8 +74,8 @@ function BdGMap(xh::PSpaceHamiltonian{Storage, R}, f::AbstractVector{S}, g::Abst
     Hₚ = copy(xh.H) # could be a reference, but we modify it when scanning quasimomenta
     H⁺ₚ = copy(xh.H) # copy the same Hamiltonian for now: TODO implement conjugation
     B = size(xh.H, 1) ÷ xh.nc # block size
-    return BdGMap{T, typeof(Hₚ), P, R, typeof(ft)}(
-        Hₚ, H⁺ₚ, G, xh.nc, B, ψₚ_buff1_real, ψₚ_buff2_real, ψₚ_buff1_complex, ψₚ_buff2_complex, ft, size(xh.H) .* 2
+    return BdGMap{T, typeof(Hₚ), P, R, typeof(xh.ft)}(
+        Hₚ, H⁺ₚ, G, xh.nc, B, ψₚ_buff1_real, ψₚ_buff2_real, ψₚ_buff1_complex, ψₚ_buff2_complex, xh.ft, size(xh.H) .* 2
     )
 end
 
@@ -124,13 +122,13 @@ function LM._unsafe_mul!(ψ_out, bdg_map::BdGMap{T}, ψ_in::AbstractVector) wher
 end
 
 """
-Update the Hamiltonians `bdg_map.H` and `bdg_map.H` using quasimomenta `q` and the reference Hamiltonian `xh.H`.
+Update the Hamiltonians `bdg_map.Hₚ` and `bdg_map.H⁺ₚ` using quasimomenta `q` and the reference Hamiltonian `xh.H`.
 Currently, assumes that Hamiltonian is just the Laplacian. The body is to be replaced with something as in q-diagonalisation function.
 """
 function update_H!(bdg_map::BdGMap{T}, xh::PSpaceHamiltonian, q::AbstractVector{<:Real}) where {T}
     Hₚ_diag  = diagview(bdg_map.Hₚ)
     H⁺ₚ_diag = diagview(bdg_map.H⁺ₚ)
-    p²  = make_p²(xh.L, xh.M, xh.δ, :cis, q) |> parent # `parent` returns the diagonal as a vector
+    p²  = make_p²_matrix(xh.L, xh.ft.M, xh.δ, :cis, q) |> parent # `parent` returns the diagonal as a vector
     B = size(xh.H, 2)÷xh.nc # block size
     for c in 1:xh.nc
         Hₚ_diag[(c-1)B+1:c*B]  .= p²
@@ -229,9 +227,8 @@ function bdg_spectrum(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:
     g_input = g isa R ? [g;;] : g # constructor needs a vector, so make one in the 1-component case
     bdg_map = BdGMap(xh, ψ, g_input, μ_input; floquet=true)
 
-    (;M, xlims, L, δ, nc, H, 𝑈, 𝑈_iseven, 𝐴, Γ) = xh
+    (;xlims, B, nc) = xh
     D = length(xlims)
-    B = (2M + 1)^D # block size
     nsaves = nev == 0 ? 2B*nc : nev # number of eigenvalues and eigenvectors to store: if `nev` is zero (or not passed), then store all
     vals = Array{Complex{R}}(undef, nsaves, ntuple(i -> length(qs[i]), D)...) # vals[n, iqx, iqy, ...] = `n`th eigenvalue at momentum at indices (`iqx`, `iqy`)
     vecs = Array{Complex{R}}(undef, 2B*nc, nsaves, ntuple(i -> length(qs[i]), D)...) # vecs[:, n, iqx, iqy, ...] = `n`th eigenvector at momentum at indices (`iqx`, `iqy`)
@@ -257,11 +254,11 @@ If `nev > 0`, calculate only `nev` eigenvalues of of type `whichvals` (`:LI` = l
 `ψ` can be a vector or a N×1 matrix (where N is the number of x points).
 """
 function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractVecOrMat{<:Union{R, Complex{R}}}, g::AbstractFloat, μ::AbstractFloat; ψ_iseven=false, nev::Integer=0, whichvals::Symbol=:LI, verbose::Bool=false) where {Storage, R}
-    (;xlims, M, basis) = xh
+    (;xlims, basis) = xh
     # transform `ψ2` to p-space
     ψ_isreal = eltype(ψ) <: Real
     ψ2 = g .* ψ.^2
-    ft = FourierTransformerP(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `M`
+    ft = FourierTransformerP(xlims, xh.ft.M; basis, target_rank=2) # the constructed matrix will correspond to `M`
     transform!(ft, ψ2)
     v2 = fft_to_operator(ft; makereal=(ψ_iseven && ψ_isreal))
     if ψ_isreal
@@ -273,7 +270,6 @@ function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractVecO
         vconj2 = fft_to_operator(ft)
         # transform `ψabs2` to p-space
         ψabs2 = abs2.(ψ)
-        ft = FourierTransformerP(xlims, M; basis, target_real=true, target_rank=2)
         transform!(ft, ψabs2)
         vabs2 = fft_to_operator(ft)
     end
@@ -302,10 +298,10 @@ Note that the off-diagonal blocks of `xh.H` are not taken into account at all (b
 """
 function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractMatrix{<:Union{R, Complex{R}}}, g::AbstractMatrix{<:AbstractFloat}, μ::Union{R, AbstractVector{<:R}}, q=zeros(R, length(xh.xlims));
                              nev::Integer=0, verbose::Bool=false) where {Storage, R}
-    (;xlims, M, basis, H, nc) = xh
+    (;xlims, basis, B, H, nc) = xh
     μs = μ isa R ? fill(μ, nc) : μ # if only one μ is passed, then construct a vector of same values
     ψ_isreal = eltype(ψ) <: Real
-    ft = FourierTransformerP(xlims, M; basis, target_real=ψ_isreal, target_rank=2) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
+    ft = FourierTransformerP(xlims, xh.ft.M; basis, target_rank=2) # the constructed matrix will correspond to `2M` -- internally it will use twice because target_rank=2
     transform!(ft, ψ[:, 1].^2)
     v₁² = fft_to_operator(ft)
     transform!(ft, ψ[:, 2].^2)
@@ -320,17 +316,16 @@ function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
         v₁⁺v₂⁺ = v₁v₂
         v₁v₂⁺ = v₁v₂
         v₁⁺v₂ = v₁v₂
-    else
+    else # never used this case in practice
         transform!(ft, conj(ψ[:, 1]).^2)
         v₁⁺² = fft_to_operator(ft)
         transform!(ft, conj(ψ[:, 2]).^2)
         v₂⁺² = fft_to_operator(ft)
         
-        ft_real = FourierTransformerP(xlims, M; basis, target_real=true, target_rank=2)
-        transform!(ft_real, abs2.(ψ[:, 1]))
-        V₁² = fft_to_operator(ft_real)
-        transform!(ft_real, abs2.(ψ[:, 2]))
-        V₂² = fft_to_operator(ft_real)
+        transform!(ft, abs2.(ψ[:, 1]))
+        V₁² = fft_to_operator(ft)
+        transform!(ft, abs2.(ψ[:, 2]))
+        V₂² = fft_to_operator(ft)
 
         transform!(ft, conj.(ψ[:, 1]) .* conj.(ψ[:, 2]))
         v₁⁺v₂⁺ = fft_to_operator(ft)
@@ -339,7 +334,6 @@ function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
         transform!(ft, conj.(ψ[:, 1]) .* ψ[:, 2])
         v₁⁺v₂ = fft_to_operator(ft)
     end
-    B = size(v₁², 1) # our usual blocksize -- number of points corresponding to each (of the two) components -- of xh_half
     A = Matrix{eltype(v₁²)}(undef, 4B, 4B)
     block(a, b) = CartesianIndices(((a-1)B+1:a*B, (b-1)B+1:b*B))
 
@@ -352,7 +346,7 @@ function bdg_spectrum_pspace(xh::PSpaceHamiltonian{Storage, R}, ψ::AbstractMatr
 
         # block (1, 1)
         copyto!(A, block(1, 1), H, block(1, 1))
-        p² = make_p²(xh.L, xh.M, xh.δ, basis, q) |> parent
+        p² = make_p²_matrix(xh.L, xh.ft.M, xh.δ, basis, q) |> parent
         A₁₁[diagind(A₁₁)] .= p² .+ U_diags[1] .- μs[1]
         @. A₁₁ += 2g[1,1]V₁² + g[1,2]V₂²
 

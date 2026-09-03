@@ -145,14 +145,21 @@ heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_ra
 surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
-# Diagonalisation in x-space: faster than p-space
-M = 128
+### Diagonalisation in x-space: faster than p-space
+M = 64
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝜙, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, δ);
-# Setting `ishermitian=false` because solver claims that map is nonhermitian. TODO: investigate
-@time vals, vecs, info = diagonalize(xh, nev=2, ishermitian=false, krylovdim=50); # M=64, krylovdim=50: 4.4s. M=128, krylovdim=50: 22s. [with AppleAccelerate]
-vals
-heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[stateno].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[stateno].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+@time diagonalize!(xh; nev=2, verbose=true, maxdim=40); # M=64: 1.76s. M=128, maxdim=40: 19s
+xh.ε
+xs, ys, ψ = make_eigenfunction(xh; stateno);
+heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+
+## Diagonalisation via `StateVector`
+# Setting `ishermitian=false` because solver claims that map is nonhermitian and yields wrong eigenvalues. TODO: investigate
+# @time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh, nev=2, ishermitian=false, krylovdim=50); # M=64, krylovdim=50: 4.4s. M=128, krylovdim=50: 22s. [with AppleAccelerate]
+# vals
+# heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[stateno].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+# heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[stateno].data[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Full 3-component diagonalisation
 
@@ -169,7 +176,7 @@ M = 50
 𝑈_iseven = trues(3, 3)
 
 @time ph = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, δ, 𝑈_iseven, Γ=[0, 0, Γ₃], fft_threshold=1e-3);
-#@time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, δ, 𝑈_iseven);
+@time ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, δ, 𝑈_iseven);
 matrix_density(ph)
 
 @time diagonalize!(ph, nev=5);
@@ -195,11 +202,16 @@ function plot_comps(xs, ψ)
     plot(figs..., layout=(3, 2))
 end
 
-# Experimental: diagonalisation in x-space. For M = 16, linear solving struggles to converge to sufficient accuracy, so eigenvalues cannot converge correctly. Tweaking krylovdim and maxiter does not help.
-# Perhaps a preconditioner is needed. However, it is still enough to yield the lowest eigenvalue with at least 3 digits accuracy, and the eigenfunction looks correct.
-# Still, this is too slow: 20s, while dense Arnoldi is 0.8s. The slowness comes from linear solving: solving for :SR with no inversion (invert=false) is fast but is not what we need.
-@time ph = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=16, δ);
-@time vals, vecs, info = diagonalize(ph; nev=1);
-info
-vals
-plot_comps(ph.ft.xs[:, 1], ph.ft.xs[:, 2], vecs[1].data)
+### Diagonalisation in x-space. Inversion slows down solving, and this become uncompetitive compared to sparse p-space diagonalisation. (4s for M=16 vs. 0.17s with sparse)
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=16, δ);
+@time diagonalize!(xh; nev=1, verbose=true, tol=1e-3);
+xh.ε
+xs, ys, ψ = make_eigenfunction(xh; stateno=1);
+plot_comps([xs ys], ψ)
+
+# Diagonalisation via `StateVector`. Linear solving struggles to converge.
+# @time ph = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=16, δ);
+# @time vals, vecs, info = diagonalize(ph; nev=1);
+# info
+# vals
+# plot_comps(ph.ft.xs[:, 1], ph.ft.xs[:, 2], vecs[1].data)

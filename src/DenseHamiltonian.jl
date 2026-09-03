@@ -4,17 +4,17 @@ A type representing a spatial, 𝐷-dimensional, 𝑛-component, possibly quasim
     𝐻ᵢⱼ(r) = 𝑈ᵢⱼ(r)
 as a dense matrix. Here  1 ≤ 𝑖, 𝑗 ≤ 𝑛,  r = (𝑥₁, …, 𝑥_𝐷),  Aᵢ = (𝐴ᵢ₁, …, 𝐴ᵢ_𝐷),  q = (𝑞₁, …, 𝑞_𝐷).
 """
-mutable struct DenseHamiltonian{R,T,S,D1,D2} <: PSpaceHamiltonian{:dense,R,T,S,D1,D2}
+mutable struct DenseHamiltonian{R, T, S, D1, D2, FourierTransformer} <: PSpaceHamiltonian{:dense, R, T, S, D1, D2}
     xlims::Vector{Tuple{R, R}}
     L::Vector{R}
-    M::Int # maximum harmonic number (will use -M:M for periodic, 1:M for nonperiodic)
+    B::Int # "block size" -- number of points in the contiguous array corresponding to each component. The size of `H` is `B*nc`-by-`B*nc`
     δ::R # coefficient of the momentum term: -iδ∇ (same for all components)
     nc::Int # number of components
     basis::Symbol
     ishermitian::Bool # `H` is nonhermitian if decays Γ are present
-    𝑈::Matrix{<:Union{Function,Nothing}} # nc-component matrix containing coordinate-space potentials and couplings. Return type must be R or T
+    𝑈::Matrix{<:Union{Function, Nothing}} # nc-component matrix containing coordinate-space potentials and couplings. Return type must be R or T
     𝑈_iseven::BitMatrix # nc-component matrix indicating if 𝑈ᵢⱼ is an even function 𝑈ᵢⱼ(r) = 𝑈ᵢⱼ(-r)
-    𝐴::Matrix{<:Union{Function,Nothing}} # 𝐴[c, i] is `i`th projection of the `c`th component of hte vector potential
+    𝐴::Matrix{<:Union{Function, Nothing}} # `𝐴[c, i]` is `i`th projection of the `c`th component of the vector potential
     Γ::Vector{R} # decay rates
     H::Matrix{T} # momentum-space Hamiltonian used for diagonalisation
     ε::Vector{S} # eigenvalues, can be complex for nonhermitian `H`, hence additional type `S`
@@ -22,6 +22,12 @@ mutable struct DenseHamiltonian{R,T,S,D1,D2} <: PSpaceHamiltonian{:dense,R,T,S,D
     ε_q::Array{S,D1} # ε_q[n, iqx, iqy] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
     V_q::Array{T,D2} # V_q[:, n, iqx, iqy] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
     wanniers::Wanniers{R} # wanniers are implemented only for the case of 1-component and 1D
+    # transformer and buffers for applying the Hamiltonian to x-space vectors via `mul!`
+    ft::FourierTransformer
+    uₚ_buff_real::Vector{R}
+    uₚ_buff_real2::Vector{R}
+    uₚ_buff_complex::Vector{Complex{R}}
+    uₚ_buff_complex2::Vector{Complex{R}}
 end
 
 """
@@ -56,7 +62,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     T = H_isreal ? R : Complex{R} # type of elements of the Hamiltonian
     H = zeros(T, nc*B, nc*B)
 
-    ft = FourierTransformerP(xlims, M; basis, target_real=U_isreal) # `target_real` will allocate a buffer for the imaginary part of the sin/cos-transform if some of 𝑈's are complex
+    ft = FourierTransformerP(xlims, M; basis)
 
     𝑈_diag_allequal = allequal(diagview(𝑈))
     𝐴ᵢ_allequal = [allequal(𝐴ᵢ) && !isnothing(𝐴ᵢ[1]) for 𝐴ᵢ in eachcol(𝐴)] # 𝐴ᵢ_allequal[i] shows if projection 𝐴ᵢ is the same for all components; note that this also checks if they are nothing
@@ -75,7 +81,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
         end
         # Add 𝑝² if basis is sin/cos. But if there are no 𝐴's at all, add in the cis case too (if 𝐴's are present, then 𝑝ᵢ²'s will be added together with 𝐴ᵢ's)
         if basis != :cis || all(𝐴ᵢ_present .== false)
-            h .+= make_p²(L, M, δ, basis)
+            h .+= make_p²_matrix(L, M, δ, basis)
             h_set = true
             # @debug "Added 𝑝² to H[$jH, $jH]"
         end
@@ -98,7 +104,7 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
             if !𝐴ᵢ_present[i] && basis != :cis # if the projection 𝐴ᵢ is zero for all components, then skip 𝐴ᵢ. However, if basis is cis, we cannot skip because also need to add 𝑝ᵢ²
                 continue
             end
-            pᵢ = make_p_i(L, M, δ, basis, i)
+            pᵢ = make_pⁱ_matrix(L, M, δ, basis, i)
             for c in 1:nc
                 if isnothing(𝐴[c, i]) # then there is nothing to do, except adding 𝑝ᵢ² in the cis case
                     if basis == :cis
@@ -162,7 +168,15 @@ function DenseHamiltonian(xlims::AbstractVector{Tuple{R,R}},
     ε_q = Array{S}(undef, ntuple(Returns(0), D+1)) # ε_q[n, iqx, iqy, ...] = `n`th band eigenvalue at momentum at indices (`iqx`, `iqy`)
     V_q = Array{T}(undef, ntuple(Returns(0), D+2)) # V_q[:, n, iqx, iqy, ...] = `n`th band eigenvector at momentum at indices (`iqx`, `iqy`)
 
-    return DenseHamiltonian(xlims, L, M, δ, nc, basis, ishermitian, 𝑈, BitMatrix(𝑈_iseven), 𝐴, Γ, H, ε, V, ε_q, V_q, Wanniers{R}())
+    # buffers for applying the Hamiltonian to x-space vectors
+    ft = FourierTransformerP(xlims, M; basis, target_rank=1) # a rank-1 transformer used in `mul!`; it will be stored in the Hamiltonian
+    uₚ_buff_real = Vector{R}(undef, nc*B)
+    uₚ_buff_real2 = similar(uₚ_buff_real)
+    uₚ_buff_complex = similar(uₚ_buff_real, Complex{R})
+    uₚ_buff_complex2 = similar(uₚ_buff_complex)
+
+    return DenseHamiltonian(xlims, L, B, δ, nc, basis, ishermitian, 𝑈, BitMatrix(𝑈_iseven), 𝐴, Γ, H, ε, V, ε_q, V_q, Wanniers{R}(),
+                            ft, uₚ_buff_real, uₚ_buff_real2, uₚ_buff_complex, uₚ_buff_complex2)
 end
 
 # """
@@ -189,8 +203,7 @@ end
 
 "Helper function for q-diagonalisation that updates the diagonal blocks of `xh.H`."
 function update_diag!(xh::DenseHamiltonian, U, K, QS, 𝑈_diag_allequal, 𝐴ᵢ_allequal, D, buff1, buff2)
-    (;nc, M, Γ, H) = xh
-    B = (2M + 1)^D
+    (;nc, B, Γ, H) = xh
     for c in 1:nc
         H_block = @view H[(c-1)*B+1:c*B, (c-1)*B+1:c*B]
         for i in 1:D

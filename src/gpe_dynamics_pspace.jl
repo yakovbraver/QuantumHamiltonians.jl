@@ -23,11 +23,7 @@ Return the DifferentialEquations solution object.
 function propagate(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:AbstractVector}, AbstractVector{<:Number}}, g::AbstractMatrix{R}=zeros(R, xh.nc, xh.nc);
                    ψ₀_iseven::AbstractVector{Bool}=falses(length(ψ₀)), T_max::R, dt::R, itime::Bool=false,
                    solver=(iszero(g) ? ODE.LinearExponential() : itime ? ODE.LawsonEuler() : ODE.ETDRK4()), nsaves::Integer=0) where {Storage, R, T}
-    (;xlims, L, M, basis, nc) = xh
-    D = length(xlims)
-    # size of each Hamiltonian block
-    B = basis == :cis ? (2M+1)^D :
-        basis == :sin ?      M^D : (M+1)^D
+    (;xlims, L, B, basis, nc, ft) = xh
 
     # determine if equation can be solved using real types. Note that for cis with nonzero `g` it cannot because intermediate FFT's will be yielding complex results
     eq_isreal = itime && T <: Real && !(basis == :cis && !iszero(g)) # below `eq_isreal` might change if initial state is complex
@@ -52,7 +48,6 @@ function propagate(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
         ψ₀ₚ = Vector{eq_isreal ? R : Complex{R}}(undef, nc*B)
 
         # transform each component's wf and put into ψ₀ₚ
-        ft = FourierTransformerP(xlims, M; basis, target_real=all(ψ₀_arereal), target_rank=1) # `target_real=false` will allocate a buffer for the imaginary part of the sin/cos-transform if ψ₀ is complex
         for c in 1:nc
             transform!(ft, ψ₀[c])
             ψ₀ₚ_block = @view ψ₀ₚ[(c-1)*B+1:c*B]
@@ -71,19 +66,20 @@ function propagate(xh::PSpaceHamiltonian{Storage, R, T}, ψ₀::Union{AbstractVe
 
     # Combine in `G` all fft normalisation factors so that this multiplication can be done just once at each step
     if basis == :cis
-        N = 2M + 1 # number of points in each dimension
+        N = 2ft.M + 1 # number of points in each dimension
         dx = L ./ N
         G .*= prod(@. dx / L^2) # After bfft, resulting `u` must be divided by √𝐿; since we have `u^3`, we must divide by 𝐿√𝐿. Then, after fft the result must be multiplied by Δ𝑥/√𝐿. So Δ𝑥/𝐿² in total.
     elseif basis == :sin
-        N = M
+        N = ft.M
         dx = L ./ (N+1)
         G .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
     else # basis == :cos
-        N = M + 1
+        N = ft.M + 1
         dx = L ./ (N-1)
         G .*= prod(@. dx / (2L)^2) # Same as for cis but with √(2𝐿) instead of √𝐿
     end
-    G_input = nc == 1 || allequal(G) ? G[1] : G # the `gpe_*` functions specialise on the equal-g case
+    # if all 𝑔ᵢⱼ are equal, then make the final `g_input` a scalar; a specialisation of `u∑gu²_complex!` exists for this case
+    G_input = nc == 1 || allequal(G) ? G[1] : G
 
     # initialise the problem
     tspan = (zero(R), T_max)
@@ -172,7 +168,7 @@ end
 
 """
 Update the 𝑢′ vector of the nonlinear part of the GPE
-    𝑢′ᵢ = ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|²𝑢ᵢ
+    𝑢′ᵢ = 𝑢ᵢ∑ⱼ 𝑔ᵢⱼ|𝑢ⱼ|²
 The 𝑔ᵢⱼ's must contain `im` (for real-time propagation) and the proper sign.
 Suitable for cases: (1) basis is cis; (2) basis is sin/cos and equation is real.
 """
@@ -192,7 +188,7 @@ function gpe_cis_realsincos!(du, u, params, t)
         @. u²[i] = abs2(du_i)
     end
     # for each `i`th component, calculate 𝑢ᵢ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² storing the result in the appropriate block of `du`.
-    u∑gu²_complex!(du, u², u²_sum, g, nc, B)
+    u∑gu²_complex!(du, u², u²_sum, g, nc, B) # if all 𝑔ᵢⱼ are equal, then `g` is a number, and a special method will be called.
     # transform `du` to p-space in-place
     for i in 1:nc
         @views fft_plan! * du[(i-1)B+1:i*B]
@@ -202,11 +198,11 @@ function gpe_cis_realsincos!(du, u, params, t)
 end
 
 """
-For each `i`th component, calculate 𝑢ᵢ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² storing the result in the appropriate block of `du`.
+For each `i`th component, calculate ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² and multiply by the 𝑖th block of `du`, assumed to contain 𝑢ᵢ.
 """
 function u∑gu²_complex!(du, u², u²_sum, g::AbstractMatrix{<:Number}, nc, B)
     for i in 1:nc
-        @. u²_sum = g[i, 1] * u²[1]
+        @. u²_sum = g[i, 1] * u²[1] # better to check whether `g[i, 1]` is zero and fill with zeros?
         for j in 2:nc
             g[i, j] == 0 && continue
             @. u²_sum += g[i, j] * u²[j]
@@ -217,11 +213,12 @@ function u∑gu²_complex!(du, u², u²_sum, g::AbstractMatrix{<:Number}, nc, B)
 end
 
 """
-For each `i`th component, calculate 𝑢ᵢ𝑔∑ⱼ|𝑢ⱼ|² storing the result in the appropriate block of `du`.
+Calculate 𝑔∑ⱼ|𝑢ⱼ|² and multiply by each 𝑖th block of `du`, assumed to contain 𝑢ᵢ. Here `g` is the same for all components and is a number.
 """
 function u∑gu²_complex!(du, u², u²_sum, g::Number, nc, B) # `u²_sum` is not used but kept for compatibility with the other method
-    for i in 2:nc
-        @turbo u²[1] .+= u²[i]
+    # accumulate ∑ⱼ|𝑢ⱼ|² in `u²[1]`
+    for j in 2:nc
+        @turbo u²[1] .+= u²[j]
     end
     u²[1] .*= g
     for i in 1:nc
@@ -313,7 +310,7 @@ function gpe_complexsincos!(du, u, params, t)
 end
 
 """
-For each `i`th component, calculate 𝑢ᵢ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² overwriting 𝑢ᵢ, stored in `u_re[i]` and `u_im[i]`.
+For each `i`th component, calculate ∑ⱼ𝑔ᵢⱼ|𝑢ⱼ|² and multiply by `u_re[i]` and `u_im[i]`, assumed to contain ℜ𝑢ᵢ and ℑ𝑢ᵢ.
 """
 function u∑gu²_real!(u_re, u_im, u², u²_sum, g::AbstractMatrix{<:Number}, nc)
     for i in 1:nc
@@ -329,7 +326,7 @@ function u∑gu²_real!(u_re, u_im, u², u²_sum, g::AbstractMatrix{<:Number}, n
 end
 
 """
-For each `i`th component, calculate 𝑢ᵢ𝑔∑ⱼ|𝑢ⱼ|² overwriting 𝑢ᵢ, stored in `u_re[i]` and `u_im[i]`.
+Calculate 𝑔∑ⱼ|𝑢ⱼ|² and multiply by `u_re[i]` and `u_im[i]`, assumed to contain ℜ𝑢ᵢ and ℑ𝑢ᵢ. Here `g` is the same for all components and is a number.
 """
 function u∑gu²_real!(u_re, u_im, u², u²_sum, g::Number, nc) # `u²_sum` is not used but kept for compatibility with the other method
     for i in 2:nc

@@ -44,16 +44,19 @@ plot(xs, 𝑈)
 plot!(xs, ψ[:, 1, 1] .+ ph.ε[stateno])
 
 ### Diagonalisation in x-space
-xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M=128, δ=Float(√0.5))
+xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M=256, δ=Float(√0.5))
 xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cos, M=128, δ=Float(√0.5))
 xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:sin, M=127, δ=Float(√0.5))
-@time vals, vecs, info = diagonalize(xh; nev=5); # for large M you may need to tweak solver parameters. E.g. for M = 256, to converge to the default Float64 tolerance of 1e-12, set `krylovdim=35` (default is 30)
-vals
-info
+diagonalize!(xh, nev=5, verbose=false);
+xh.ε
+@time xs, ψ = make_eigenfunction(xh; stateno);
+plot!(xs, ψ[1] .+ xh.ε[stateno])
 
-stateno = 5
-plot(xh.ft.xs, 𝑈)
-plot!(xh.ft.xs, -vecs[stateno][1] .+ vals[stateno])
+# Diagonalisation via `StateVector`
+# @time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh; nev=5); # for large M you may need to tweak solver parameters. E.g. for M = 256, to converge to the default Float64 tolerance of 1e-12, set `krylovdim=35` (default is 30)
+# vals
+# plot(xh.ft.xs, 𝑈)
+# plot!(xh.ft.xs, -vecs[stateno][1] .+ vals[stateno])
 
 #=
 ╔═════════════════════════════════════════════════════════════════╗

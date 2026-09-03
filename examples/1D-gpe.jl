@@ -49,7 +49,7 @@ dt = 1 |> Float
 gs = 1 # guess number
 @time sol = propagate(ph, guesses[gs]; ψ₀_iseven=guesses_iseven[gs], T_max, dt, itime=true)
 v = sol.u[end]
-get_Eμη(ph, v)
+get_EμN(ph, v)
 
 xs, ψ = make_wavefunction(ph, v)
 plot(xs, real(ψ[1]))
@@ -64,7 +64,7 @@ T_max = 5 |> Float
 dt = 1e-4 |> Float
 @time sol = propagate(ph, one, g; T_max, dt, itime=true)
 V = sol.u[end]
-get_Eμη(ph, V, [g;;])
+get_EμN(ph, V, [g;;])
 
 xs, ψD = make_wavefunction(ph, V)
 plot(xs, real(ψD[1]), ylims=(-0.5, 0.5))
@@ -103,7 +103,7 @@ scatter!(ps, ph.ε, label="numerics")
 
 g = 500 |> Float # nonlinearity
 
-μ = get_Eμη(ph, ph.V[:, 1], [g;;])[2]
+μ = get_EμN(ph, ph.V[:, 1], [g;;])[2]
 xs, ψ = make_wavefunction(ph, ph.V[:, 1])
 vals, vecs = bdg_spectrum(ph, real(ψ[1]), g, μ[1])
 
@@ -166,24 +166,22 @@ T_max = 1 |> Float
 dt = 1e-4 |> Float
 @time sol = propagate(ph, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true)
 V = sol.u[end]
-E, μ₀ = get_Eμη(ph, V, [g;;])
+E, μ₀ = get_EμN(ph, V, [g;;])
 xs, ψ = make_wavefunction(ph, V)
 plot(xs, real(ψ[1]))
 plot!(xs, imag(ψ[1]))
 
 # using Newton-Raphson (undef fixed total number of particles)
 natoms = 1.0
-@time xs, sol = find_stationary(ph, [𝜓₀], [g;;], μ₀, natoms; show_trace=Val(true))
-ψ = sol.u[1:end-1] # last element is the chemical potential
-E, μ = get_Eμη(ph, ψ, [g;;], v_is_pspace=false)
+@time xs, ψ, μ_nr = find_stationary(ph, [𝜓₀], [g;;], μ₀, natoms; searchreal=true, show_trace=Val(true))
+E, μ = get_EμN(ph, ψ, [g;;], state_is_pspace=false)
 plot!(xs, ψ)
 
 #### Real-time propagation of a displaced soliton
 
 # get ground state
 natoms = 1.0
-@time xs, sol = find_stationary(ph, [one], [g;;], μ₀, natoms; show_trace=Val(true))
-ψ = sol.u[1:end-1] # last element is the chemical potential
+@time xs, ψ, μ = find_stationary(ph, [one], [g;;], μ₀, natoms; searchreal=true, show_trace=Val(true))
 
 # create a displaced soliton
 ψ₀ = real(ψ) .* tanh.(9 .* (xs .- 5)) |> vec
@@ -197,7 +195,7 @@ nsaves = 500
 @time sol = propagate(ph, ψ₀, g; T_max, dt, itime=false, nsaves)
 
 v = sol.u[end]
-get_Eμη(ph, v, [g;;])
+get_EμN(ph, v, [g;;])
 xs, ψ = make_wavefunction(ph, v)
 plot(xs, abs2.(ψ[1]))
 
@@ -243,10 +241,9 @@ plot(xs, abs2.(ψ[:, 1, 1]))
 𝜓₀(x) = sech(x)
 g = -1 |> Float # nonlinearity
 μ₀ = -1 |> Float
-@time xs, sol = find_stationary(ph, [𝜓₀], [g;;], μ₀, show_trace=Val(true))
-ψ_nln = sol.u
-E, μ = get_Eμη(ph, sol.u, [g;;], v_is_pspace=false)
-plot(xs, ψ_nln)
+@time xs, ψ_nr, μ_nr = find_stationary(ph, [𝜓₀], [g;;], μ₀; searchreal=true, show_trace=Val(true))
+E, μ = get_EμN(ph, ψ_nr, [g;;], state_is_pspace=false)
+plot(xs, ψ_nr)
 
 #### Calculate real-time dynamics ####
 
@@ -254,7 +251,7 @@ T_max = 200 |> Float
 dt = 1e-3 |> Float
 nsaves = 500
 
-ψ_rand = ψ_nln .+ 1e-5 .* rand(length(ψ_nln))
+ψ_rand = ψ_nr .+ 1e-5 .* rand(length(ψ_nr))
 @time sol = propagate(ph, [ψ_rand], [g;;]; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE.ETDRK4())
 
 xs, U = make_map(ph, sol)
@@ -263,7 +260,7 @@ heatmap(xs, 0:T_max/nsaves:T_max, abs2.(U)', c=CMAP, xlabel="x", ylabel="t")
 
 #### Calculate BdG and compare with dynamics ####
 
-@time vals, vecs = bdg_spectrum(ph, ψ_nln, g, μ₀);
+@time vals, vecs = bdg_spectrum(ph, ψ_nr, g, μ₀);
 scatter(vals, legend=false, markersize=2, markerstrokewidth=0)
 maximum(imag, vals)
 

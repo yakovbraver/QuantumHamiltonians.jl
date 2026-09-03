@@ -49,14 +49,20 @@ end
     stateno = 2 # will test 2nd eigenstate (=4th excited state) 
     𝜓₁₀(x, y) = (ω₁/π)^(1/4) / √2 * exp(-ω₁*x^2/2) * 2x*√ω₁ * (ω₂/π)^(1/4) * exp(-ω₂*y^2/2)
 
-    for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace)
+    for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace, :xspace_statevector)
         M = basis == :sin ? 31 : 32
 
         if kind == :xspace
             qh = XSpaceHamiltonian([xlimits, xlimits], 𝑈; basis, M, δ=√0.5) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
-            vals, vecs, info = diagonalize(qh; nev=5)
+            diagonalize!(qh; nev=4)
+            x, y, ψ = make_eigenfunction(qh; stateno)
+            xs = [x y]
+            ε = qh.ε
+        elseif kind == :xspace_statevector
+            qh = XSpaceHamiltonian([xlimits, xlimits], 𝑈; basis, M, δ=√0.5)
+            vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(qh; nev=5)
             xs = qh.ft.xs
-            ψ = vecs[stateno][1]
+            ψ = vecs[stateno]
             ε = vals[1:4]
         else
             (kind == :sparse && basis != :cis) && continue # sparse is only implemented for cis
@@ -65,15 +71,14 @@ end
             # test correctness of kind parameters
             @test qh isa PSpaceHamiltonian{kind, Float64, Float64, Float64, 3, 4}
             diagonalize!(qh, nev=4)
-            xs, vec = make_eigenfunction(qh, stateno)
-            ψ = vec[1]
+            xs, ψ = make_eigenfunction(qh, stateno)
             ε = qh.ε
         end
         
         @test ε ≈ 2:5 rtol=1e-5 # exact spectrum is εˣʸ = (𝑛ˣ + 1/2) + 3(𝑛ʸ + 1/2); lowest energies are 2, 3, 4, 5, 5, 6
 
         ψ_true = 𝜓₁₀.(xs[:, 1], xs[:, 2]')
-        @test all(@. abs(ψ) - abs(ψ_true) < 1e-2) # test abs because a sign difference is possible
+        @test all(@. abs(ψ[1]) - abs(ψ_true) < 1e-2) # test abs because a sign difference is possible
     end
 end
 
@@ -303,4 +308,53 @@ end
         
     diagonalize!(qh, nev=1)
     @test qh.ε[1] ≈ 0.039 atol=1e-3
+end
+
+@testset "1-component real stationary state via Newton-Raphson" begin
+    # Ground state in a parabolic potential
+
+    𝑈(x::Real, y::Real) = x^2 + y^2
+
+    R = 5.0
+    xlimits = (-R, R)
+
+    # Newton-Raphson under fixed total number of particles
+    natoms = 1.0
+    𝜓₀(x, y) = exp(-x^2 - y^2) # initial guess
+    g = 100.0
+    μ₀ = 5.0
+
+    for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace)
+        M = basis == :cis ? 16 :
+            basis == :sin ? 31 : 32
+
+        if kind == :xspace
+            qh = XSpaceHamiltonian([xlimits, xlimits], 𝑈; basis, M)
+        else
+            (kind == :sparse && basis != :cis) && continue # sparse is only implemented for cis
+            kwargs = kind == :sparse ? (;fft_threshold=1e-3) : (;) # pass `fft_threshold` for sparse; otherwise pass an empty named tuple
+            qh = PSpaceHamiltonian{kind}([xlimits, xlimits], 𝑈; basis, 𝑈_iseven=true, M, kwargs...)
+        end
+        
+        xs, ys, ψ_nr, μ_nr = find_stationary(qh, [𝜓₀], [g;;], μ₀, natoms; searchreal=true)
+        if kind != :xspace
+            E, μ, N = get_EμN(qh, ψ_nr, [g;;]; state_is_pspace=false)
+        else
+            E, μ, N = get_EμN(qh, ψ_nr, [g;;])
+        end
+
+        @test E ≈ 5.79206 atol=1e-5
+        @test μ[1] ≈ 8.28601 atol=1e-5
+        @test μ[1] ≈ μ_nr[1] atol=1e-12
+        @test N[1] ≈ natoms atol=1e-12
+
+        if kind == :xspace
+            @views xs, ys, ψ = make_wavefunction(qh, ψ_nr)
+        else
+            @views xs, ys, ψ = QuantumHamiltonians.make_wavefunction_xspace(qh, ψ_nr)
+        end
+
+        @test ψ[1][end÷2, end÷2] ≈ 0.28 atol=0.01 # checking wf value at the centre
+    end
+
 end

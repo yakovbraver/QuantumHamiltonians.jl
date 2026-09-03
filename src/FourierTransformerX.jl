@@ -38,10 +38,10 @@ function FourierTransformerX(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
         end
         buff_re = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
         buff_im = similar(buff_re)
-        plan_forward = FFTW.plan_r2r(buff_re, FFTW.REDFT00) # note that `REDFT00` is its own inverse
+        plan_forward = FFTW.plan_r2r(buff_re, FFTW.REDFT00, flags=FFTW.UNALIGNED) # note that `REDFT00` is its own inverse. Passing FFTW.UNALIGNED because otherwise transform of a view fails (ERROR: ArgumentError: FFTW plan applied to output with wrong memory alignment). See https://github.com/JuliaMath/FFTW.jl/issues/67
         plan_backward = plan_forward # same plan for backward
         # in-place map needed when acting on a complex vector
-        plan_bothways! = FFTW.plan_r2r!(buff_re, FFTW.REDFT00) # note that `REDFT00` is its own inverse
+        plan_bothways! = FFTW.plan_r2r!(buff_re, FFTW.REDFT00, flags=FFTW.UNALIGNED) # note that `REDFT00` is its own inverse
     else # basis == :sin
         N = M # This will yield harmonics 1:M. User is recommended to pass M = 2ⁿ-1; N = 2ⁿ-1 is optimal for sin-transform
         xs = Matrix{R}(undef, N, D)
@@ -52,10 +52,10 @@ function FourierTransformerX(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
         end
         buff_re = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
         buff_im = similar(buff_re)
-        plan_forward = FFTW.plan_r2r(buff_re, FFTW.RODFT00) # note that `RODFT00` is its own inverse
+        plan_forward = FFTW.plan_r2r(buff_re, FFTW.RODFT00, flags=FFTW.UNALIGNED) # note that `RODFT00` is its own inverse
         plan_backward = plan_forward # same plan for backward
         # in-place map needed when acting on a complex vector
-        plan_bothways! = FFTW.plan_r2r!(buff_re, FFTW.RODFT00) # note that `RODFT00` is its own inverse
+        plan_bothways! = FFTW.plan_r2r!(buff_re, FFTW.RODFT00, flags=FFTW.UNALIGNED) # note that `RODFT00` is its own inverse
     end
 
     # normalisation used in the sin and cos cases
@@ -65,13 +65,17 @@ function FourierTransformerX(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
 end
 
 """
-Transform a discretised function `f_in`, which can be either in x-space or p-space, writing the result to `f_out`.
+Transform a discretised function `f`, which can be either in x-space or p-space, writing the result to `f_out`.
 The transformation is forward or backward depending on the `direction` keyword argument.
 `normalise` will normalise the transform in the sin/cos case. In the cis case, `normalise` has no effect; the backward transform automatically includes normalisation.
+`f` and/or `f′` can have a different shape than the plans of `ft`, but they must have the same number of elements as they will be reshaped.
 """
-function transform!(f_out::AbstractArray{<:Number}, ft::FourierTransformerX, f_in::AbstractArray{<:Number}; direction::Symbol=:forward, normalise::Bool=false)
-    (;basis, normalisation, buff_re, buff_im) = ft    
-    # transform              
+function transform!(f′::AbstractArray{<:Number}, ft::FourierTransformerX, f::AbstractArray{<:Number}; direction::Symbol=:forward, normalise::Bool=false)
+    (;basis, normalisation, buff_re, buff_im) = ft
+    # if dimensions of `f` or `f′` do not agree with dimensions of the plans, then reshape
+    f_in = axes(f) == axes(ft.plan_forward) ? f : reshape(f, size(ft.plan_forward))
+    f_out = axes(f′) == axes(ft.plan_forward) ? f′ : reshape(f′, size(ft.plan_forward))
+
     if basis == :cis || eltype(f_in) <: Real
         if direction == :forward
             mul!(f_out, ft.plan_forward, f_in)

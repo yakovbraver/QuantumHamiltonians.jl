@@ -13,11 +13,10 @@ mutable struct FourierTransformerP{R, T, PlanForward, PlanBackward, D} # T is th
 end
 
 """
-`target_real` is only used in the sin and cos case: set to false if you plan to calculate DST or DCT for complex functions.
 Set `target_rank=1` if you are making the transform for building a Fourier-space state (using `fft_to_state`),
 set `target_rank=2` if you are making the transform for building a Fourier-space operator (using `fft_to_operator`). The latter needs twice the number of harmonics.
 """
-function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_real::Bool=true, target_rank::Integer=2) where R <: AbstractFloat
+function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; basis::Symbol, target_rank::Integer=2) where R <: AbstractFloat
     D = length(xlims) # number of spatial dimensions
     L = Vector{R}(undef, D) # periods in each dimension. Only needed here, to calculate the normalisation factor
     dx = Vector{R}(undef, D) # dx's in each dimension
@@ -44,7 +43,7 @@ function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
                 xs[:, i] .= range(xlims[i][1], xlims[i][2], N)
             end
             buff = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
-            buff_im = similar(buff, ntuple(Returns(target_real ? 0 : N), D)) # if `target_real`, then this buffer is not needed; make it 0x0 (in `D` dimesions)
+            buff_im = similar(buff)
             plan_forward = FFTW.plan_r2r!(buff, FFTW.REDFT00) # note that `REDFT00` is its own inverse
             plan_backward = plan_forward # same plan for backward
         else # basis == :sin && target_rank == 1 # the only case when we need DST
@@ -56,7 +55,7 @@ function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
                 xs[:, i] .= range(xlims[i][1]+dx[i], xlims[i][2]-dx[i], N)
             end
             buff = Array{R}(undef, ntuple(Returns(N), D)) # a buffer for all (in-place) FFTs
-            buff_im = similar(buff, ntuple(Returns(target_real ? 0 : N), D)) # if `target_real`, then this buffer is not needed; make it 0x0 (in `D` dimesions)
+            buff_im = similar(buff)
             plan_forward = FFTW.plan_r2r!(buff, FFTW.RODFT00) # note that `RODFT00` is its own inverse
             plan_backward = plan_forward # same plan for backward
         end
@@ -73,6 +72,61 @@ function FourierTransformerP(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
     return FourierTransformerP(xs, M, norm_forward, norm_backward, basis, buff, buff_im, did_complex_rxdft, plan_forward, plan_backward)
 end
 
+# TODO consider moving sample! to some other file
+
+"""
+Sample analytic D-argument function `𝑓` at points in `xs`, where first column is 𝑥, second is 𝑦, etc.
+Result is written into `buff`, which can be either D-dimensional or flattened.
+"""
+function sample!(buff::AbstractArray{<:Number}, 𝑓::Function, xs::AbstractVecOrMat{<:Number})
+    D = size(xs, 2)
+    buff_shaped = reshape(buff, ntuple(Returns(size(xs, 1)), D))
+    
+    if D == 1
+        buff_shaped .= 𝑓.(xs)
+    elseif D == 2
+        @views buff_shaped .= 𝑓.(xs[:, 1], xs[:, 2]') # structurally corresponds to f[i, j] = 𝑓(xs[i], ys[j]), i.e. first index is 𝑥, second is 𝑦. 𝑥↓ 𝑦→
+    elseif D == 3
+        for iz in axes(buff_shaped, 3), iy in axes(buff_shaped, 2), ix in axes(buff_shaped, 1)
+            buff_shaped[ix, iy, iz] = 𝑓(xs[ix, 1], xs[iy, 2], xs[iz, 3])
+        end
+    else
+        for I in Iterators.product(axes(buff_shaped)...)
+            buff_shaped[I...] = 𝑓(ntuple(d -> xs[I[d], d], D)...)
+        end
+    end
+    return buff
+end
+
+"""
+Sample analytic D-argument function `𝑓` at points in `xs`, where first column is 𝑥, second is 𝑦, etc.
+Real part of the result is written into `buff_re`, and imaginary to `buff_im`. They can be either D-dimensional or flattened.
+"""
+function sample!(buff_re::AbstractArray, buff_im::AbstractArray, 𝑓::Function, xs::AbstractVecOrMat{<:Number})
+    D = size(xs, 2)
+    buff_re_shaped = reshape(buff_re, ntuple(Returns(size(xs, 1)), D))
+    buff_im_shaped = reshape(buff_im, ntuple(Returns(size(xs, 1)), D))
+
+    if D == 1
+        for ix in axes(buff_re_shaped, 1)
+            buff_re_shaped[ix], buff_im_shaped[ix] = reim(𝑓(xs[ix]))
+        end
+    elseif D == 2
+        for iy in axes(buff_re_shaped, 2), ix in axes(buff_re_shaped, 1)
+            buff_re_shaped[ix, iy], buff_im_shaped[ix, iy] = reim(𝑓(xs[ix, 1], xs[iy, 2]))
+        end
+    elseif D == 3
+        for iz in axes(buff_re_shaped, 3), iy in axes(buff_re_shaped, 2), ix in axes(buff_re_shaped, 1)
+            buff_re_shaped[ix, iy, iz], buff_im_shaped[ix, iy, iz] = reim(𝑓(xs[ix, 1], xs[iy, 2], xs[iz, 3]))
+        end
+    else
+        for I in Iterators.product(axes(buff_re_shaped)...)
+            buff_re_shaped[I...], buff_im_shaped[I...] = reim(𝑓(ntuple(d -> xs[I[d], d], D)...))
+        end
+    end
+    return buff_re, buff_im
+end
+
 "Transform a callable function `𝑓` given in x-space to p-space or reverse."
 function transform!(ft::FourierTransformerP, 𝑓::Function; direction::Symbol=:forward)
     (;xs, norm_forward, norm_backward, basis, buff, buff_im, plan_forward, plan_backward) = ft
@@ -81,24 +135,15 @@ function transform!(ft::FourierTransformerP, 𝑓::Function; direction::Symbol=:
     D = size(xs, 2)
 
     if basis == :cis || 𝑓(xs[1, 1:D]...) isa Real
-        if D == 1
-            buff .= 𝑓.(xs) .* normalisation
-        elseif D == 2
-            @views buff .= 𝑓.(xs[:, 1], xs[:, 2]') .* normalisation # structurally corresponds to f[i, j] = 𝑓(xs[i], ys[j]), i.e. first index is 𝑥, second is 𝑦. 𝑥↓ 𝑦→
-        end
+        sample!(buff, 𝑓, xs)
+        buff .*= normalisation
         plan * buff # in-place transform, weird syntax
         ft.did_complex_rxdft = false
     else # if basis is sin/cos and `𝑓` is complex
         # `FFTW.RxDFT00` can only handle real input. So we transform Re and Im separately.
-        if D == 1
-            for (ix, x) in enumerate(xs)
-                buff[ix], buff_im[ix] = reim(𝑓(x)) .* normalisation
-            end
-        elseif D == 2
-            for iy in axes(xs, 1), ix in axes(xs, 1)
-                buff[ix, iy], buff_im[ix, iy] = reim(𝑓(xs[ix, 1], xs[iy, 2])) .* normalisation
-            end
-        end
+        sample!(buff, buff_im, 𝑓, xs)
+        @turbo buff .*= normalisation
+        @turbo buff_im .*= normalisation
         plan * buff
         plan * buff_im
         ft.did_complex_rxdft = true # will be used in fft_to_operator_*D! to include `buff_im` when constructing the matrix
@@ -200,21 +245,22 @@ end
 """
 Use the result of the D-dimensional transform contained in `ft.buff` to construct (fill) a p-space or x-space state `ψ`.
 For `direction=:forward`, use reshaping to construct a p-space state `ψ` as a 1D vector indexed by (⋯𝑗ʸ𝑗ˣ).
-For `direction=:backward`, construct an x-space state `ψ` as a D-dimensional array indexed by (x, y, ⋯).
+For `direction=:backward`, construct an x-space state `ψ`. If it is a D-dimensional array, then it will be filled as an array indexed by (x, y, ⋯). If it is a vector, if will be a flattened version of this array.
 Pass `makereal=true` to drop the imaginary part of `ft.buff` -- useful in the cis case when constructing x-space state if you know the state must be real.
 """
-function fft_to_state!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward) where D
+function fft_to_state!(ψ::AbstractArray{<:Number}, ft::FourierTransformerP; makereal=false, direction::Symbol=:forward)
     (;buff, buff_im, basis) = ft
     makereal && (buff .= real.(buff))
     if basis == :cis
         if direction == :forward # `ψ` is in p-space, and is a 1D vector, so the buffer must be reshaped (linearised)
             FFTW.fftshift!(buff_im, buff) # using `buff_im` as a convenient buffer (specifically made for this case)
             copyto!(ψ, buff_im) # `copyto!` copies contiguously even though shapes are different (`ψ` is 1D vector, `buff_im` is D-dimensional); this is like `ψ = buff_im[:]`
-        else # `ψ` is in x-space, and already D-dimensional like the buffer, so just copy
-            copy!(ψ, buff)
+        else # `ψ` is in x-space, so just copy (contiguously)
+            copyto!(ψ, buff)
         end
     else # sin/cos
         if direction == :forward # `ψ` is in p-space, and is a 1D vector, so the buffer must be reshaped (linearised)
+            D = ndims(buff)
             # proper normalisation of the zeroth and last harmonic; do this for the D-dimensional buffer (more convenient than for linearised ψ)
             if basis == :cos
                 if D == 1
@@ -236,9 +282,9 @@ function fft_to_state!(ψ::AbstractArray{<:Number, D}, ft::FourierTransformerP; 
             end
             copyto!(ψ, buff) # `copyto!` copies contiguously even though shapes are different; this is like `ψ = buff[:]`
             ft.did_complex_rxdft && (ψ .+= im .* reshape(buff_im, :))
-        else # `ψ` is in x-space, and already D-dimensional like the buffer, so just copy
-            copy!(ψ, buff)
-            ft.did_complex_rxdft && (ψ .+= im .* buff_im)
+        else # `ψ` is in x-space, so just copy (contiguously)
+            copyto!(ψ, buff)
+            ft.did_complex_rxdft && (ψ .+= im .* reshape(buff_im, :))
         end
     end
     return
@@ -321,7 +367,7 @@ function fft_to_operator_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer
                 end
             end
         else
-            @turbo for jˣ in 1:M
+            for jˣ in 1:M # @turbo would give up to 4x speed-up, but won't work for complex `A`. Anyway, the time here is ~0.1 ms, and this is not performed repeatedly, so we don't bother.
                 for jˣ′ in 1:M
                     jˣ⁻ = abs(jˣ′-jˣ)
                     A[jˣ′, jˣ] = buff[jˣ⁻+1] - buff[jˣ′+jˣ+1]
@@ -339,7 +385,7 @@ function fft_to_operator_1D!(A::AbstractMatrix{<:Number}, ft::FourierTransformer
                 end
             end
         else
-            @turbo for jˣ in 0:M
+            for jˣ in 0:M
                 ζˣ = ifelse(jˣ == 0, 2, 1)
                 for jˣ′ in 0:M
                     ζˣ′ = ifelse(jˣ′ == 0, 2, 1)
