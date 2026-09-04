@@ -12,7 +12,7 @@
         if kind == :xspace
             qh = XSpaceHamiltonian([xlimits], 𝑈; basis, M, δ=√0.5) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
             diagonalize!(qh; nev=5)
-            xs, v = make_eigenfunction(qh; stateno)
+            xs, v = make_eigenfunction(qh, stateno)
             ψ = v[1]
             ε = qh.ε
         elseif kind == :xspace_statevector

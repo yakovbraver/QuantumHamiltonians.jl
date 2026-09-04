@@ -79,7 +79,7 @@ plot_comps(xs, ψ)
 # @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=16, Γ=[0, 0, Γ₃])
 # @time diagonalize!(xh; nev=5, verbose=true, tol=1e-3);
 # xh.ε
-# xs, ys, ψ = make_eigenfunction(xh, stateno=1);
+# xs, ys, ψ = make_eigenfunction(xh, 1);
 # plot_comps([xs ys], ψ)
 
 ## Diagonalising via `StateVector`. Linear solving struggles to converge.

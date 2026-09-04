@@ -49,7 +49,7 @@ xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cos, M=128, δ=Float(√0.5))
 xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:sin, M=127, δ=Float(√0.5))
 diagonalize!(xh, nev=5, verbose=false);
 xh.ε
-@time xs, ψ = make_eigenfunction(xh; stateno);
+@time xs, ψ = make_eigenfunction(xh, stateno);
 plot!(xs, ψ[1] .+ xh.ε[stateno])
 
 # Diagonalisation via `StateVector`

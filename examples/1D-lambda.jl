@@ -39,7 +39,7 @@ plot(xs, real(ψ[:, 1, 1]))
 @time xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M)
 @time diagonalize!(xh; nev=5, verbose=true, maxdim=30); # must increase maxdim to say 30 to get convergence
 xh.ε
-xs, ψ = make_eigenfunction(xh, stateno=1);
+xs, ψ = make_eigenfunction(xh, 1);
 plot(xs, ψ)
 
 ## Diagonalisation via `StateVector`

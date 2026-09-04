@@ -28,17 +28,18 @@ xs = range(xlimits..., 100)
 plot(xs, 𝑈)
 
 # diagonalise to get exact eigenstates
-@time ph = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M);
-@time diagonalize!(ph, nev=5);
-ph.ε
+@time qh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M=64);
+@time qh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis=:cis, 𝑈_iseven=true, M);
+@time diagonalize!(qh, nev=5);
+qh.ε
 
 stateno = 1
-xs, ψ = make_eigenfunctions(ph; statenos=[stateno], nx=100)
-plot(xs, -real(ψ[:, 1, 1]))
-plot(xs, imag(ψ[:, 1, 1]))
-plot(xs, abs2.(ψ[:, 1, 1]))
+xs, ψ = make_eigenfunction(qh, stateno)
+plot(xs, -real(ψ[1]))
+plot(xs, imag(ψ[1]))
+plot(xs, abs2.(ψ[1]))
 
-######## Use imaginary time to get eigenstates
+######## Use imaginary time to get eigenstates (p-space only)
 
 # will converge to the first 3 lowest states in 𝑈, respectively:
 guesses = [one, sin, cos]
@@ -47,11 +48,11 @@ guesses_iseven = [true, false, true]
 T_max = 2 |> Float
 dt = 1 |> Float
 gs = 1 # guess number
-@time sol = propagate(ph, guesses[gs]; ψ₀_iseven=guesses_iseven[gs], T_max, dt, itime=true)
+@time sol = propagate(qh, guesses[gs]; ψ₀_iseven=guesses_iseven[gs], T_max, dt, itime=true)
 v = sol.u[end]
-get_EμN(ph, v)
+get_EμN(qh, v)
 
-xs, ψ = make_wavefunction(ph, v)
+xs, ψ = make_wavefunction(qh, v)
 plot(xs, real(ψ[1]))
 
 ################ Nonlinear ################
@@ -62,12 +63,12 @@ g = 100 |> Float # nonlinearity
 
 T_max = 5 |> Float
 dt = 1e-4 |> Float
-@time sol = propagate(ph, one, g; T_max, dt, itime=true)
+@time sol = propagate(qh, one, g; T_max, dt, itime=true)
 V = sol.u[end]
-get_EμN(ph, V, [g;;])
+get_EμN(qh, V, [g;;])
 
-xs, ψD = make_wavefunction(ph, V)
-plot(xs, real(ψD[1]), ylims=(-0.5, 0.5))
+xs, ψD = make_wavefunction(qh, V)
+plot!(xs, real(ψD[1]), ylims=(-0.5, 0.5))
 plot!(xs, imag(ψD[1]), ylims=(-0.5, 0.5))
 
 ######## Free system ########

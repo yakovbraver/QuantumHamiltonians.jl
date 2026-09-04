@@ -289,7 +289,7 @@ end
 Construct D-dimensional x-space wave function of eigenstate `stateno` having the format `ψ[component][x, y, …]`.
 Return a tuple `(xs, ys, …, ψ)`.
 """
-function make_eigenfunction(xh::XSpaceHamiltonian; stateno::Int)
+function make_eigenfunction(xh::XSpaceHamiltonian, stateno::Int)
     make_wavefunction(xh, xh.V[:, stateno])
 end
 

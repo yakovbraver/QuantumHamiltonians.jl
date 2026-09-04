@@ -150,7 +150,7 @@ M = 64
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝜙, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, δ);
 @time diagonalize!(xh; nev=2, verbose=true, maxdim=40); # M=64: 1.76s. M=128, maxdim=40: 19s
 xh.ε
-xs, ys, ψ = make_eigenfunction(xh; stateno);
+xs, ys, ψ = make_eigenfunction(xh, stateno);
 heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
@@ -206,7 +206,7 @@ end
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=16, δ);
 @time diagonalize!(xh; nev=1, verbose=true, tol=1e-3);
 xh.ε
-xs, ys, ψ = make_eigenfunction(xh; stateno=1);
+xs, ys, ψ = make_eigenfunction(xh, 1);
 plot_comps([xs ys], ψ)
 
 # Diagonalisation via `StateVector`. Linear solving struggles to converge.
