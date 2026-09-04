@@ -60,8 +60,8 @@ matrix_density(ph)
 ph.ε
 
 stateno = 1
-xs, ψ = make_eigenfunction(ph, stateno)
-surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+xs, ys, ψ = make_eigenfunction(ph, stateno)
+surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 
 ### Diagonalisation in x-space -- faster than p-space for higher M.
 # basis=:cis, M=64, nev=1. diagonalize!: 0.40s (w/o AA: 0.76s).  [AppleAccelerate speeds up. Tested with --check-bounds=no]
@@ -105,9 +105,9 @@ fig
 
 stateno = 5
 iqs = [15, 1]
-xs, ψ = make_eigenfunction(ph, stateno, iqs)
-surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+xs, ys, ψ = make_eigenfunction(ph, stateno, iqs)
+surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 
 # unfolded spectrum for 0 ≤ 𝑞ˣ, 𝑞ʸ ≤ π (a quater of Fig. 2(b))
 
@@ -145,10 +145,10 @@ surface(xs, ys, (x, y) -> 𝐴ˣ(x, y)^2 + 𝐴ʸ(x, y)^2)
 ph.ε
 
 stateno = 1
-xs, ψ = make_eigenfunction(ph, stateno)
-heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+xs, ys, ψ = make_eigenfunction(ph, stateno)
+heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ########## χ = π/2, full period
 
@@ -173,10 +173,10 @@ matrix_density(ph)
 ph.ε
 
 stateno = 1
-xs, ψ = make_eigenfunction(ph, stateno);
-heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+xs, ys, ψ = make_eigenfunction(ph, stateno);
+heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Diagonalisation in x-space: faster than p-space
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=128);
@@ -218,10 +218,10 @@ matrix_density(ph)
 ph.ε
 
 stateno = 1
-xs, ψ = make_eigenfunction(ph, stateno);
-heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+xs, ys, ψ = make_eigenfunction(ph, stateno);
+heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Diagonalisation in x-space: faster than p-space
 xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64);

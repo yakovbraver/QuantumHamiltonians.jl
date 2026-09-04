@@ -107,7 +107,7 @@ end
 """
 Construct a D-dimensional x-space wave function using its p-space representation `ψₚ` (1D vector).
 Pass integer `pad` to pad `ψₚ` with zeros, interpolating the x-space function as if reconstructed using `2^pad*ph.M` harmonics (instead of `ph.M`).
-Return a tuple (`xs`, `ψ`) where `ψ[component][x, y, …]` while `xs[:, 1]` contains sampled 𝑥, `xs[:, 2]` contains sampled 𝑦, etc..
+Return a tuple (`xs`, `ys`, …, `ψ`) where `ψ[component][x, y, …]` and each coordinate is an array of sampled points.
 """
 function make_wavefunction(ph::PSpaceHamiltonian{Storage, R}, ψₚ::AbstractVector{T}; pad::Integer=0) where {Storage, R, T<:Number}
     (;xlims, B, basis, nc) = ph
@@ -148,14 +148,14 @@ function make_wavefunction(ph::PSpaceHamiltonian{Storage, R}, ψₚ::AbstractVec
         end
         fft_to_state!(ψₓ[c], ft; direction=:backward) # this essentially copies from `ft.buff` into `ψₓ[c]`, but there are a few extra steps to take care of
     end
-    return ft.xs, ψₓ
+    return ntuple(i -> ph.ft.xs[:, i], size(ph.ft.xs, 2))..., ψₓ
 end
 
 """
 Construct x-space wave function of eigenstate `stateno`.
 If a vector of quasimomenta indices `iqs = [iqx, iqy, …]` is provided, then construct the wave function at those indices for band number `stateno`.
 Pass integer `pad` to interpolate the x-space function as if reconstructed using `2^pad*ph.M` harmonics (instead of `ph.M`).
-Return a tuple `(xs, ψ)` where `ψ[component][x, y, …]` while `xs[:, 1]` contains sampled 𝑥, `xs[:, 2]` contains sampled 𝑦, etc..
+Return a tuple (`xs`, `ys`, …, `ψ`) where `ψ[component][x, y, …]` and each coordinate is an array of sampled points.
 """
 function make_eigenfunction(ph::PSpaceHamiltonian{Storage, R}, stateno::Integer, iqs::Union{Nothing, AbstractVector{<:Integer}}=nothing; pad::Integer=0) where {Storage, R}
     if !isnothing(iqs) # if quasimomentum index has been passed

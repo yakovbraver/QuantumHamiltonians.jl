@@ -140,10 +140,10 @@ M = 32
 ph.ε
 
 stateno = 2
-xs, ψ = make_eigenfunction(ph, stateno)
-heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-surface(xs[:, 1], xs[:, 2], abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-heatmap(xs[:, 1], xs[:, 2], angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+xs, ys, ψ = make_eigenfunction(ph, stateno)
+heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Diagonalisation in x-space: faster than p-space
 M = 64
@@ -183,21 +183,21 @@ matrix_density(ph)
 ph.ε
 
 stateno = 1
-@time xs, ψ = make_eigenfunction(ph, stateno);
+@time xs, ys, ψ = make_eigenfunction(ph, stateno);
 
-plot_comps(xs, ψ)
+plot_comps(xs, ys, ψ)
 # total density
-heatmap(xs[:, 1], xs[:, 2], (abs2.(ψ[1])+abs2.(ψ[2]))', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{1}|^2+|\psi_{2}|^2")
+heatmap(xs, ys, (abs2.(ψ[1])+abs2.(ψ[2]))', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{1}|^2+|\psi_{2}|^2")
 
 # Plot all components
-function plot_comps(xs, ψ)
+function plot_comps(xs, ys, ψ)
     gr()
     theme(:dark, size=(600, 550*1.45))
     figs = [plot() for _ in 1:6]
     for i in 1:2:6
         c = (i+1) ÷ 2 # component number
-        figs[i]   = heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
-        figs[i+1] = heatmap(xs[:, 1], xs[:, 2], angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
+        figs[i]   = heatmap(xs, ys, abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
+        figs[i+1] = heatmap(xs, ys, angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
     end
     plot(figs..., layout=(3, 2))
 end
@@ -207,7 +207,7 @@ end
 @time diagonalize!(xh; nev=1, verbose=true, tol=1e-3);
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, 1);
-plot_comps([xs ys], ψ)
+plot_comps(xs, ys, ψ)
 
 # Diagonalisation via `StateVector`. Linear solving struggles to converge.
 # @time ph = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=16, δ);

@@ -55,13 +55,13 @@ end
         if kind == :xspace
             qh = XSpaceHamiltonian([xlimits, xlimits], 𝑈; basis, M, δ=√0.5) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
             diagonalize!(qh; nev=4)
-            x, y, ψ = make_eigenfunction(qh, stateno)
-            xs = [x y]
+            xs, ys, ψ = make_eigenfunction(qh, stateno)
             ε = qh.ε
         elseif kind == :xspace_statevector
             qh = XSpaceHamiltonian([xlimits, xlimits], 𝑈; basis, M, δ=√0.5)
             vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(qh; nev=5)
-            xs = qh.ft.xs
+            xs = qh.ft.xs[:, 1]
+            ys = qh.ft.xs[:, 2]
             ψ = vecs[stateno]
             ε = vals[1:4]
         else
@@ -71,13 +71,13 @@ end
             # test correctness of kind parameters
             @test qh isa PSpaceHamiltonian{kind, Float64, Float64, Float64, 3, 4}
             diagonalize!(qh, nev=4)
-            xs, ψ = make_eigenfunction(qh, stateno)
+            xs, ys, ψ = make_eigenfunction(qh, stateno)
             ε = qh.ε
         end
         
         @test ε ≈ 2:5 rtol=1e-5 # exact spectrum is εˣʸ = (𝑛ˣ + 1/2) + 3(𝑛ʸ + 1/2); lowest energies are 2, 3, 4, 5, 5, 6
 
-        ψ_true = 𝜓₁₀.(xs[:, 1], xs[:, 2]')
+        ψ_true = 𝜓₁₀.(xs, ys')
         @test all(@. abs(ψ[1]) - abs(ψ_true) < 1e-2) # test abs because a sign difference is possible
     end
 end

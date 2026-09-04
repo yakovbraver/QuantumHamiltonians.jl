@@ -12,14 +12,14 @@ cmap_phase = cgrad(:RdBu_9);
 theme(:dark, size=(600, 500))
 
 "Plot all components"
-function plot_comps(xs, ψ)
+function plot_comps(xs, ys, ψ)
     gr()
     theme(:dark, size=(600, 550*1.5))
     figs = [plot() for _ in 1:6]
     for i in 1:2:6
         c = (i+1) ÷ 2 # component number
-        figs[i]   = heatmap(xs[:, 1], xs[:, 2], abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
-        figs[i+1] = heatmap(xs[:, 1], xs[:, 2], angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
+        figs[i]   = heatmap(xs, ys, abs2.(ψ[c])', xlabel=L"x/w_0", ylabel=L"y/w_0", c=cmap_rainbow, title=L"|\psi_{%$c}|^2");
+        figs[i+1] = heatmap(xs, ys, angle.(ψ[c])' ./ π, c=:viridis, xlabel=L"x/w_0", ylabel=L"y/w_0", title=L"\arg(\psi_{%$c})", cbar_title="phase ("*L"\pi"*" rad)", clims=(-1, 1));
     end
     plot(figs..., layout=(3, 2))
 end
@@ -71,16 +71,16 @@ ph.ε
 # ph.ε[l]
 
 stateno = 1
-xs, ψ = make_eigenfunction(ph, stateno);
+xs, ys, ψ = make_eigenfunction(ph, stateno);
 
-plot_comps(xs, ψ)
+plot_comps(xs, ys, ψ)
 
 ### Diagonalisation in x-space. Inversion slows down solving, and this become uncompetitive compared to sparse p-space diagonalisation.
 # @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=16, Γ=[0, 0, Γ₃])
 # @time diagonalize!(xh; nev=5, verbose=true, tol=1e-3);
 # xh.ε
 # xs, ys, ψ = make_eigenfunction(xh, 1);
-# plot_comps([xs ys], ψ)
+# plot_comps(xs, ys, ψ)
 
 ## Diagonalising via `StateVector`. Linear solving struggles to converge.
 # @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=8, Γ=[0, 0, Γ₃])
@@ -133,9 +133,9 @@ M = 100
 ph.ε
 
 stateno = 1
-@time xs, ψ = make_eigenfunction(ph, stateno);
+@time xs, ys, ψ = make_eigenfunction(ph, stateno);
 
-plot_comps(xs, ψ)
+plot_comps(xs, ys, ψ)
 
 ### Quasimomenta
 
