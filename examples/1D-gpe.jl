@@ -155,9 +155,11 @@ xlimits = (-R, R) .|> Float
 xs = range(xlimits..., 100)
 plot(xs, 𝑈)
 
-@time ph = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ)
-diagonalize!(ph, nev=5)
-ph.ε
+# can use either x-space or p-space Hamiltonian
+@time qh = XSpaceHamiltonian([xlimits], 𝑈; basis, M=128, δ)
+@time qh = PSpaceHamiltonian{:dense}([xlimits], 𝑈; basis, 𝑈_iseven=true, M, δ)
+diagonalize!(qh, nev=5)
+qh.ε
 
 p = 1/√(2R) |> Float # value of wf in the bulk (= ground state solution for the free case)
 ξ = √(1/(p^2 * g)) |> Float # healing length
@@ -165,24 +167,24 @@ p = 1/√(2R) |> Float # value of wf in the bulk (= ground state solution for th
 
 T_max = 1 |> Float
 dt = 1e-4 |> Float
-@time sol = propagate(ph, 𝜓₀, g; ψ₀_iseven=false, T_max, dt, itime=true)
+@time sol = propagate(qh, 𝜓₀, g; T_max, dt, itime=true)
 V = sol.u[end]
-E, μ₀ = get_EμN(ph, V, [g;;])
-xs, ψ = make_wavefunction(ph, V)
-plot(xs, real(ψ[1]))
+E, μ₀ = get_EμN(qh, V, [g;;])
+xs, ψ = make_wavefunction(qh, V)
+plot!(xs, real(ψ[1]))
 plot!(xs, imag(ψ[1]))
 
-# using Newton-Raphson (undef fixed total number of particles)
+# using Newton-Raphson (under fixed total number of particles)
 natoms = 1.0
-@time xs, ψ, μ_nr = find_stationary(ph, [𝜓₀], [g;;], μ₀, natoms; searchreal=true, show_trace=Val(true))
-E, μ = get_EμN(ph, ψ, [g;;], state_is_pspace=false)
+@time xs, ψ, μ_nr = find_stationary(qh, [𝜓₀], [g;;], μ₀, natoms; searchreal=true, show_trace=Val(true))
+E, μ = qh isa QuantumHamiltonians.PSpaceHamiltonian ? get_EμN(qh, ψ, [g;;], state_is_pspace=false) : get_EμN(qh, ψ, [g;;])
 plot!(xs, ψ)
 
 #### Real-time propagation of a displaced soliton
 
 # get ground state
 natoms = 1.0
-@time xs, ψ, μ = find_stationary(ph, [one], [g;;], μ₀, natoms; searchreal=true, show_trace=Val(true))
+@time xs, ψ, μ = find_stationary(qh, [one], [g;;], μ₀, natoms; searchreal=true, show_trace=Val(true))
 
 # create a displaced soliton
 ψ₀ = real(ψ) .* tanh.(9 .* (xs .- 5)) |> vec
@@ -193,14 +195,21 @@ T_max = 10 |> Float
 dt = 1e-3 |> Float
 nsaves = 500
 
-@time sol = propagate(ph, ψ₀, g; T_max, dt, itime=false, nsaves)
+if qh isa QuantumHamiltonians.PSpaceHamiltonian
+    @time sol = propagate(qh, ψ₀, g; T_max, dt, itime=false, nsaves) # 0.555610 seconds (2.70 k allocations: 60.412 MiB, 2.44% gc time)
+else
+    # reducing krylovdim from default m=30 to m=5 cuts time from "13.820794 seconds (1.98 k allocations: 2.838 MiB)"
+    #                                                         to "1.230273  seconds (1.96 k allocations: 2.354 MiB)"
+    # while the resulting 2D maps and final states look identical
+    @time sol = propagate(qh, ψ₀, g; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE_EXP.ETDRK4(;krylov=true, m=5));
+end
 
 v = sol.u[end]
-get_EμN(ph, v, [g;;])
-xs, ψ = make_wavefunction(ph, v)
-plot(xs, abs2.(ψ[1]))
+get_EμN(qh, v, [g;;])
+xs, ψ = make_wavefunction(qh, v)
+plot!(xs, abs2.(ψ[1]))
 
-xs, U = make_map(ph, sol)
+xs, U = make_map(qh, sol)
 ts = range(0, T_max, nsaves+1)
 heatmap(xs, 0:T_max/nsaves:T_max, abs2.(U)', c=CMAP, xlabel="x", ylabel="t")
 
@@ -253,7 +262,7 @@ dt = 1e-3 |> Float
 nsaves = 500
 
 ψ_rand = ψ_nr .+ 1e-5 .* rand(length(ψ_nr))
-@time sol = propagate(ph, [ψ_rand], [g;;]; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE_EXP.ETDRK4())
+@time sol = propagate(ph, [ψ_rand], [g;;]; T_max, dt, itime=false, nsaves)
 
 xs, U = make_map(ph, sol)
 ts = range(0, T_max, nsaves+1)
@@ -275,7 +284,7 @@ plot(ts[2:end], Δψ, yaxis=:log, xlabel="t")
 
 # do a linear fit
 using LinearAlgebra: \
-window = 50:100 # a window where the growth is approximately exponential (linear in log plot); this are the numbers of points, not the t-values
+window = 50:100 # a window where the growth is approximately exponential (linear in log plot); these are the numbers of points, not the t-values
 X = ts[window]
 Y = Δψ[window] .|> log
 O = [X ones(length(X))]
