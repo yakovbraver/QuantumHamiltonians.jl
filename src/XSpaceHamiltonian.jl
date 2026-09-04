@@ -241,7 +241,7 @@ Inversion can be set/unset manually using `invert`.
 Any additional kwargs (such as `tol`, `mindim`, `maxdim`, `restarts`) will be passed to `partialschur`. If `tol` is passed, it will be also passed to GMRES as `reltol` in case of inversion.
 Return a tuple (eigenvalues, eigenvectors).
 """
-function diagonalize(xh::XSpaceHamiltonian{R, T}; invert::Bool=(xh.nc > 1), nev::Integer=0, verbose::Bool=false, kwargs...) where {R, T}
+function diagonalize(xh::XSpaceHamiltonian{R, T}; invert::Bool=(xh.nc > 1), nev::Integer, verbose::Bool=false, kwargs...) where {R, T}
     if invert
         # Here we do shift-invert: we want to diagonalise 𝐻⁻¹, defined by its action 𝑥 = 𝐻⁻¹𝑏; 𝑥 is found by solving 𝐻𝑥 = 𝑏. But `LS.LinearProblem` does not work with LinearMaps, so we wrap `bdg_map` in a SciMLOperator
         xh_op = SciMLOperators.FunctionOperator(XSpaceHamiltonian!, Vector{T}(undef, xh.nc*xh.B); p=xh, isconstant=true)
