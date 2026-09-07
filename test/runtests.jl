@@ -10,3 +10,7 @@ end
 @testset "2D tests" begin
     include("2D.jl")
 end
+
+@testset "X-space preconditioner tests" begin
+    include("XSpacePreconditioner.jl")
+end

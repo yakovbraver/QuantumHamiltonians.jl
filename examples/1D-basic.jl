@@ -47,7 +47,8 @@ plot!(xs, ψ[:, 1, 1] .+ ph.ε[stateno])
 xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M=256, δ=Float(√0.5))
 xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cos, M=128, δ=Float(√0.5))
 xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:sin, M=127, δ=Float(√0.5))
-diagonalize!(xh, nev=5, verbose=false);
+@time diagonalize!(xh, nev=5, verbose=true, invert=true);
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, preconditioner=:fourier_block, preconditioner_shift=0.0);
 xh.ε
 @time xs, ψ = make_eigenfunction(xh, stateno);
 plot!(xs, ψ[1] .+ xh.ε[stateno])

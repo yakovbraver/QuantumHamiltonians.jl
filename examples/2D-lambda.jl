@@ -3,7 +3,7 @@
 ║ Dark state analysis of https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302) ║
 ╚═══════════════════════════════════════════════════════════════════════════════════════════════════════╝
 =# 
-using QuantumHamiltonians
+using QuantumHamiltonians, AppleAccelerate
 
 using Plots
 plotlyjs()
@@ -70,6 +70,7 @@ surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cos, M=64);
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:sin, M=63);
 @time diagonalize!(xh, nev=1, verbose=true) # increase `maxdim` to say 30 for convergence if using nev=5
+@time diagonalize!(xh, nev=1, verbose=true, invert=true, preconditioner=:fourier_block, preconditioner_shift=0.0);
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, 1) # eigenvalues 2 and 3 are degenerate; usually only one is obtained. But works well for nev=1. Increase to krylovdim=40 to converge to 1e-12
 surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
@@ -181,6 +182,7 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 ### Diagonalisation in x-space: faster than p-space
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=128);
 @time diagonalize!(xh, nev=1, verbose=true, maxdim=30); # M=64, nev=1: 1.4 s. M=128, nev=1: 12.8s with `maxdim=30`
+@time diagonalize!(xh, nev=1, verbose=true, invert=true, maxdim=30, preconditioner=:fourier_block, preconditioner_shift=0.0); # TODO: benchmark
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, 1);
 heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
@@ -225,7 +227,7 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Diagonalisation in x-space: faster than p-space
 xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64);
-@time diagonalize!(xh, nev=1, verbose=true, tol=1e-5); # using less strict tolerance to get convergence. Alternatively, can increase `maxdim` to say 30. 
+@time diagonalize!(xh, nev=1, verbose=true, tol=1e-5); # using less strict tolerance to get convergence. Alternatively, can increase `maxdim` to say 30.
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, 1);
 heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)

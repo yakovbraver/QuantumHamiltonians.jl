@@ -363,7 +363,9 @@ Base.size(lm::LinSolveLinMap) = lm.size
 
 function LM._unsafe_mul!(y, lm::LinSolveLinMap, x::AbstractVector)
     copy!(lm.linsolve.b, x)
-    copy!(y, LS.solve!(lm.linsolve).u) # `solve!` allocates up to 50 KiB :(
+    sol = LS.solve!(lm.linsolve) # `solve!` allocates up to 50 KiB :(
+    copy!(y, sol.u)
+    # println(sol.stats) # TODO add verbose option
 end
 
 ################ GPE-related methods ################

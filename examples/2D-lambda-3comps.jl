@@ -78,6 +78,7 @@ plot_comps(xs, ys, ψ)
 ### Diagonalisation in x-space. Inversion slows down solving, and this become uncompetitive compared to sparse p-space diagonalisation.
 # @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=16, Γ=[0, 0, Γ₃])
 # @time diagonalize!(xh; nev=5, verbose=true, tol=1e-3);
+# @time diagonalize!(xh, nev=5, verbose=true, invert=true, preconditioner=:fourier_block, preconditioner_shift=1e-8);
 # xh.ε
 # xs, ys, ψ = make_eigenfunction(xh, 1);
 # plot_comps(xs, ys, ψ)
