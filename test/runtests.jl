@@ -11,6 +11,6 @@ end
     include("2D.jl")
 end
 
-@testset "X-space preconditioner tests" begin
+@testset "x-space preconditioner tests" begin
     include("XSpacePreconditioner.jl")
 end

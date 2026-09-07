@@ -50,8 +50,6 @@ using LinearAlgebra
     @test_throws ArgumentError QuantumHamiltonians.diagonalize(xh; nev=1, invert=false, preconditioner=:unsupported)
 
     ε_plain, _ = QuantumHamiltonians.diagonalize(xh; nev=2, invert=true, tol=1e-10)
-    ε_prec, _ = QuantumHamiltonians.diagonalize(
-        xh; nev=2, invert=true, tol=1e-10, preconditioner=:fourier_block, preconditioner_shift=0.0,
-    )
+    ε_prec, _ = QuantumHamiltonians.diagonalize(xh; nev=2, invert=true, tol=1e-10, preconditioner=:fourier_block, preconditioner_shift=0.0)
     @test ε_prec ≈ ε_plain rtol=1e-8 atol=1e-10
 end

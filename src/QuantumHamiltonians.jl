@@ -32,6 +32,7 @@ include("momentum.jl")
 include("StateVector.jl")
 include("FourierTransformerX.jl")
 include("XSpaceHamiltonian.jl")
+include("XSpacePreconditioners.jl")
 
 include("gpe_stationary.jl")
 include("gpe_dynamics_pspace.jl")
