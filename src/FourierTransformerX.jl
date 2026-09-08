@@ -65,7 +65,8 @@ function FourierTransformerX(xlims::AbstractVector{Tuple{R, R}}, M::Integer; bas
 end
 
 """
-Transform a discretised function `f`, which can be either in x-space or p-space, writing the result to `f_out`.
+Transform a discretised function `f`, which can be either in x-space or p-space, writing the result to `f′`.
+`f′` must not be aliased with `f`.
 The transformation is forward or backward depending on the `direction` keyword argument.
 `normalise` will normalise the transform in the sin/cos case. In the cis case, `normalise` has no effect; the backward transform automatically includes normalisation.
 `f` and/or `f′` can have a different shape than the plans of `ft`, but they must have the same number of elements as they will be reshaped.

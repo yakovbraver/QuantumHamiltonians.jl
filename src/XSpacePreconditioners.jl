@@ -6,29 +6,28 @@ kinetic term remains diagonal in momentum space. Each momentum mode is thus a
 small `nc × nc` dense system. `ldiv!` applies the inverse approximation and is
 used as a left preconditioner by iterative linear solvers.
 """
-mutable struct FourierBlockPreconditioner{T, WorkT, F, Factorization}
-    ft::F
+struct FourierBlockPreconditioner{R, T, FourierTransformer, Factorization}
+    ft::FourierTransformer
     nc::Int
     B::Int
     factorizations::Vector{Factorization}
-    pspace_buffer::Vector{WorkT}
-    xspace_buffer::Vector{WorkT}
-    mode_buffer::Vector{WorkT}
+    # buffers for applying the map, of size `nc*B`
+    buff_real::Vector{R}
+    buff_complex::Vector{Complex{R}}
+    buff_complex2::Vector{Complex{R}}
 end
 
-Base.eltype(::Type{<:FourierBlockPreconditioner{T}}) where {T} = T
+Base.eltype(::Type{<:FourierBlockPreconditioner{R, T}}) where {R, T} = T
 Base.size(prec::FourierBlockPreconditioner) = (prec.nc * prec.B, prec.nc * prec.B)
 
-"Fill the constant-coefficient approximation at momentum index `k`."
-function fill_fourier_block!(block::AbstractMatrix{T}, xh::XSpaceHamiltonian,
-                             U_average::AbstractMatrix{T}, A_average::AbstractMatrix,
-                             k::Integer, shift) where {T}
+"Fill the constant-coefficient approximation at linearised momentum index `j`."
+function fill_fourier_block!(block::AbstractMatrix{T}, xh::XSpaceHamiltonian, U_average::AbstractMatrix{T}, A_average::AbstractMatrix, j::Integer, shift) where {T}
     copyto!(block, U_average)
     for c in axes(block, 1)
-        block[c, c] += xh.∇²[k] + shift
-        if xh.basis == :cis
+        block[c, c] += xh.∇²[j] + shift
+        if xh.basis == :cis # 𝐴 is not supported for sin/cos
             for i in axes(A_average, 2)
-                block[c, c] -= 2A_average[c, i] * xh.∇[i][k]
+                block[c, c] -= 2A_average[c, i] * xh.∇[i][j]
             end
         end
     end
@@ -50,9 +49,9 @@ function FourierBlockPreconditioner(xh::XSpaceHamiltonian{R, T}; shift=nothing) 
         throw(ArgumentError("preconditioner shift must be a nonnegative real number"))
     end
 
-    # A periodic Hamiltonian can be real, but its Fourier coefficients are still complex.
-    WorkT = xh.basis == :cis ? Complex{R} : T
-    U_average = zeros(WorkT, nc, nc)
+    # `T` is the element type of `xh` in real-space. Here we need the type for `xh` in p-space.
+    # The Laplacian is real in p-space, while the zeroth harmonic of 𝑈 will be of the same type as `U`. So the required type is just `T`.
+    U_average = zeros(T, nc, nc)
     for c in axes(U, 1), b in axes(U, 2)
         !isempty(U[c, b]) && (U_average[c, b] = sum(U[c, b]) / B)
     end
@@ -70,59 +69,142 @@ function FourierBlockPreconditioner(xh::XSpaceHamiltonian{R, T}; shift=nothing) 
     end
     regularisation = isnothing(shift) ? √eps(R) * scale : R(shift)
 
-    first_block = Matrix{WorkT}(undef, nc, nc)
-    fill_fourier_block!(first_block, xh, U_average, A_average, 1, regularisation)
-    first_factorization = LA.lu!(first_block; check=true)
-    factorizations = Vector{typeof(first_factorization)}(undef, B)
-    factorizations[1] = first_factorization
-
-    for k in 2:B
-        block = Matrix{WorkT}(undef, nc, nc)
-        fill_fourier_block!(block, xh, U_average, A_average, k, regularisation)
-        factorizations[k] = LA.lu!(block; check=true)
+    factorizations = map(1:B) do j # iterate over all momenta, where `j` is a linearised momentum index
+        block = Matrix{T}(undef, nc, nc)
+        fill_fourier_block!(block, xh, U_average, A_average, j, regularisation)
+        LA.lu!(block; check=true) # this in-place verion will alias `block` -- this is why we create new `block` at each iteration
     end
 
-    return FourierBlockPreconditioner{T, WorkT, typeof(ft), typeof(first_factorization)}(
-        ft, nc, B, factorizations,
-        Vector{WorkT}(undef, nc * B), Vector{WorkT}(undef, nc * B), Vector{WorkT}(undef, nc),
-    )
+    return FourierBlockPreconditioner{R, T, typeof(ft), eltype(factorizations)}(ft, nc, B, factorizations,
+        Vector{R}(undef, nc*B), Vector{Complex{R}}(undef, nc*B), Vector{Complex{R}}(undef, nc*B))
 end
 
-function ldiv!(y::AbstractVector, prec::FourierBlockPreconditioner, x::AbstractVector)
-    (;ft, nc, B, factorizations, pspace_buffer, xspace_buffer, mode_buffer) = prec
-    length(x) == nc * B || throw(DimensionMismatch("preconditioner input has length $(length(x)); expected $(nc * B)"))
-    length(y) == nc * B || throw(DimensionMismatch("preconditioner output has length $(length(y)); expected $(nc * B)"))
+@views function ldiv!(f′::AbstractVector, prec::FourierBlockPreconditioner{R, T}, f::AbstractVector) where {R, T}
+    (;ft, nc, B, factorizations) = prec
+    length(f) == nc * B || throw(DimensionMismatch("preconditioner input has length $(length(f)); expected $(nc * B)"))
+    length(f′) == nc * B || throw(DimensionMismatch("preconditioner output has length $(length(f′)); expected $(nc * B)"))
+
+    f_isreal  = eltype(f) <: Real
+    f′_isreal = eltype(f′) <: Real
+
+    fₚ_isreal = f_isreal && ft.basis != :cis
+    buff = fₚ_isreal ? prec.buff_real : prec.buff_complex
+    buff2 = prec.buff_complex2
+
+    # transform `f` to p-space, by every component
+    for c in 1:nc
+        window = (c-1)B+1:c*B
+        if ft.basis == :cis && f_isreal
+            copyto!(buff2[window], f[window]) # `ft` can only act on complex vectors, so need to copy real `f` into a complex buffer
+            transform!(buff[window], ft, buff2[window]; direction=:forward)
+        else
+            transform!(buff[window], ft, f[window]; direction=:forward)
+        end
+    end
+    
+    if fₚ_isreal && T <: Real # both `buff` and `T` are real, so can write buff in-place. `T` indicates the underlying type of `factorization`
+        mode_buffer = similar(buff, nc)
+        Jₚ⁻¹fₚ = buff
+    else
+        mode_buffer = Vector{Complex{R}}(undef, nc)
+        Jₚ⁻¹fₚ = buff2
+    end
+       
+    # apply Jₚ⁻¹ using the factorization object to every Fourier mode
+    for j in 1:B
+        for c in 1:nc
+            mode_buffer[c] = buff[(c-1)B + j]
+        end
+        ldiv!(factorizations[j], mode_buffer) # we would like to use `buff[j:B:end]` instead of this `mode_buffer`, but `ldiv!` does not work on noncontiguos views
+        for c in 1:nc
+            Jₚ⁻¹fₚ[(c-1)B + j] = mode_buffer[c]
+        end
+    end
 
     for c in 1:nc
-        window = (c - 1)B+1:c*B
-        if ft.basis == :cis && eltype(x) <: Real
-            copyto!(@view(xspace_buffer[window]), @view(x[window]))
-            transform!(@view(pspace_buffer[window]), ft, @view(xspace_buffer[window]); direction=:forward)
+        window = (c-1)B+1:c*B
+        if f′_isreal && ft.basis == :cis
+            # cannot write directly to `f′` because it is real. Write into `buff`, which is complex in this case, while Jₚ⁻¹fₚ is aliased with `buff2`
+            transform!(buff[window], ft, Jₚ⁻¹fₚ[window]; direction=:backward, normalise=true)
+            @. f′[window] = real(buff[window])
         else
-            transform!(@view(pspace_buffer[window]), ft, @view(x[window]); direction=:forward)
+            transform!(f′[window], ft, Jₚ⁻¹fₚ[window]; direction=:backward, normalise=true)
         end
     end
-
-    for k in 1:B
-        for c in 1:nc
-            mode_buffer[c] = pspace_buffer[(c - 1)B + k]
-        end
-        ldiv!(factorizations[k], mode_buffer)
-        for c in 1:nc
-            pspace_buffer[(c - 1)B + k] = mode_buffer[c]
-        end
-    end
-
-    for c in 1:nc
-        window = (c - 1)B+1:c*B
-        transform!(@view(xspace_buffer[window]), ft, @view(pspace_buffer[window]); direction=:backward, normalise=true)
-        if eltype(y) <: Real
-            @. y[window] = real(xspace_buffer[window])
-        else
-            copyto!(@view(y[window]), @view(xspace_buffer[window]))
-        end
-    end
-    return y
+    return f′
 end
 
 ldiv!(prec::FourierBlockPreconditioner, x::AbstractVector) = ldiv!(x, prec, x)
+
+# """
+# An FFT-space approximation of an `XSpaceHamiltonian` retaining only its
+# diagonal Laplacian term. `ldiv!` applies the inverse independently to every
+# component using a single elementwise multiplication in Fourier space.
+# """
+# mutable struct LaplacePreconditioner{T, WorkT, R, F}
+#     ft::F
+#     nc::Int
+#     B::Int
+#     inverse_laplacian::Vector{R}
+#     pspace_buffer::Vector{WorkT}
+#     xspace_buffer::Vector{WorkT}
+# end
+
+# Base.eltype(::Type{<:LaplacePreconditioner{T}}) where {T} = T
+# Base.size(prec::LaplacePreconditioner) = (prec.nc * prec.B, prec.nc * prec.B)
+
+# """
+#     LaplacePreconditioner(xh; shift=nothing)
+
+# Construct a preconditioner retaining only the Fourier-diagonal Laplacian of
+# `xh`. All potentials, couplings, gauge fields, and decay rates are ignored.
+# When `shift` is `nothing`, a scale-aware positive diagonal shift is added to
+# avoid singular zero-momentum modes.
+# """
+# function LaplacePreconditioner(xh::XSpaceHamiltonian{R, T}; shift=nothing) where {R, T}
+#     (;nc, B, ∇², ft) = xh
+#     if !isnothing(shift) && (!(shift isa Real) || !isfinite(shift) || shift < zero(shift))
+#         throw(ArgumentError("preconditioner shift must be a nonnegative real number"))
+#     end
+
+#     scale = max(one(R), maximum(abs, ∇²))
+#     regularisation = isnothing(shift) ? √eps(R) * scale : R(shift)
+#     inverse_laplacian = inv.(∇² .+ regularisation)
+#     WorkT = xh.basis == :cis ? Complex{R} : T
+
+#     return LaplacePreconditioner{T, WorkT, R, typeof(ft)}(ft, nc, B, inverse_laplacian, Vector{WorkT}(undef, nc * B), Vector{WorkT}(undef, nc * B))
+# end
+
+# @views function ldiv!(y::AbstractVector, prec::LaplacePreconditioner, x::AbstractVector)
+#     (;ft, nc, B, inverse_laplacian, pspace_buffer, xspace_buffer) = prec
+#     length(x) == nc * B || throw(DimensionMismatch("preconditioner input has length $(length(x)); expected $(nc * B)"))
+#     length(y) == nc * B || throw(DimensionMismatch("preconditioner output has length $(length(y)); expected $(nc * B)"))
+
+#     for c in 1:nc
+#         window = (c - 1)B+1:c*B
+#         if ft.basis == :cis && eltype(x) <: Real
+#             copyto!(xspace_buffer[window], x[window])
+#             transform!(pspace_buffer[window], ft, xspace_buffer[window]; direction=:forward)
+#         else
+#             transform!(pspace_buffer[window], ft, x[window]; direction=:forward)
+#         end
+#     end
+
+#     for c in 1:nc
+#         window = (c - 1)B+1:c*B
+#         pspace_buffer[window] .*= inverse_laplacian
+#     end
+
+#     for c in 1:nc
+#         window = (c - 1)B+1:c*B
+#         transform!(xspace_buffer[window], ft, pspace_buffer[window]; direction=:backward, normalise=true)
+#         if eltype(y) <: Real
+#             @. y[window] = real(xspace_buffer[window])
+#         else
+#             copyto!(y[window], xspace_buffer[window])
+#         end
+#     end
+#     return y
+# end
+
+# ldiv!(prec::LaplacePreconditioner, x::AbstractVector) = ldiv!(x, prec, x)
