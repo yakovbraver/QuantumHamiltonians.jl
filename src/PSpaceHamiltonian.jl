@@ -353,21 +353,6 @@ function diagonalize(ph::PSpaceHamiltonian{:sparse}; nev::Integer, verbose::Bool
     return ε, V
 end
 
-"A linear map holding a `LinearSolve` object, used for applying the inverse map."
-struct LinSolveLinMap{T,L} <: LM.LinearMap{T}
-    linsolve::L
-    size::Dims{2}
-end
-
-Base.size(lm::LinSolveLinMap) = lm.size
-
-function LM._unsafe_mul!(y, lm::LinSolveLinMap, x::AbstractVector)
-    copy!(lm.linsolve.b, x)
-    sol = LS.solve!(lm.linsolve) # `solve!` allocates up to 50 KiB :(
-    copy!(y, sol.u)
-    # println(sol.stats) # TODO add verbose option
-end
-
 ################ GPE-related methods ################
 
 "Apply Hamiltonian `ph` to an x-space vector `f`."

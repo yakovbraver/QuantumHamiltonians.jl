@@ -21,10 +21,10 @@ Base.eltype(::Type{<:FourierBlockPreconditioner{R, T}}) where {R, T} = T
 Base.size(prec::FourierBlockPreconditioner) = (prec.nc * prec.B, prec.nc * prec.B)
 
 "Fill the constant-coefficient approximation at linearised momentum index `j`."
-function fill_fourier_block!(block::AbstractMatrix{T}, xh::XSpaceHamiltonian, U_average::AbstractMatrix{T}, A_average::AbstractMatrix, j::Integer, shift) where {T}
+function fill_fourier_block!(block::AbstractMatrix{T}, xh::XSpaceHamiltonian{R, T}, U_average::AbstractMatrix{T}, A_average::AbstractMatrix, j::Integer, shifts::AbstractVector{R}) where {R, T}
     copyto!(block, U_average)
     for c in axes(block, 1)
-        block[c, c] += xh.∇²[j] + shift
+        block[c, c] += xh.∇²[j] + shifts[c]
         if xh.basis == :cis # 𝐴 is not supported for sin/cos
             for i in axes(A_average, 2)
                 block[c, c] -= 2A_average[c, i] * xh.∇[i][j]
@@ -35,19 +35,11 @@ function fill_fourier_block!(block::AbstractMatrix{T}, xh::XSpaceHamiltonian, U_
 end
 
 """
-    FourierBlockPreconditioner(xh; shift=nothing)
-
-Construct a preconditioner for `xh` by retaining its exact momentum-space
-kinetic term and replacing every coordinate-space field by its grid average.
-When `shift` is `nothing`, a scale-aware positive diagonal shift is added to
-the approximation to avoid singular momentum blocks. Pass `shift=zero(R)` to
-disable that regularisation explicitly.
+Construct a block-Jacobi preconditioner for `xh` by retaining the diagonal of each block of p-space `xh`.
+If a given component has no 𝑈 and no 𝐴, then the diagonal element is shifted by `shift`. If not provided, then a scale-aware shift is used.
 """
-function FourierBlockPreconditioner(xh::XSpaceHamiltonian{R, T}; shift=nothing) where {R, T}
+function FourierBlockPreconditioner(xh::XSpaceHamiltonian{R, T}; shift::R=zero(R)) where {R, T}
     (;nc, B, U, A, ∇, ∇², ft) = xh
-    if !isnothing(shift) && (!(shift isa Real) || !isfinite(shift) || shift < zero(shift))
-        throw(ArgumentError("preconditioner shift must be a nonnegative real number"))
-    end
 
     # `T` is the element type of `xh` in real-space. Here we need the type for `xh` in p-space.
     # The Laplacian is real in p-space, while the zeroth harmonic of 𝑈 will be of the same type as `U`. So the required type is just `T`.
@@ -61,17 +53,25 @@ function FourierBlockPreconditioner(xh::XSpaceHamiltonian{R, T}; shift=nothing) 
         !isempty(A[c, i]) && (A_average[c, i] = sum(A[c, i]) / B)
     end
 
+    # determine the `scale`, used if `shift` is needed but was not provided
     scale = max(one(R), maximum(abs, ∇²), maximum(abs, U_average))
     if xh.basis == :cis
         for i in axes(A_average, 2)
             scale += 2 * maximum(abs, @view(A_average[:, i])) * maximum(abs, ∇[i])
         end
     end
-    regularisation = isnothing(shift) ? √eps(R) * scale : R(shift)
+    # calculate the shifts for each component
+    shifts = map(1:nc) do c 
+        if isempty(U[c, c]) && !row_has_something(xh.𝐴, c) # no U or A, so must shift
+            iszero(shift) ? √eps(R) * scale : R(shift) # is `shift` is not provided (or is zero), then use scale × ϵ
+        else
+            zero(R)
+        end
+    end
 
     factorizations = map(1:B) do j # iterate over all momenta, where `j` is a linearised momentum index
         block = Matrix{T}(undef, nc, nc)
-        fill_fourier_block!(block, xh, U_average, A_average, j, regularisation)
+        fill_fourier_block!(block, xh, U_average, A_average, j, shifts)
         LA.lu!(block; check=true) # this in-place verion will alias `block` -- this is why we create new `block` at each iteration
     end
 
@@ -141,13 +141,15 @@ ldiv!(prec::FourierBlockPreconditioner, x::AbstractVector) = ldiv!(x, prec, x)
 # diagonal Laplacian term. `ldiv!` applies the inverse independently to every
 # component using a single elementwise multiplication in Fourier space.
 # """
-# mutable struct LaplacePreconditioner{T, WorkT, R, F}
-#     ft::F
+# mutable struct LaplacePreconditioner{R, T, FourierTransformer}
+#     ft::FourierTransformer
 #     nc::Int
 #     B::Int
-#     inverse_laplacian::Vector{R}
-#     pspace_buffer::Vector{WorkT}
-#     xspace_buffer::Vector{WorkT}
+#     D⁻¹::Vector{T} # inverse diagonal, which contains Laplacian part + average potential
+#     # buffers for applying the map, of size `nc*B`
+#     buff_real::Vector{R}
+#     buff_complex::Vector{Complex{R}}
+#     buff_complex2::Vector{Complex{R}}
 # end
 
 # Base.eltype(::Type{<:LaplacePreconditioner{T}}) where {T} = T
@@ -162,21 +164,28 @@ ldiv!(prec::FourierBlockPreconditioner, x::AbstractVector) = ldiv!(x, prec, x)
 # avoid singular zero-momentum modes.
 # """
 # function LaplacePreconditioner(xh::XSpaceHamiltonian{R, T}; shift=nothing) where {R, T}
-#     (;nc, B, ∇², ft) = xh
+#     (;nc, B, ∇², U, ft) = xh
 #     if !isnothing(shift) && (!(shift isa Real) || !isfinite(shift) || shift < zero(shift))
 #         throw(ArgumentError("preconditioner shift must be a nonnegative real number"))
 #     end
 
-#     scale = max(one(R), maximum(abs, ∇²))
-#     regularisation = isnothing(shift) ? √eps(R) * scale : R(shift)
-#     inverse_laplacian = inv.(∇² .+ regularisation)
-#     WorkT = xh.basis == :cis ? Complex{R} : T
+#     # `T` is the element type of `xh` in real-space. Here we need the type for `xh` in p-space.
+#     # The Laplacian is real in p-space, while the zeroth harmonic of 𝑈 will be of the same type as `U`. So the required type is just `T`.
+#     U_average = zeros(T, nc)
+#     for c in eachindex(U_average)
+#         !isempty(U[c, c]) && (U_average[c] = sum(U[c, c]) / B)
+#     end
 
-#     return LaplacePreconditioner{T, WorkT, R, typeof(ft)}(ft, nc, B, inverse_laplacian, Vector{WorkT}(undef, nc * B), Vector{WorkT}(undef, nc * B))
+#     scale = max(one(R), maximum(abs, ∇²), maximum(abs, U_average))
+#     regularisation = isnothing(shift) ? √eps(R) * scale : R(shift)
+
+#     D⁻¹ = 
+
+#     return LaplacePreconditioner{T, WorkT, R, typeof(ft)}(ft, nc, B, D⁻¹, Vector{WorkT}(undef, nc * B), Vector{WorkT}(undef, nc * B))
 # end
 
 # @views function ldiv!(y::AbstractVector, prec::LaplacePreconditioner, x::AbstractVector)
-#     (;ft, nc, B, inverse_laplacian, pspace_buffer, xspace_buffer) = prec
+#     (;ft, nc, B, D⁻¹, pspace_buffer, xspace_buffer) = prec
 #     length(x) == nc * B || throw(DimensionMismatch("preconditioner input has length $(length(x)); expected $(nc * B)"))
 #     length(y) == nc * B || throw(DimensionMismatch("preconditioner output has length $(length(y)); expected $(nc * B)"))
 
@@ -192,7 +201,7 @@ ldiv!(prec::FourierBlockPreconditioner, x::AbstractVector) = ldiv!(x, prec, x)
 
 #     for c in 1:nc
 #         window = (c - 1)B+1:c*B
-#         pspace_buffer[window] .*= inverse_laplacian
+#         pspace_buffer[window] .*= D⁻¹
 #     end
 
 #     for c in 1:nc

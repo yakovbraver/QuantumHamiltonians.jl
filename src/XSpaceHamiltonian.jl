@@ -230,8 +230,8 @@ The result is written into `xh.ε` and `xh.V`.
 Set `preconditioner=:fourier_block` to use an FFT-space block preconditioner or `preconditioner=:laplace` to use a diagonal Laplacian preconditioner in shift-and-invert mode.
 Any additional kwargs (such as `tol`, `mindim`, `maxdim`, `restarts`) will be passed to `partialschur`.
 """
-function diagonalize!(xh::XSpaceHamiltonian; nev::Integer, invert::Bool=(xh.nc > 1), verbose::Bool=false,
-                      preconditioner::Symbol=:none, preconditioner_shift=nothing, kwargs...)
+function diagonalize!(xh::XSpaceHamiltonian{R, T}; nev::Integer, invert::Bool=(xh.nc > 1), verbose::Bool=false,
+                      preconditioner::Symbol=:none, preconditioner_shift::R=zero(R), kwargs...) where {R, T}
     xh.ε, xh.V = diagonalize(xh; nev, verbose, invert, preconditioner, preconditioner_shift, kwargs...)
     return
 end
@@ -247,7 +247,7 @@ Any additional kwargs (such as `tol`, `mindim`, `maxdim`, `restarts`) will be pa
 Return a tuple (eigenvalues, eigenvectors).
 """
 function diagonalize(xh::XSpaceHamiltonian{R, T}; invert::Bool=(xh.nc > 1), nev::Integer, verbose::Bool=false,
-                     preconditioner::Symbol=:none, preconditioner_shift=nothing, kwargs...) where {R, T}
+                     preconditioner::Symbol=:none, preconditioner_shift::R=zero(R), kwargs...) where {R, T}
     preconditioner in (:none, :fourier_block, :laplace) || throw(ArgumentError("unsupported preconditioner: $preconditioner"))
     if invert
         # Here we do shift-invert: we want to diagonalise 𝐻⁻¹, defined by its action 𝑥 = 𝐻⁻¹𝑏; 𝑥 is found by solving 𝐻𝑥 = 𝑏. But `LS.LinearProblem` does not work with LinearMaps, so we wrap `bdg_map` in a SciMLOperator
