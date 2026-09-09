@@ -1,12 +1,8 @@
 """
-An FFT-space, constant-coefficient approximation of an `XSpaceHamiltonian`.
-
-The spatially varying terms are replaced by their grid averages while the
-kinetic term remains diagonal in momentum space. Each momentum mode is thus a
-small `nc × nc` dense system. `ldiv!` applies the inverse approximation and is
-used as a left preconditioner by iterative linear solvers.
+A block-Jacobi preconditioner for `XSpaceHamiltonian`, used for linear solving during diagonalisation
+The blocks are stored as LU factorization objects.
 """
-struct FourierBlockPreconditioner{R, T, FourierTransformer, Factorization}
+struct BlockJacobiPreconditioner{R, T, FourierTransformer, Factorization}
     ft::FourierTransformer
     nc::Int
     B::Int
@@ -17,11 +13,11 @@ struct FourierBlockPreconditioner{R, T, FourierTransformer, Factorization}
     buff_complex2::Vector{Complex{R}}
 end
 
-Base.eltype(::Type{<:FourierBlockPreconditioner{R, T}}) where {R, T} = T
-Base.size(prec::FourierBlockPreconditioner) = (prec.nc * prec.B, prec.nc * prec.B)
+Base.eltype(::Type{<:BlockJacobiPreconditioner{R, T}}) where {R, T} = T
+Base.size(prec::BlockJacobiPreconditioner) = (prec.nc * prec.B, prec.nc * prec.B)
 
 "Fill the constant-coefficient approximation at linearised momentum index `j`."
-function fill_fourier_block!(block::AbstractMatrix{T}, xh::XSpaceHamiltonian{R, T}, U_average::AbstractMatrix{T}, A_average::AbstractMatrix, j::Integer, shifts::AbstractVector{R}) where {R, T}
+function fill_jacobi_block!(block::AbstractMatrix{T}, xh::XSpaceHamiltonian{R, T}, U_average::AbstractMatrix{T}, A_average::AbstractMatrix, j::Integer, shifts::AbstractVector{R}) where {R, T}
     copyto!(block, U_average)
     for c in axes(block, 1)
         block[c, c] += xh.∇²[j] + shifts[c]
@@ -38,7 +34,7 @@ end
 Construct a block-Jacobi preconditioner for `xh` by retaining the diagonal of each block of p-space `xh`.
 If a given component has no 𝑈 and no 𝐴, then the diagonal element is shifted by `shift`. If not provided, then a scale-aware shift is used.
 """
-function FourierBlockPreconditioner(xh::XSpaceHamiltonian{R, T}; shift::R=zero(R)) where {R, T}
+function BlockJacobiPreconditioner(xh::XSpaceHamiltonian{R, T}; shift::R=zero(R)) where {R, T}
     (;nc, B, U, A, ∇, ∇², ft) = xh
 
     # `T` is the element type of `xh` in real-space. Here we need the type for `xh` in p-space.
@@ -71,15 +67,16 @@ function FourierBlockPreconditioner(xh::XSpaceHamiltonian{R, T}; shift::R=zero(R
 
     factorizations = map(1:B) do j # iterate over all momenta, where `j` is a linearised momentum index
         block = Matrix{T}(undef, nc, nc)
-        fill_fourier_block!(block, xh, U_average, A_average, j, shifts)
+        fill_jacobi_block!(block, xh, U_average, A_average, j, shifts)
         LA.lu!(block; check=true) # this in-place verion will alias `block` -- this is why we create new `block` at each iteration
     end
 
-    return FourierBlockPreconditioner{R, T, typeof(ft), eltype(factorizations)}(ft, nc, B, factorizations,
+    return BlockJacobiPreconditioner{R, T, typeof(ft), eltype(factorizations)}(ft, nc, B, factorizations,
         Vector{R}(undef, nc*B), Vector{Complex{R}}(undef, nc*B), Vector{Complex{R}}(undef, nc*B))
 end
 
-@views function ldiv!(f′::AbstractVector, prec::FourierBlockPreconditioner{R, T}, f::AbstractVector) where {R, T}
+"Apply inverse of `prec` to `f`."
+@views function ldiv!(f′::AbstractVector, prec::BlockJacobiPreconditioner{R, T}, f::AbstractVector) where {R, T}
     (;ft, nc, B, factorizations) = prec
     length(f) == nc * B || throw(DimensionMismatch("preconditioner input has length $(length(f)); expected $(nc * B)"))
     length(f′) == nc * B || throw(DimensionMismatch("preconditioner output has length $(length(f′)); expected $(nc * B)"))
@@ -134,7 +131,8 @@ end
     return f′
 end
 
-ldiv!(prec::FourierBlockPreconditioner, x::AbstractVector) = ldiv!(x, prec, x)
+"Apply inverse of `prec` to `f` in-place."
+ldiv!(prec::BlockJacobiPreconditioner, f::AbstractVector) = ldiv!(f, prec, f)
 
 # """
 # An FFT-space approximation of an `XSpaceHamiltonian` retaining only its

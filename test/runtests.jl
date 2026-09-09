@@ -11,6 +11,7 @@ end
     include("2D.jl")
 end
 
+# ~ 15 sec
 @testset "x-space preconditioner tests" begin
-    include("XSpacePreconditioner.jl")
+    include("preconditioners.jl")
 end

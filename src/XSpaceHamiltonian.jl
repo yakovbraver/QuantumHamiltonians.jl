@@ -255,7 +255,7 @@ function diagonalize(xh::XSpaceHamiltonian{R, T}; invert::Bool=(xh.nc > 1), nev:
         prob = LS.LinearProblem(xh_op, Vector{T}(undef, xh.nc*xh.B))
         reltol = haskey(kwargs, :tol) ? kwargs[:tol] : √eps(R) # use user's "tol" if passed; otherwise use LinearSolve's default
         if preconditioner == :fourier_block || preconditioner == :laplace
-            prec_type = preconditioner == :fourier_block ? FourierBlockPreconditioner : LaplacePreconditioner
+            prec_type = preconditioner == :fourier_block ? BlockJacobiPreconditioner : LaplacePreconditioner
             prec = prec_type(xh; shift=preconditioner_shift)
             linsolve = LS.init(prob, LS.KrylovJL_GMRES(; precs=(_, _) -> (prec, LA.I)); reltol)
         else
