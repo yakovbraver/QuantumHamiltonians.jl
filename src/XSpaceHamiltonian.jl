@@ -248,15 +248,14 @@ Return a tuple (eigenvalues, eigenvectors).
 """
 function diagonalize(xh::XSpaceHamiltonian{R, T}; invert::Bool=(xh.nc > 1), nev::Integer, verbose::Bool=false,
                      preconditioner::Symbol=:none, preconditioner_shift::R=zero(R), kwargs...) where {R, T}
-    preconditioner in (:none, :fourier_block, :laplace) || throw(ArgumentError("unsupported preconditioner: $preconditioner"))
+    preconditioner in (:none, :jacobi, :block_jacobi) || throw(ArgumentError("unsupported preconditioner: $preconditioner"))
     if invert
         # Here we do shift-invert: we want to diagonalise 𝐻⁻¹, defined by its action 𝑥 = 𝐻⁻¹𝑏; 𝑥 is found by solving 𝐻𝑥 = 𝑏. But `LS.LinearProblem` does not work with LinearMaps, so we wrap `bdg_map` in a SciMLOperator
         xh_op = SciMLOperators.FunctionOperator(XSpaceHamiltonian!, Vector{T}(undef, xh.nc*xh.B); p=xh, isconstant=true)
         prob = LS.LinearProblem(xh_op, Vector{T}(undef, xh.nc*xh.B))
         reltol = haskey(kwargs, :tol) ? kwargs[:tol] : √eps(R) # use user's "tol" if passed; otherwise use LinearSolve's default
-        if preconditioner == :fourier_block || preconditioner == :laplace
-            prec_type = preconditioner == :fourier_block ? BlockJacobiPreconditioner : LaplacePreconditioner
-            prec = prec_type(xh; shift=preconditioner_shift)
+        if preconditioner != :none
+            prec = JacobiPreconditioner(xh; type=(preconditioner == :jacobi ? :simple : :block), shift=preconditioner_shift)
             linsolve = LS.init(prob, LS.KrylovJL_GMRES(; precs=(_, _) -> (prec, LA.I)); reltol)
         else
             linsolve = LS.init(prob, LS.KrylovJL_GMRES(); reltol)
