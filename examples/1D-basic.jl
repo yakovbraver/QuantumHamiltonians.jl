@@ -44,14 +44,15 @@ plot(xs, 𝑈)
 plot!(xs, ψ[:, 1, 1] .+ ph.ε[stateno])
 
 ### Diagonalisation in x-space
-xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M=256, δ=Float(√0.5))
+xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M=128, δ=Float(√0.5))
 xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cos, M=128, δ=Float(√0.5))
 xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:sin, M=127, δ=Float(√0.5))
-@time diagonalize!(xh, nev=5, verbose=true, invert=true);
-@time diagonalize!(xh, nev=5, verbose=true, invert=true, preconditioner=:fourier_block, preconditioner_shift=0.0);
-xh.ε
+@time diagonalize!(xh, nev=5, verbose=true) # for M=128 with default `partialschur` precision of `tol=1e-8` converges to absolute accuracy of eigenvalues of ~1e-14. Does ~265 matrix-vector products
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_abstol=1e-12, ls_reltol=1e-12) # using inversion reduces matrix-vector products to 26 (but does ~170 linear solves on each iteration (check with `ls_verbose=true`)). Must tighten the linear solving tolerance to get the absolute accuracy of ~1e-14
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_abstol=1e-12, ls_reltol=1e-12) # using preconditioner reduces linear solves to ~40
 @time xs, ψ = make_eigenfunction(xh, stateno);
 plot!(xs, ψ[1] .+ xh.ε[stateno])
+xh.ε
 
 # Diagonalisation via `StateVector`
 # @time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh; nev=5); # for large M you may need to tweak solver parameters. E.g. for M = 256, to converge to the default Float64 tolerance of 1e-12, set `krylovdim=35` (default is 30)

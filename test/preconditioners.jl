@@ -40,7 +40,7 @@ using LinearAlgebra
 
     # Test diagonalisation
     # ε_plain, _ = QuantumHamiltonians.diagonalize(xh; nev=2, invert=true, tol=1e-10)
-    # ε_prec, _ = QuantumHamiltonians.diagonalize(xh; nev=2, invert=true, tol=1e-10, preconditioner=:block_jacobi)
+    # ε_prec, _ = QuantumHamiltonians.diagonalize(xh; nev=2, invert=true, tol=1e-10, ls_prec=:block_jacobi)
     # @test ε_prec ≈ ε_plain rtol=1e-8 atol=1e-10
 end
 

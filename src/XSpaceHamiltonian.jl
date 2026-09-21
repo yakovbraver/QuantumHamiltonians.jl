@@ -223,42 +223,39 @@ end
 
 """
 Calculate `nev` eigenvectors and eigenvalues.
-By default, if number of components is bigger than one, then smallest-magnitude eigenvalues are calculated using inversion.
-For a single component, the smallest (most negative) eigenvalues are calculated, without using inversion.
-Inversion can be set/unset manually using `invert`.
 The result is written into `xh.ε` and `xh.V`.
-Set `preconditioner=:fourier_block` to use an FFT-space block preconditioner or `preconditioner=:laplace` to use a diagonal Laplacian preconditioner in shift-and-invert mode.
-Any additional kwargs (such as `tol`, `mindim`, `maxdim`, `restarts`) will be passed to `partialschur`.
 """
 function diagonalize!(xh::XSpaceHamiltonian{R, T}; nev::Integer, invert::Bool=(xh.nc > 1), verbose::Bool=false,
-                      preconditioner::Symbol=:none, preconditioner_shift::R=zero(R), kwargs...) where {R, T}
-    xh.ε, xh.V = diagonalize(xh; nev, verbose, invert, preconditioner, preconditioner_shift, kwargs...)
+                      ls_prec::Symbol=:none, ls_prec_shift::R=zero(R), kwargs...) where {R, T}
+    xh.ε, xh.V = diagonalize(xh; nev, verbose, invert, ls_prec, ls_prec_shift, kwargs...)
     return
 end
 
 """
-Calculate `nev` eigenvectors and eigenvalues.
+Return `nev` eigenvectors and eigenvalues.
 By default, if number of components is bigger than one, then smallest-magnitude eigenvalues are calculated using inversion.
 For a single component, the smallest (most negative) eigenvalues are calculated, without using inversion.
 Inversion can be set/unset manually using `invert`.
-Set `preconditioner=:fourier_block` to use an FFT-space block preconditioner in shift-and-invert mode.
-Pass `preconditioner_shift` to control its diagonal regularisation; the default is scale-aware.
-Any additional kwargs (such as `tol`, `mindim`, `maxdim`, `restarts`) will be passed to `partialschur`. If `tol` is passed, it will be also passed to GMRES as `reltol` in case of inversion.
+The keyword arguments with the `ls_` prefix control linear solving used during inversion.
+`ls_prec` can be `:none`, `:jacobi`, or `:block_jacobi`.
+`ls_prec_shift` is added to the diagonal to avoid singularity of the kinetic operator when no 𝑈 or 𝐴 is present. The default is zero, but when singularity is detected, a scale-aware shift is added.
+The default solver is `LS.KrylovJL_GMRES`. Any other `KrylovJL_*` solver can be used (https://docs.sciml.ai/LinearSolve/stable/solvers/solvers/).
+Useful alternatives are `LS.KrylovJL_CG` for Hermitian positive definite and `LS.KrylovJL_MINRES` for Hermitian possibly indefinite.
+Any additional kwargs (such as `tol`, `mindim`, `maxdim`, `restarts`) will be passed to `partialschur`.
 Return a tuple (eigenvalues, eigenvectors).
 """
 function diagonalize(xh::XSpaceHamiltonian{R, T}; invert::Bool=(xh.nc > 1), nev::Integer, verbose::Bool=false,
-                     preconditioner::Symbol=:none, preconditioner_shift::R=zero(R), kwargs...) where {R, T}
-    preconditioner in (:none, :jacobi, :block_jacobi) || throw(ArgumentError("unsupported preconditioner: $preconditioner"))
+                     ls_solver=LS.KrylovJL_GMRES, ls_reltol=√eps(R), ls_abstol=√eps(R), ls_prec::Symbol=:none, ls_prec_shift::R=zero(R), ls_verbose::Bool=false, kwargs...) where {R, T}
+    ls_prec in (:none, :jacobi, :block_jacobi) || throw(ArgumentError("unsupported preconditioner: $ls_prec"))
     if invert
         # Here we do shift-invert: we want to diagonalise 𝐻⁻¹, defined by its action 𝑥 = 𝐻⁻¹𝑏; 𝑥 is found by solving 𝐻𝑥 = 𝑏. But `LS.LinearProblem` does not work with LinearMaps, so we wrap `bdg_map` in a SciMLOperator
         xh_op = SciMLOperators.FunctionOperator(XSpaceHamiltonian!, Vector{T}(undef, xh.nc*xh.B); p=xh, isconstant=true)
         prob = LS.LinearProblem(xh_op, Vector{T}(undef, xh.nc*xh.B))
-        reltol = haskey(kwargs, :tol) ? kwargs[:tol] : √eps(R) # use user's "tol" if passed; otherwise use LinearSolve's default
-        if preconditioner != :none
-            prec = JacobiPreconditioner(xh; type=(preconditioner == :jacobi ? :simple : :block), shift=preconditioner_shift)
-            linsolve = LS.init(prob, LS.KrylovJL_GMRES(; precs=(_, _) -> (prec, LA.I)); reltol)
+        if ls_prec != :none
+            prec = JacobiPreconditioner(xh; type=(ls_prec == :jacobi ? :simple : :block), shift=ls_prec_shift)
+            linsolve = LS.init(prob, ls_solver(;verbose=Int(ls_verbose), precs=(_, _) -> (prec, LA.I)); reltol=ls_reltol, abstol=ls_abstol)
         else
-            linsolve = LS.init(prob, LS.KrylovJL_GMRES(); reltol)
+            linsolve = LS.init(prob, ls_solver(;verbose=Int(ls_verbose)); reltol=ls_reltol, abstol=ls_abstol)
         end
         linmap = LinSolveLinMap{T, typeof(linsolve)}(linsolve, size(xh))
         ps, info = partialschur(linmap; nev, which=:LM, kwargs...)
