@@ -239,8 +239,9 @@ Inversion can be set/unset manually using `invert`.
 The keyword arguments with the `ls_` prefix control linear solving used during inversion.
 `ls_prec` can be `:none`, `:jacobi`, or `:block_jacobi`.
 `ls_prec_shift` is added to the diagonal to avoid singularity of the kinetic operator when no 𝑈 or 𝐴 is present. The default is zero, but when singularity is detected, a scale-aware shift is added.
-The default solver is `LS.KrylovJL_GMRES`. Any other `KrylovJL_*` solver can be used (https://docs.sciml.ai/LinearSolve/stable/solvers/solvers/).
+The default linear solver is `LS.KrylovJL_GMRES`. Any other `KrylovJL_*` solver can be used (https://docs.sciml.ai/LinearSolve/stable/solvers/solvers/).
 Useful alternatives are `LS.KrylovJL_CG` for Hermitian positive definite and `LS.KrylovJL_MINRES` for Hermitian possibly indefinite.
+`ls_solver` should be the function name rather than the costructed object, i.e. `LS.KrylovJL_GMRES` instead of `LS.KrylovJL_GMRES()`.
 Any additional kwargs (such as `tol`, `mindim`, `maxdim`, `restarts`) will be passed to `partialschur`.
 Return a tuple (eigenvalues, eigenvectors).
 """

@@ -159,3 +159,184 @@ end
 
 "Apply inverse of preconditioner `prec` to an x-space wave function `f` in-place."
 ldiv!(prec::JacobiPreconditioner, f::AbstractVector) = ldiv!(f, prec, f)
+
+"""
+A block-Jacobi preconditioner for `XSpaceHamiltonian`, used for linear solving during GPE stationary state search using nonlinear solve.
+The preconditioner depends on the state being optimised, so the obejct is updated on each nonlinear solve iteration using `update!(prec, u)`.
+`T` is the type of the object as a linear map -- basically same as the `T` parameter of `XSpaceHamiltonian`.
+Currently 𝐴 is supported only in the cis case.
+"""
+mutable struct GPEJacobiPreconditioner{R, T, FourierTransformer, Jₚ_T}
+    ft::FourierTransformer
+    nc::Int
+    B::Int
+    nc_physical::Int
+    Jₚ::Vector{Jₚ_T}
+    g::Matrix{R}
+    U_average::Matrix{T}
+    A_average::Matrix{R}
+    ∇::Vector{Vector{R}}
+    ∇²::Vector{R}
+    μ_fixed::Vector{R}
+    searchreal::Bool
+    augmented::Bool
+    buff_real::Vector{R}
+    buff_complex::Vector{Complex{R}}
+    buff_complex2::Vector{Complex{R}}
+    mode_buffer::Vector{Complex{R}}
+end
+
+# Two methods to avoid error when printing nonlinear solving trace using `show_trace=Val(true)`.
+# NonlinearSolve's trace formatter recursively walks struct fields when it prints the algorithm, entering the linear solver object, then `GPEJacobiPreconditioner`, then `ft`, and breaks trying to pring the FFTW plans.
+# So just print the generic name, in fact we don't care at all.
+NLS.NonlinearSolveBase.Utils.clean_sprint_struct(::GPEJacobiPreconditioner) = "GPEJacobiPreconditioner()"
+NLS.NonlinearSolveBase.Utils.clean_sprint_struct(::GPEJacobiPreconditioner, ::Int) = "GPEJacobiPreconditioner()"
+
+Base.eltype(::Type{<:GPEJacobiPreconditioner{R}}) where R = R
+
+function GPEJacobiPreconditioner(xh::XSpaceHamiltonian{R, T}, g::AbstractMatrix{R}, nc_effective::Integer;
+                                 searchreal::Bool=false, μ=nothing, augmented::Bool=false) where {R, T}
+    nc_effective == (searchreal ? xh.nc : 2xh.nc) || throw(DimensionMismatch("effective component count does not match searchreal"))
+    size(g) == (xh.nc, xh.nc) || throw(DimensionMismatch("g must have size ($(xh.nc), $(xh.nc))"))
+
+    μ_fixed = μ isa Number ? fill(R(μ), xh.nc) :
+              isnothing(μ) ? zeros(R, xh.nc) : R.(μ)
+    length(μ_fixed) == xh.nc || throw(DimensionMismatch("μ has the wrong number of physical components"))
+
+    U_average = zeros(T, xh.nc, xh.nc)
+    for c in axes(xh.U, 1), b in axes(xh.U, 2)
+        !isempty(xh.U[c, b]) && (U_average[c, b] = sum(xh.U[c, b]) / xh.B)
+    end
+
+    A_average = zeros(R, xh.nc, length(xh.∇))
+    for c in axes(xh.A, 1), i in axes(xh.A, 2)
+        !isempty(xh.A[c, i]) && (A_average[c, i] = sum(xh.A[c, i]) / xh.B)
+    end
+
+    # perform LU for identity matrices just to initialise with the correct type
+    Jₚ = [LA.lu!(Matrix{R}(LA.I, nc_effective, nc_effective); check=true) for _ in 1:xh.B]
+
+    wf_length = nc_effective * xh.B # length of the wave function vector of a single component, which is doubled in the complex case
+    prec = GPEJacobiPreconditioner{R, T, typeof(xh.ft), eltype(Jₚ)}(
+        xh.ft, nc_effective, xh.B, xh.nc, Jₚ, R.(g), U_average,
+        A_average, xh.∇, xh.∇², μ_fixed, searchreal, augmented,
+        Vector{R}(undef, wf_length), Vector{Complex{R}}(undef, wf_length),
+        Vector{Complex{R}}(undef, wf_length), Vector{Complex{R}}(undef, nc_effective))
+
+    u_length = wf_length + (augmented ? nc_effective : 0) # length of the `u` vector on which the preconditioner acts, containing extra elements if 𝜇 is not fixed
+    update!(prec, zeros(R, u_length))
+
+    return prec
+end
+
+"Refresh the averaged Fourier blocks from a current real Newton-Raphson state."
+function update!(prec::GPEJacobiPreconditioner{R, T}, u::AbstractVector) where {R, T}
+    B, nc, nc_physical = prec.B, prec.nc, prec.nc_physical
+    μs = prec.μ_fixed
+    if prec.augmented
+        μs = prec.searchreal ? @view(u[end-nc+1:end]) : @view(u[end-nc+1:2:end]) # if !searchreal, take every second element from the end because every second is the same as previous; note that `μs` is always of length `nc_physical`
+    end
+    u²_avg = zeros(R, nc_physical)
+    uᶜuᵈ_avg = zeros(R, 2, 2, nc_physical, nc_physical) # when !searchreal, the first two dimensions enumerate real and imaginary parts
+    if prec.searchreal
+        for c in 1:nc_physical
+            uc = @view u[(c-1)*B+1:c*B]
+            u²_avg[c] = sum(abs2, uc) / B
+            uᶜuᵈ_avg[1, 1, c, c] = u²_avg[c]
+        end
+    else
+        for c in 1:nc_physical
+            uᶜ_real = @view u[(2c-2)*B+1:(2c-1)*B]
+            uᶜ_imag = @view u[(2c-1)*B+1:2c*B]
+            u²_avg[c] = (sum(abs2, uᶜ_real) + sum(abs2, uᶜ_imag)) / B
+            for d in 1:nc_physical
+                uᵈ_real = @view u[(2d-2)*B+1:(2d-1)*B]
+                uᵈ_imag = @view u[(2d-1)*B+1:2d*B]
+                uᶜuᵈ_avg[1, 1, c, d] = sum(uᶜ_real .* uᵈ_real) / B
+                uᶜuᵈ_avg[1, 2, c, d] = sum(uᶜ_real .* uᵈ_imag) / B
+                uᶜuᵈ_avg[2, 1, c, d] = uᶜuᵈ_avg[1, 2, c, d]
+                uᶜuᵈ_avg[2, 2, c, d] = sum(uᶜ_imag .* uᵈ_imag) / B
+            end
+        end
+    end
+    gu²_μ = prec.g * u²_avg - μs # a vector whose 𝑖th element is ∑ⱼ 𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ
+    for j in 1:B
+        block = zeros(R, nc, nc)
+        for c in 1:nc_physical
+            if prec.searchreal
+                block[c, c] += prec.∇²[j] + gu²_μ[c] + 2prec.g[c, c] * u²_avg[c]
+            else
+                cr, ci = 2c - 1, 2c
+                block[cr, cr] += prec.∇²[j] + gu²_μ[c]
+                block[ci, ci] += prec.∇²[j] + gu²_μ[c]
+            end
+            for d in 1:nc_physical
+                h = prec.U_average[c, d]
+                if prec.searchreal
+                    block[c, d] += real(h)
+                    c != d && (block[c, d] += 2prec.g[c, d] * uᶜuᵈ_avg[1, 1, c, d])
+                else
+                    cr, ci = 2c - 1, 2c
+                    dr, di = 2d - 1, 2d
+                    block[cr, dr] +=  real(h) + 2prec.g[c, d] * uᶜuᵈ_avg[1, 1, c, d]
+                    block[cr, di] += -imag(h) + 2prec.g[c, d] * uᶜuᵈ_avg[1, 2, c, d]
+                    block[ci, dr] +=  imag(h) + 2prec.g[c, d] * uᶜuᵈ_avg[2, 1, c, d]
+                    block[ci, di] +=  real(h) + 2prec.g[c, d] * uᶜuᵈ_avg[2, 2, c, d]
+                end
+            end
+        end
+        for c in axes(prec.A_average, 1), i in axes(prec.A_average, 2)
+            shift = 2prec.A_average[c, i] * prec.∇[i][j]
+            prec.searchreal ? (block[c, c] -= shift) : (block[2c-1, 2c-1] -= shift; block[2c, 2c] -= shift)
+        end
+        try
+            prec.Jₚ[j] = LA.lu!(block; check=true)
+        catch err
+            err isa LA.SingularException || rethrow()
+            shift = √eps(R) * max(one(R), maximum(abs, block))
+            for c in axes(block, 1)
+                block[c, c] += shift
+            end
+            prec.Jₚ[j] = LA.lu!(block; check=true)
+        end
+    end
+
+    return prec
+end
+
+"Apply the inverse of the current averaged GPE Jacobian approximation."
+@views function ldiv!(f′::AbstractVector, prec::GPEJacobiPreconditioner{R}, f::AbstractVector) where R
+    f_isreal = eltype(f) <: Real
+    buff = f_isreal && prec.ft.basis != :cis ? prec.buff_real : prec.buff_complex
+    for c in 1:prec.nc
+        window = (c-1)*prec.B+1:c*prec.B
+        if prec.ft.basis == :cis && f_isreal
+            copyto!(prec.buff_complex2[window], f[window])
+            transform!(buff[window], prec.ft, prec.buff_complex2[window]; direction=:forward)
+        else
+            transform!(buff[window], prec.ft, f[window]; direction=:forward)
+        end
+    end
+    for j in 1:prec.B
+        for c in 1:prec.nc
+            prec.mode_buffer[c] = buff[(c-1)*prec.B+j]
+        end
+        ldiv!(prec.Jₚ[j], prec.mode_buffer)
+        for c in 1:prec.nc
+            buff[(c-1)*prec.B+j] = prec.mode_buffer[c]
+        end
+    end
+    for c in 1:prec.nc
+        window = (c-1)*prec.B+1:c*prec.B
+        if f_isreal && prec.ft.basis == :cis
+            transform!(prec.buff_complex2[window], prec.ft, buff[window]; direction=:backward, normalise=true)
+            @. f′[window] = real(prec.buff_complex2[window])
+        else
+            transform!(f′[window], prec.ft, buff[window]; direction=:backward, normalise=true)
+        end
+    end
+    prec.augmented && copyto!(f′, length(f)-prec.nc+1, f, length(f)-prec.nc+1, prec.nc) # extra elements correpsonding to 𝜇s are copied as-is
+    return f′
+end
+
+ldiv!(prec::GPEJacobiPreconditioner, f::AbstractVector) = ldiv!(f, prec, f)

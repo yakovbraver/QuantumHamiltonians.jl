@@ -1,7 +1,7 @@
 "A version of `find_stationary` accepting `ψ₀` as a vector of analytic functions (one for each component)."
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:Function},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{R}}=nothing; searchreal=false,
-                         solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
+                         solver=nothing, kwargs...) where {Storage, R, T}
     (;B, nc, ft) = qh
 
     # Prepare the input wf `ψ_input`. By default, its length is `nc*B`, but if `natoms` is passed then we need additional `nc` elements to represent the 𝜇s that are being optimised.
@@ -25,7 +25,7 @@ end
 "A version of `find_stationary` accepting `ψ₀` as a vector of etiher D-dimensional arrays or flattened vectors, one for each component, representing discretised x-space functions."
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:AbstractArray},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{R}}=nothing; searchreal=false,
-                         solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
+                         solver=nothing, kwargs...) where {Storage, R, T}
     (;B, nc) = qh
 
     # Prepare the input wf `ψ_input`. By default, its length is `nc*B`, but if `natoms` is passed then we need additional `nc` elements to represent the 𝜇s that are being optimised.
@@ -77,7 +77,9 @@ found chemical potentials; if solving was performed under fixed 𝜇s given by t
 """
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:Number},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing; searchreal=false,
-                         solver=NLS.NewtonRaphson(;linsolve=LS.KrylovJL_GMRES()), kwargs...) where {Storage, R, T}
+                         solver=nothing, ls_prec::Symbol=:none, ls_verbose::Bool=false, kwargs...) where {Storage, R, T}
+    ls_prec in (:none, :block_jacobi) || throw(ArgumentError("unsupported preconditioner: $ls_prec"))
+
     (;B, nc) = qh
 
     # make `μs_or_Ns` point to the right thing and prepare input state
@@ -130,9 +132,18 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
         end
     end
 
+    if ls_prec == :block_jacobi
+        qh isa XSpaceHamiltonian || throw(ArgumentError("jacobian_preconditioner is only implemented for XSpaceHamiltonian"))
+        prec = GPEJacobiPreconditioner(qh, g, nc_effective; searchreal, μ, augmented=!isnothing(natoms))
+    else
+        prec = nothing
+    end
+
     if nc_effective == 1 # the 1-component case can be treated more efficiently
         params = (qh, g[1], μs_or_Ns)
-        nlfunction = NLS.NonlinearFunction(gpe_stationary_1comp!; jvp=jvp_gpe_stationary_1comp!)
+        jvp = isnothing(prec) ? jvp_gpe_stationary_1comp! :
+                                (Jv, v, u, p) -> (update!(prec, u); jvp_gpe_stationary_1comp!(Jv, v, u, p))
+        nlfunction = NLS.NonlinearFunction(gpe_stationary_1comp!; jvp)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params)
     else
         # initialise the buffers for holding all double products
@@ -148,8 +159,18 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
         end
          
         params = (qh, g_input, μs_or_Ns, nc_effective, u², u²_sum, uⱼvⱼ, complex_buff1, complex_buff2)
-        nlfunction = NLS.NonlinearFunction(gpe_stationary!; jvp=jvp_gpe_stationary!)
+        jvp = isnothing(prec) ? jvp_gpe_stationary! :
+                                (Jv, v, u, p) -> (update!(prec, u); jvp_gpe_stationary!(Jv, v, u, p))
+        nlfunction = NLS.NonlinearFunction(gpe_stationary!; jvp)
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params) # use specialisation `NonlinearProblem{true, SciMLBase.FullSpecialize}` for production!
+    end
+
+    if isnothing(solver)
+        linsolver = isnothing(prec) ? LS.KrylovJL_GMRES(;verbose=Int(ls_verbose)) :
+                                      LS.KrylovJL_GMRES(;verbose=Int(ls_verbose), precs=(_, _) -> (LA.I, prec))
+        solver = NLS.NewtonRaphson(;linsolve=linsolver)
+    elseif !isnothing(prec)
+        throw(ArgumentError("pass solver=nothing when jacobian_preconditioner=true"))
     end
 
     # we will pass on user's kwargs to NLS.solve, but we override some of NLS's defaults. User's kwargs will in turn override ours.
@@ -192,7 +213,6 @@ which is coded as
     𝜇′ = ∫𝑢²d𝑥 - 𝑁
 
 Used for finding the steady state with nonlinear solve (by solving for 𝑢′ = 𝜇′ = 0).
-Suitable for the case when 𝐻, and hence also 𝑢, is real in x-space.
 """
 @views function gpe_stationary_1comp!(du, u, params)
     qh, g, μ_or_N = params
@@ -218,7 +238,6 @@ If the number of atoms is fixed, then the last element of `v` and `u` is assumed
 where 𝑀 is the last element of `v`, 𝜇 is the last element of `u`, and an additional equation reads
     𝐽𝑀 = 2∫𝑢𝑣d𝑥
 Used for finding the steady state with nonlinear solve.
-Suitable for the case when 𝐻, and hence also 𝑢 and 𝑣, is real in x-space.
 """
 @views function jvp_gpe_stationary_1comp!(Jv, v, u, params)
     qh, g, μ_or_N = params
@@ -250,10 +269,9 @@ If only the total number of atoms 𝑁 is fixed, then there is a single 𝜇, so
     𝜇′ = ∑ᵢ∫𝑢ᵢ²d𝑥 - 𝑁
 
 Used for finding the steady state with nonlinear solve.
-Suitable for the case when 𝐻, and hence also 𝑢ᵢ, is real in x-space.
 """
 @views function gpe_stationary!(du, u::AbstractVector{R}, params) where R <: Real
-    qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ, complex_buff1, complex_buff2 = params
+    qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ, complex_buff1, complex_buff2 = params # if "searchreal=true", then `nc` equals `xh.nc`, otherwise `nc` equals `2xh.nc`
     B = qh.B
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if 𝜇s are fixed, or last elements of `u` otherwise
     μs_arefixed = length(u) == B*nc # is 𝜇s are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇s
@@ -330,7 +348,6 @@ Equations (𝐽𝑣)ᵢ are the same, while the additional 𝑛 (identical) equa
     𝐽𝑀ᵢ = 2∑ᵢ∫d𝑥 𝑢ᵢ𝑣ᵢ
 
 Used for finding the steady state with nonlinear solve.
-Suitable for the case when 𝐻, and hence also 𝑢ᵢ and 𝑣ᵢ, is real in x-space.
 """
 @views function jvp_gpe_stationary!(Jv, v::AbstractVector{R}, u, params) where R <: Real
     qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ, complex_buff1, complex_buff2 = params
