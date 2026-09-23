@@ -167,19 +167,18 @@ The preconditioner depends on the state being optimised, so the obejct is update
 Currently 𝐴 is supported only in the cis case.
 """
 mutable struct GPEJacobiPreconditioner{R, T, FourierTransformer, Jₚ_T}
-    ft::FourierTransformer
     nc::Int
-    B::Int
     nc_physical::Int
-    Jₚ::Vector{Jₚ_T}
+    B::Int
+    searchreal::Bool
+    μs::Vector{R} # fixed 𝜇s of each component. Will contain zeros if 𝜇s are not fixed
     g::Matrix{R}
+    Jₚ::Vector{Jₚ_T}
     U_average::Matrix{T}
     A_average::Matrix{R}
     ∇::Vector{Vector{R}}
     ∇²::Vector{R}
-    μ_fixed::Vector{R}
-    searchreal::Bool
-    augmented::Bool
+    ft::FourierTransformer
     buff_real::Vector{R}
     buff_complex::Vector{Complex{R}}
     buff_complex2::Vector{Complex{R}}
@@ -194,14 +193,12 @@ NLS.NonlinearSolveBase.Utils.clean_sprint_struct(::GPEJacobiPreconditioner, ::In
 
 Base.eltype(::Type{<:GPEJacobiPreconditioner{R}}) where R = R
 
+"Construct a `GPEJacobiPreconditioner` object. If 𝜇s are fixed, pass them as `μs`, otherwise do not pass."
 function GPEJacobiPreconditioner(xh::XSpaceHamiltonian{R, T}, g::AbstractMatrix{R}, nc_effective::Integer;
-                                 searchreal::Bool=false, μ=nothing, augmented::Bool=false) where {R, T}
+                                 searchreal::Bool=false, μs::AbstractVector{R}=zeros(R, xh.nc)) where {R, T}
     nc_effective == (searchreal ? xh.nc : 2xh.nc) || throw(DimensionMismatch("effective component count does not match searchreal"))
     size(g) == (xh.nc, xh.nc) || throw(DimensionMismatch("g must have size ($(xh.nc), $(xh.nc))"))
-
-    μ_fixed = μ isa Number ? fill(R(μ), xh.nc) :
-              isnothing(μ) ? zeros(R, xh.nc) : R.(μ)
-    length(μ_fixed) == xh.nc || throw(DimensionMismatch("μ has the wrong number of physical components"))
+    length(μs) == xh.nc || throw(DimensionMismatch("μs has the wrong number of physical components"))
 
     U_average = zeros(T, xh.nc, xh.nc)
     for c in axes(xh.U, 1), b in axes(xh.U, 2)
@@ -218,24 +215,24 @@ function GPEJacobiPreconditioner(xh::XSpaceHamiltonian{R, T}, g::AbstractMatrix{
 
     wf_length = nc_effective * xh.B # length of the wave function vector of a single component, which is doubled in the complex case
     prec = GPEJacobiPreconditioner{R, T, typeof(xh.ft), eltype(Jₚ)}(
-        xh.ft, nc_effective, xh.B, xh.nc, Jₚ, R.(g), U_average,
-        A_average, xh.∇, xh.∇², μ_fixed, searchreal, augmented,
+        nc_effective, xh.nc, xh.B, searchreal, μs, g, Jₚ, U_average,
+        A_average, xh.∇, xh.∇², xh.ft,
         Vector{R}(undef, wf_length), Vector{Complex{R}}(undef, wf_length),
         Vector{Complex{R}}(undef, wf_length), Vector{Complex{R}}(undef, nc_effective))
 
-    u_length = wf_length + (augmented ? nc_effective : 0) # length of the `u` vector on which the preconditioner acts, containing extra elements if 𝜇 is not fixed
+    u_length = wf_length + (iszero(μs) ? 0 : nc_effective) # length of the `u` vector on which the preconditioner acts, containing extra elements if 𝜇s are not fixed
     update!(prec, zeros(R, u_length))
 
     return prec
 end
 
-"Refresh the averaged Fourier blocks from a current real Newton-Raphson state."
+"Update the preconditioner using the nonlinear iteration state `f`."
 function update!(prec::GPEJacobiPreconditioner{R, T}, u::AbstractVector) where {R, T}
-    B, nc, nc_physical = prec.B, prec.nc, prec.nc_physical
-    μs = prec.μ_fixed
-    if prec.augmented
-        μs = prec.searchreal ? @view(u[end-nc+1:end]) : @view(u[end-nc+1:2:end]) # if !searchreal, take every second element from the end because every second is the same as previous; note that `μs` is always of length `nc_physical`
-    end
+    (;B, nc, nc_physical, g, ∇, ∇²) = prec
+
+    μs = !iszero(prec.μs) ? prec.μs :
+         prec.searchreal ? @view(u[end-nc+1:end]) : @view(u[end-nc+1:2:end]) # if !searchreal, take every second element from the end because every second is the same as previous; note that `μs` is always of length `nc_physical`
+
     u²_avg = zeros(R, nc_physical)
     uᶜuᵈ_avg = zeros(R, 2, 2, nc_physical, nc_physical) # when !searchreal, the first two dimensions enumerate real and imaginary parts
     if prec.searchreal
@@ -259,34 +256,36 @@ function update!(prec::GPEJacobiPreconditioner{R, T}, u::AbstractVector) where {
             end
         end
     end
-    gu²_μ = prec.g * u²_avg - μs # a vector whose 𝑖th element is ∑ⱼ 𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ
+    gu²_μ = g * u²_avg - μs # a vector whose 𝑖th element is ∑ⱼ 𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ
+
+    # create and LU-decompose the blocks for each mode
     for j in 1:B
         block = zeros(R, nc, nc)
         for c in 1:nc_physical
             if prec.searchreal
-                block[c, c] += prec.∇²[j] + gu²_μ[c] + 2prec.g[c, c] * u²_avg[c]
+                block[c, c] += ∇²[j] + gu²_μ[c] + 2g[c, c] * u²_avg[c]
             else
                 cr, ci = 2c - 1, 2c
-                block[cr, cr] += prec.∇²[j] + gu²_μ[c]
-                block[ci, ci] += prec.∇²[j] + gu²_μ[c]
+                block[cr, cr] += ∇²[j] + gu²_μ[c]
+                block[ci, ci] += ∇²[j] + gu²_μ[c]
             end
             for d in 1:nc_physical
                 h = prec.U_average[c, d]
                 if prec.searchreal
                     block[c, d] += real(h)
-                    c != d && (block[c, d] += 2prec.g[c, d] * uᶜuᵈ_avg[1, 1, c, d])
+                    c != d && (block[c, d] += 2g[c, d] * uᶜuᵈ_avg[1, 1, c, d])
                 else
                     cr, ci = 2c - 1, 2c
                     dr, di = 2d - 1, 2d
-                    block[cr, dr] +=  real(h) + 2prec.g[c, d] * uᶜuᵈ_avg[1, 1, c, d]
-                    block[cr, di] += -imag(h) + 2prec.g[c, d] * uᶜuᵈ_avg[1, 2, c, d]
-                    block[ci, dr] +=  imag(h) + 2prec.g[c, d] * uᶜuᵈ_avg[2, 1, c, d]
-                    block[ci, di] +=  real(h) + 2prec.g[c, d] * uᶜuᵈ_avg[2, 2, c, d]
+                    block[cr, dr] +=  real(h) + 2g[c, d] * uᶜuᵈ_avg[1, 1, c, d]
+                    block[cr, di] += -imag(h) + 2g[c, d] * uᶜuᵈ_avg[1, 2, c, d]
+                    block[ci, dr] +=  imag(h) + 2g[c, d] * uᶜuᵈ_avg[2, 1, c, d]
+                    block[ci, di] +=  real(h) + 2g[c, d] * uᶜuᵈ_avg[2, 2, c, d]
                 end
             end
         end
         for c in axes(prec.A_average, 1), i in axes(prec.A_average, 2)
-            shift = 2prec.A_average[c, i] * prec.∇[i][j]
+            shift = 2prec.A_average[c, i] * ∇[i][j]
             prec.searchreal ? (block[c, c] -= shift) : (block[2c-1, 2c-1] -= shift; block[2c, 2c] -= shift)
         end
         try
@@ -304,7 +303,7 @@ function update!(prec::GPEJacobiPreconditioner{R, T}, u::AbstractVector) where {
     return prec
 end
 
-"Apply the inverse of the current averaged GPE Jacobian approximation."
+"Apply inverse of preconditioner `prec` to the nonlinear iteration state `f`."
 @views function ldiv!(f′::AbstractVector, prec::GPEJacobiPreconditioner{R}, f::AbstractVector) where R
     f_isreal = eltype(f) <: Real
     buff = f_isreal && prec.ft.basis != :cis ? prec.buff_real : prec.buff_complex
@@ -335,7 +334,7 @@ end
             transform!(f′[window], prec.ft, buff[window]; direction=:backward, normalise=true)
         end
     end
-    prec.augmented && copyto!(f′, length(f)-prec.nc+1, f, length(f)-prec.nc+1, prec.nc) # extra elements correpsonding to 𝜇s are copied as-is
+    iszero(prec.μs) && copyto!(f′, length(f)-prec.nc+1, f, length(f)-prec.nc+1, prec.nc) # if 𝜇s are not fixed, then copy extra elements correpsonding to 𝜇s as-is
     return f′
 end
 

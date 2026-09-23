@@ -133,8 +133,9 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
     end
 
     if ls_prec == :block_jacobi
-        qh isa XSpaceHamiltonian || throw(ArgumentError("jacobian_preconditioner is only implemented for XSpaceHamiltonian"))
-        prec = GPEJacobiPreconditioner(qh, g, nc_effective; searchreal, μ, augmented=!isnothing(natoms))
+        qh isa XSpaceHamiltonian || throw(ArgumentError("preconditioning is only implemented for XSpaceHamiltonian"))
+        μs = isnothing(natoms) ? μ : zeros(R, nc) # the first case means 𝜇s are fixed, so use them; otherwise pass zeros
+        prec = GPEJacobiPreconditioner(qh, g, nc_effective; searchreal, μs)
     else
         prec = nothing
     end
