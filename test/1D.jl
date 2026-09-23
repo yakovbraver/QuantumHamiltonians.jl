@@ -6,12 +6,14 @@
     stateno = 5 # will test 5th eigenstate (=4th excited state) 
     𝜓₄(x) = 1/√(2^4*factorial(4)√π) * exp(-x^2/2) * (16x^4 - 48x^2 + 12) # analytical state with 𝑛 = 4
 
-    for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace, :xspace_statevector)
+    for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace, :xspace_statevector), ls_prec in (:none, :jacobi, :block_jacobi)
+        (kind != :xspace && ls_prec != :none) && continue # preconditioner is only supported for x-space; otherwise skip
         M = basis == :sin ? 63 : 64
 
         if kind == :xspace
             qh = XSpaceHamiltonian([xlimits], 𝑈; basis, M, δ=√0.5) # `√` because `δ` is the coefficient of ∂ₓ, not Δ
-            diagonalize!(qh; nev=5)
+            invert = (ls_prec != :none)
+            diagonalize!(qh; nev=5, invert, ls_prec)
             xs, v = make_eigenfunction(qh, stateno)
             ψ = v[1]
             ε = qh.ε
