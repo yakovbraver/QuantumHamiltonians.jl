@@ -21,14 +21,14 @@ end
 Base.eltype(::Type{<:JacobiPreconditioner{R, T}}) where {R, T} = T
 Base.size(prec::JacobiPreconditioner) = (prec.nc * prec.B, prec.nc * prec.B)
 
-"Fill the constant-coefficient approximation at linearised momentum index `j`."
-function fill_jacobi_block!(block::AbstractMatrix{T}, xh::XSpaceHamiltonian{R, T}, U_average::AbstractMatrix{T}, A_average::AbstractMatrix, j::Integer, shifts::AbstractVector{R}) where {R, T}
-    copyto!(block, U_average)
+"Fill the preconditioner block at momentum index `j`."
+function fill_jacobi_block!(block::AbstractMatrix{T}, xh::XSpaceHamiltonian{R, T}, U_avg::AbstractMatrix{T}, A_avg::AbstractMatrix, j::Integer, shifts::AbstractVector{R}) where {R, T}
+    copyto!(block, U_avg)
     for c in axes(block, 1)
         block[c, c] += xh.∇²[j] + shifts[c]
         if xh.basis == :cis # 𝐴 is not supported for sin/cos
-            for i in axes(A_average, 2)
-                block[c, c] -= 2A_average[c, i] * xh.∇[i][j]
+            for i in axes(A_avg, 2)
+                block[c, c] -= 2A_avg[c, i] * xh.∇[i][j]
             end
         end
     end
@@ -44,21 +44,21 @@ function JacobiPreconditioner(xh::XSpaceHamiltonian{R, T}; shift::R=zero(R), typ
 
     # Here `T` is the element type of `xh` in real-space. Meanwhile, we need the type of `xh` in p-space.
     # But the Laplacian is real in p-space, and the zeroth harmonic of 𝑈 will be of the same type as `U` (whose type is `T`). So the required type is just `T`.
-    U_average = zeros(T, nc, nc)
+    U_avg = zeros(T, nc, nc)
     for c in axes(U, 1), b in axes(U, 2)
-        !isempty(U[c, b]) && (U_average[c, b] = sum(U[c, b]) / B)
+        !isempty(U[c, b]) && (U_avg[c, b] = sum(U[c, b]) / B)
     end
 
-    A_average = zeros(R, nc, length(∇)) # `𝐴` is assumed real in `xh`
+    A_avg = zeros(R, nc, length(∇)) # `𝐴` is assumed real in `xh`
     for c in axes(A, 1), i in axes(A, 2)
-        !isempty(A[c, i]) && (A_average[c, i] = sum(A[c, i]) / B)
+        !isempty(A[c, i]) && (A_avg[c, i] = sum(A[c, i]) / B)
     end
 
     # determine the `scale`, used if `shift` is needed but was not provided
-    scale = max(one(R), maximum(abs, ∇²), maximum(abs, U_average))
+    scale = max(one(R), maximum(abs, ∇²), maximum(abs, U_avg))
     if xh.basis == :cis
-        for i in axes(A_average, 2)
-            scale += 2 * maximum(abs, @view(A_average[:, i])) * maximum(abs, ∇[i])
+        for i in axes(A_avg, 2)
+            scale += 2 * maximum(abs, @view(A_avg[:, i])) * maximum(abs, ∇[i])
         end
     end
     # calculate the shifts for each component
@@ -73,18 +73,18 @@ function JacobiPreconditioner(xh::XSpaceHamiltonian{R, T}; shift::R=zero(R), typ
     if type == :block # block-Jacobi: will construct nc × nc blocks for each mode
         Jₚ = map(1:B) do j # iterate over all momenta, where `j` is a linearised momentum index
             block = Matrix{T}(undef, nc, nc)
-            fill_jacobi_block!(block, xh, U_average, A_average, j, shifts)
-            LA.lu!(block; check=true) # this in-place verion will alias `block` -- this is why we create new `block` at each iteration
+            fill_jacobi_block!(block, xh, U_avg, A_avg, j, shifts)
+            lu!(block; check=true) # this in-place verion will alias `block` -- this is why we create new `block` at each iteration
         end
     else # simple Jacobi: will construct the diagonal
         Jₚ = Vector{T}(undef, nc*B)
         for c in 1:nc
             window = (c-1)B+1:c*B
             @. Jₚ[window] = xh.∇² + shifts[c]
-            U_average[c, c] != 0 && (Jₚ[window] .+= U_average[c, c])
+            U_avg[c, c] != 0 && (Jₚ[window] .+= U_avg[c, c])
             if xh.basis == :cis # 𝐴 is not supported for sin/cos
-                for i in axes(A_average, 2)
-                    A_average[c, i] != 0 && (@. Jₚ[window] -= 2A_average[c, i] * xh.∇[i])
+                for i in axes(A_avg, 2)
+                    A_avg[c, i] != 0 && (@. Jₚ[window] -= 2A_avg[c, i] * xh.∇[i])
                 end
             end
         end
@@ -174,8 +174,8 @@ mutable struct GPEJacobiPreconditioner{R, T, FourierTransformer, Jₚ_T}
     μs::Vector{R} # fixed 𝜇s of each component. Will contain zeros if 𝜇s are not fixed
     g::Matrix{R}
     Jₚ::Vector{Jₚ_T}
-    U_average::Matrix{T}
-    A_average::Matrix{R}
+    U_avg::Matrix{T}
+    A_avg::Matrix{R}
     ∇::Vector{Vector{R}}
     ∇²::Vector{R}
     ft::FourierTransformer
@@ -200,23 +200,23 @@ function GPEJacobiPreconditioner(xh::XSpaceHamiltonian{R, T}, g::AbstractMatrix{
     size(g) == (xh.nc, xh.nc) || throw(DimensionMismatch("g must have size ($(xh.nc), $(xh.nc))"))
     length(μs) == xh.nc || throw(DimensionMismatch("μs has the wrong number of physical components"))
 
-    U_average = zeros(T, xh.nc, xh.nc)
+    U_avg = zeros(T, xh.nc, xh.nc)
     for c in axes(xh.U, 1), b in axes(xh.U, 2)
-        !isempty(xh.U[c, b]) && (U_average[c, b] = sum(xh.U[c, b]) / xh.B)
+        !isempty(xh.U[c, b]) && (U_avg[c, b] = sum(xh.U[c, b]) / xh.B)
     end
 
-    A_average = zeros(R, xh.nc, length(xh.∇))
+    A_avg = zeros(R, xh.nc, length(xh.∇))
     for c in axes(xh.A, 1), i in axes(xh.A, 2)
-        !isempty(xh.A[c, i]) && (A_average[c, i] = sum(xh.A[c, i]) / xh.B)
+        !isempty(xh.A[c, i]) && (A_avg[c, i] = sum(xh.A[c, i]) / xh.B)
     end
 
     # perform LU for identity matrices just to initialise with the correct type
-    Jₚ = [LA.lu!(Matrix{R}(LA.I, nc_effective, nc_effective); check=true) for _ in 1:xh.B]
+    Jₚ = [lu!(Matrix{R}(LA.I, nc_effective, nc_effective); check=true) for _ in 1:xh.B]
 
     wf_length = nc_effective * xh.B # length of the wave function vector of a single component, which is doubled in the complex case
     prec = GPEJacobiPreconditioner{R, T, typeof(xh.ft), eltype(Jₚ)}(
-        nc_effective, xh.nc, xh.B, searchreal, μs, g, Jₚ, U_average,
-        A_average, xh.∇, xh.∇², xh.ft,
+        nc_effective, xh.nc, xh.B, searchreal, μs, g, Jₚ, U_avg,
+        A_avg, xh.∇, xh.∇², xh.ft,
         Vector{R}(undef, wf_length), Vector{Complex{R}}(undef, wf_length),
         Vector{Complex{R}}(undef, wf_length), Vector{Complex{R}}(undef, nc_effective))
 
@@ -228,14 +228,14 @@ end
 
 "Update the preconditioner using the nonlinear iteration state `f`."
 function update!(prec::GPEJacobiPreconditioner{R, T}, u::AbstractVector) where {R, T}
-    (;B, nc, nc_physical, g, ∇, ∇²) = prec
+    (;B, nc, nc_physical, g, ∇, ∇², searchreal) = prec
 
     μs = !iszero(prec.μs) ? prec.μs :
-         prec.searchreal ? @view(u[end-nc+1:end]) : @view(u[end-nc+1:2:end]) # if !searchreal, take every second element from the end because every second is the same as previous; note that `μs` is always of length `nc_physical`
+         searchreal ? @view(u[end-nc+1:end]) : @view(u[end-nc+1:2:end]) # if !searchreal, take every second element from the end because every second is the same as previous; note that `μs` is always of length `nc_physical`
 
     u²_avg = zeros(R, nc_physical)
-    uᶜuᵈ_avg = zeros(R, 2, 2, nc_physical, nc_physical) # when !searchreal, the first two dimensions enumerate real and imaginary parts
-    if prec.searchreal
+    uᶜuᵈ_avg = zeros(R, 2, 2, nc_physical, nc_physical) # when !searchreal, the first two dimensions enumerate real and imaginary parts. When searchreal, then we only use the (1, 1, :, :) slice
+    if searchreal
         for c in 1:nc_physical
             uc = @view u[(c-1)*B+1:c*B]
             u²_avg[c] = sum(abs2, uc) / B
@@ -258,11 +258,11 @@ function update!(prec::GPEJacobiPreconditioner{R, T}, u::AbstractVector) where {
     end
     gu²_μ = g * u²_avg - μs # a vector whose 𝑖th element is ∑ⱼ 𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ
 
-    # create and LU-decompose the blocks for each mode
+    # create and LU-decompose the blocks for each momentum mode
     for j in 1:B
         block = zeros(R, nc, nc)
         for c in 1:nc_physical
-            if prec.searchreal
+            if searchreal
                 block[c, c] += ∇²[j] + gu²_μ[c] + 2g[c, c] * u²_avg[c]
             else
                 cr, ci = 2c - 1, 2c
@@ -270,8 +270,8 @@ function update!(prec::GPEJacobiPreconditioner{R, T}, u::AbstractVector) where {
                 block[ci, ci] += ∇²[j] + gu²_μ[c]
             end
             for d in 1:nc_physical
-                h = prec.U_average[c, d]
-                if prec.searchreal
+                h = prec.U_avg[c, d]
+                if searchreal
                     block[c, d] += real(h)
                     c != d && (block[c, d] += 2g[c, d] * uᶜuᵈ_avg[1, 1, c, d])
                 else
@@ -284,20 +284,16 @@ function update!(prec::GPEJacobiPreconditioner{R, T}, u::AbstractVector) where {
                 end
             end
         end
-        for c in axes(prec.A_average, 1), i in axes(prec.A_average, 2)
-            shift = 2prec.A_average[c, i] * ∇[i][j]
-            prec.searchreal ? (block[c, c] -= shift) : (block[2c-1, 2c-1] -= shift; block[2c, 2c] -= shift)
-        end
-        try
-            prec.Jₚ[j] = LA.lu!(block; check=true)
-        catch err
-            err isa LA.SingularException || rethrow()
-            shift = √eps(R) * max(one(R), maximum(abs, block))
-            for c in axes(block, 1)
-                block[c, c] += shift
+        for i in axes(prec.A_avg, 2), c in axes(prec.A_avg, 1)
+            A∇ = 2prec.A_avg[c, i] * ∇[i][j]
+            if searchreal
+                block[c, c] -= A∇
+            else
+                block[2c-1, 2c-1] -= A∇
+                block[2c, 2c] -= A∇
             end
-            prec.Jₚ[j] = LA.lu!(block; check=true)
         end
+        prec.Jₚ[j] = lu!(block; check=true)
     end
 
     return prec

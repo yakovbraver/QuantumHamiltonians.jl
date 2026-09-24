@@ -7,7 +7,7 @@ import OrdinaryDiffEqExponentialRK as ODE_EXP
 import SciMLOperators
 import KrylovKit
 using ArnoldiMethod: partialschur, partialeigen
-using LinearAlgebra: Hermitian, Diagonal, diag, diagind, diagview, factorize, eigen, dot, mul!, normalize!, copy_adjoint!
+using LinearAlgebra: Hermitian, Diagonal, diag, diagind, diagview, factorize, lu!, eigen, dot, mul!, normalize!, copy_adjoint!
 import LinearAlgebra: ldiv! # overloaded in XSpaceHamiltonians for preconditioning
 import LinearAlgebra as LA # mainly for the identity operator LA.I
 import LinearMaps as LM
