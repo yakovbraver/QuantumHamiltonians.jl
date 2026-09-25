@@ -115,8 +115,8 @@ end
 
     ### Testing for fixed 𝑁ᵢ's
 
-    natoms = get_EμN(qh, ψ_db, [g;;], state_is_pspace=false)[3] # get numbers of atoms from the above state
-    # Get stationary state starting from a basic tanh-sech trial, this time for fixed number of atoms and using a guess for 𝜇 given by [2, 1]
+    natoms = get_EμN(qh, ψ_db, [g;;], state_is_pspace=false)[3] # get numbers of atoms in each component from the above state
+    # Get stationary state starting from a basic tanh-sech trial, this time for fixed numbers of atoms in each component and using a guess for 𝜇 given by [2, 1]
     xs, ψ_db, μs_nr = find_stationary(qh, [tanh, sech], [g;;], [2.0, 1.0], natoms; searchreal=true, abstol=1e-9)
     @test μs_nr[1] ≈ μs[1] atol=1e-9
     @test μs_nr[2] ≈ μs[2] atol=1e-9

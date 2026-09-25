@@ -5,15 +5,15 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
     (;B, nc, ft) = qh
 
     # Prepare the input wf `ψ_input`. By default, its length is `nc*B`, but if `natoms` is passed then we need additional `nc` elements to represent the 𝜇s that are being optimised.
-    # Even if only total 𝑁 is fixed (and hence there is only one 𝜇 to be optimised), we still add `nc` elements to keep the general structure
+    # Add one chemical-potential unknown for fixed total 𝑁, or one per component for fixed component populations.
     if searchreal
         # sample each function in ψ₀ at points `ft.xs`
-        ψ_input = Vector{R}(undef, nc*(B + !isnothing(natoms)))
+        ψ_input = Vector{R}(undef, nc*B + (isnothing(natoms) ? 0 : natoms isa Number ? 1 : nc))
         for c in 1:nc
             @views sample!(ψ_input[(c-1)B+1:c*B], ψ₀[c], ft.xs)
         end
     else # equations in x-space are complex: we need double the length
-        ψ_input = Vector{R}(undef, 2nc*(B+!isnothing(natoms)))
+        ψ_input = Vector{R}(undef, 2nc*B + (isnothing(natoms) ? 0 : natoms isa Number ? 1 : 2nc))
         for c in 1:nc
             @views sample!(ψ_input[(c-1)*2B+1:(c-1)*2B+B], ψ_input[(c-1)*2B+B+1:c*2B], ψ₀[c], ft.xs)
         end
@@ -29,14 +29,14 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
     (;B, nc) = qh
 
     # Prepare the input wf `ψ_input`. By default, its length is `nc*B`, but if `natoms` is passed then we need additional `nc` elements to represent the 𝜇s that are being optimised.
-    # Even if only total 𝑁 is fixed (and hence there is only one 𝜇 to be optimised), we still add `nc` elements to keep the general structure
+    # Add one chemical-potential unknown for fixed total 𝑁, or one per component for fixed component populations.
     if searchreal
-        ψ_input = Vector{R}(undef, nc*(B+!isnothing(natoms)))
+        ψ_input = Vector{R}(undef, nc*B + (isnothing(natoms) ? 0 : natoms isa Number ? 1 : nc))
         for c in 1:nc
             copyto!(ψ_input, (c-1)B+1, ψ₀[c], 1, B) # copy `B` (= all) elements of `ψ₀[c]`, starting at 1st, to `ψ_input`, starting at element (c-1)B+1. `ψ₀[c]` might be D-dimensional, but `copyto!` automatically flattens it (i.e. treats it as a contiguous vector)
         end
     else
-        ψ_input = Vector{R}(undef, 2nc*(B+!isnothing(natoms)))
+        ψ_input = Vector{R}(undef, 2nc*B + (isnothing(natoms) ? 0 : natoms isa Number ? 1 : 2nc))
         for c in 1:nc
             ψ_input[(c-1)*2B+1:(c-1)*2B+B] .= real.(vec(ψ₀[c])) # `ψ₀[c]` might be D-dimensional, but `copyto!` automatically flattens it (i.e. treats it as a contiguous vector)
             ψ_input[(c-1)*2B+B+1:c*2B] .= imag.(vec(ψ₀[c]))
@@ -79,8 +79,8 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing; searchreal=false,
                          solver=nothing, ls_prec::Symbol=:none, ls_verbose::Bool=false, kwargs...) where {Storage, R, T}
     ls_prec in (:none, :block_jacobi) || throw(ArgumentError("unsupported preconditioner: $ls_prec"))
-
     (;B, nc) = qh
+    N_isfixed = natoms isa Number # true if total number of atoms is fixed
 
     # make `μs_or_Ns` point to the right thing and prepare input state
     if searchreal
@@ -91,14 +91,15 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
             ψ_input = ψ₀ # make a reference
         else  # total number of atoms or number of atoms in each component is fixed
             μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
-            if length(ψ₀) == nc*B + nc # `ψ₀` already has `nc` extra elements for 𝜇s
+            nμ = N_isfixed ? 1 : nc
+            if length(ψ₀) == nc*B + nμ # `ψ₀` already has the required extra elements for 𝜇s
                 ψ_input = ψ₀ # then just make a reference
             else # `ψ₀` does not have the required `nc` extra elements for 𝜇s
-                ψ_input = similar(ψ₀, nc*B + nc) # make an array of required length
+                ψ_input = similar(ψ₀, nc*B + nμ) # make an array of required length
                 copyto!(ψ_input, ψ₀)
             end
-            # now can set final `nc` elements
-            ψ_input[end-nc+1:end] .= μ # use the passed `μ` as the initial guess (a single number if total 𝑁 is fixed or a vector otherwise; broadcast handles both cases)
+            # now set the final element(s) containing the initial chemical potential(s)
+            ψ_input[end-nμ+1:end] .= μ # broadcast handles a scalar or a vector
         end
     else
         nc_effective = 2nc # real and imaginary parts are treated as two components
@@ -106,9 +107,9 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
         if isnothing(natoms) # = numbers of atoms are not fixed, but chemical potentials are
             μs_or_Ns = kron(μ, ones(2)) # do [μ₁, μ₂] -> [μ₁, μ₁, μ₂, μ₂]
             working_length = nc_effective*B
-        elseif natoms isa Number # total number of atoms is fixed
+        elseif N_isfixed # total number of atoms is fixed
             μs_or_Ns = natoms # pass the fixed numbers of atoms (a single number if total 𝑁 is fixed or a vector otherwise)
-            working_length = nc_effective*(B+1) # initial state must have `nc_effective` extra elements for 𝜇s
+            working_length = nc_effective*B + 1 # one shared chemical potential
         else # number of atoms in each component is fixed
             μs_or_Ns = kron(natoms, ones(2)) # do [𝑁₁, 𝑁₂] -> [𝑁₁, 𝑁₁, 𝑁₂, 𝑁₂]
             working_length = nc_effective*(B+1) # initial state must have `nc_effective` extra elements for 𝜇s
@@ -125,8 +126,8 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
         end
         
         # now can set final `nc` elements containing unknown 𝜇s, using the passed `μ` as the initial guess
-        if natoms isa Number
-            ψ_input[end-nc_effective+1:end] .= μ # broadcast the number to all elements
+        if N_isfixed
+            ψ_input[end] = μ
         elseif natoms isa Vector
             ψ_input[end-nc_effective+1:end] .= kron(μ, ones(2)) # repeat each 𝜇 twice and assign
         end
@@ -135,7 +136,7 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
     if ls_prec == :block_jacobi
         qh isa XSpaceHamiltonian || throw(ArgumentError("preconditioning is only implemented for XSpaceHamiltonian"))
         μs = isnothing(natoms) ? μ : zeros(R, nc) # the first case means 𝜇s are fixed, so use them; otherwise pass zeros
-        prec = GPEJacobiPreconditioner(qh, g, nc_effective; searchreal, μs)
+        prec = GPEJacobiPreconditioner(qh, g, nc_effective; searchreal, μs, N_isfixed)
     else
         prec = nothing
     end
@@ -181,7 +182,7 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
     if searchreal
         if length(sol.u) > B*nc # solution has extra elements for 𝜇s -- extract them
             u_sol = sol.u[1:B*nc]
-            μ_sol = sol.u[end-nc+1:end]
+            μ_sol = N_isfixed ? sol.u[end] : sol.u[end-nc+1:end]
         else # solution has no extra elements; 𝜇s have been fixed by the user
             u_sol = sol.u
             μ_sol = μ # for consistency, return back user's 𝜇s
@@ -193,7 +194,7 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
             u_sol[(c-1)B+1:c*B] .= complex.(sol.u[(c-1)*2B+1:(c-1)*2B+B], sol.u[(c-1)*2B+B+1:c*2B])
         end
         if length(sol.u) > B*nc_effective # solution has extra elements for 𝜇s -- extract them
-            μ_sol = sol.u[end-nc_effective+1:2:end] # take every second element because each 𝜇 is repeated twice
+            μ_sol = N_isfixed ? sol.u[end] : sol.u[end-nc_effective+1:2:end]
         else # solution has no extra elements; 𝜇s have been fixed by the user
             μ_sol = μ # for consistency, return back user's 𝜇s
         end 
@@ -265,8 +266,8 @@ If the numbers of atoms 𝑁ᵢ in each component are fixed, then 𝜇ᵢ are un
 𝑛 additional equations read
     𝜇ᵢ′ = ∫𝑢ᵢ²d𝑥 - 𝑁
 
-If only the total number of atoms 𝑁 is fixed, then there is a single 𝜇, so that 𝑛 last elements of `u` are indentical, and 𝑛 last elements of `du` also.
-𝑛 (identical) additional equations read
+If only the total number of atoms 𝑁 is fixed, then there is a single unknown 𝜇, contained in the last element of `u`, and the residual is contained in the last elements of `du`.
+An additional equation reads
     𝜇′ = ∑ᵢ∫𝑢ᵢ²d𝑥 - 𝑁
 
 Used for finding the steady state with nonlinear solve.
@@ -274,9 +275,7 @@ Used for finding the steady state with nonlinear solve.
 @views function gpe_stationary!(du, u::AbstractVector{R}, params) where R <: Real
     qh, g, μs_or_Ns, nc, u², u²_sum, uⱼvⱼ, complex_buff1, complex_buff2 = params # if "searchreal=true", then `nc` equals `xh.nc`, otherwise `nc` equals `2xh.nc`
     B = qh.B
-    # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if 𝜇s are fixed, or last elements of `u` otherwise
     μs_arefixed = length(u) == B*nc # is 𝜇s are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇s
-    μ = μs_arefixed ? μs_or_Ns : u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
     
     ### Linear part
     if isnothing(complex_buff1) # true in the "searchreal" case
@@ -306,17 +305,20 @@ Used for finding the steady state with nonlinear solve.
                 @turbo @. u²_sum += g[i, j] * u²[j]
             end
         end
+        # make `μᵢ` point to the chemical potential: that contained in `μs_or_Ns[i]` if 𝜇s are fixed, or last elements of `u` otherwise
+        μᵢ = μs_arefixed ? μs_or_Ns[i] :
+             μs_or_Ns isa Number ? u[end] : u[end-nc+i]
         window = (i-1)B+1:i*B
         duᵢ = du[window] # must create a view separately for @turbo to work in the next line
-        @turbo @. duᵢ += (u²_sum - μ[i]) * u[window]
+        @turbo @. duᵢ += (u²_sum - μᵢ) * u[window]
     end
     if !μs_arefixed # then update last `nc` elements of `du` representing residuals ∫𝑢ᵢ²d𝑥 - 𝑁ᵢ. In this case, `μs_or_Ns` contains 𝑁ᵢs.
-        if μs_or_Ns isa Number # then only total number of atoms is fixed -- will place (∑ᵢ∫𝑢ᵢ²d𝑥 - 𝑁) into `nc` last elements of `du`
+        if μs_or_Ns isa Number # then only тче total number of atoms is fixed -- will place (∑ᵢ∫𝑢ᵢ²d𝑥 - 𝑁) into the last element of `du`
             u²_sum = zero(μs_or_Ns) # for storing the sum ∑ᵢ∫𝑢ᵢ²d𝑥
             for i in 1:nc
                 u²_sum += integrate(u²[i], qh)
             end
-            du[end-nc+1:end] .= u²_sum - μs_or_Ns # place the sum in the residuals array; we have `nc` identical elements to keep the general structure
+            du[end] = u²_sum - μs_or_Ns
         else # numbers of atoms in each component are fixed -- will place (∫𝑢ᵢ²d𝑥 - 𝑁ᵢ) into `nc` last elements of `du` respectively
             if isnothing(complex_buff1) # true in the "searchreal" case
                 for i in 1:nc
@@ -344,9 +346,9 @@ If the numbers of atoms in each component are fixed, then last 𝑛 elements of 
     (𝐽𝑣)ᵢ = (𝐻𝑣)ᵢ + 2𝑢ᵢ∑ⱼ𝑔ᵢⱼ𝑢ⱼ𝑣ⱼ - 𝑀ᵢ𝑢ᵢ + (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇ᵢ)𝑣ᵢ   [∑ⱼ excludes 𝑖]
 where 𝑀ᵢ are 𝑛 last elements of `v`, 𝜇ᵢ are 𝑛 last elements of `u`, and additional 𝑛 equations read
     𝐽𝑀ᵢ = 2∫d𝑥 𝑢ᵢ𝑣ᵢ
-If the total number of atoms is fixed, then there is a single 𝜇, so that 𝑛 last elements of `v` are indentical, and 𝑛 last elements of `u` also.
-Equations (𝐽𝑣)ᵢ are the same, while the additional 𝑛 (identical) equations read
-    𝐽𝑀ᵢ = 2∑ᵢ∫d𝑥 𝑢ᵢ𝑣ᵢ
+If the total number of atoms is fixed, then there is a single 𝜇, contained in the last element of `v` and `u`.
+Equations (𝐽𝑣)ᵢ are the same, while an additional equation reads
+    𝐽𝑀 = 2∑ᵢ∫d𝑥 𝑢ᵢ𝑣ᵢ
 
 Used for finding the steady state with nonlinear solve.
 """
@@ -355,7 +357,6 @@ Used for finding the steady state with nonlinear solve.
     B = qh.B
     # make `μ` point to the chemical potentials: those contained in `μs_or_Ns` if 𝜇s are fixed, or last elements of `u` otherwise
     μs_arefixed = length(u) == B*nc # is 𝜇s are not fixed, then `length(u)` exceeds `B*nc` because `u` then also contains the 𝜇s
-    μ = μs_arefixed ? μs_or_Ns : u[end-nc+1:end] # if total number of atoms is fixed, then these elements will all be the same
     
     ### Linear part
     if isnothing(complex_buff1) # true in the "searchreal" case
@@ -391,7 +392,10 @@ Used for finding the steady state with nonlinear solve.
             (j == i || g[i,j] == 0) && continue
             @turbo @. u²_sum += g[i,j] * uⱼvⱼ[j]
         end
-        !μs_arefixed && (@. u²_sum -= v[end-nc+i]/2) # additional term if 𝜇s are not fixed; divide by 2 to compensate the overall factor in the next line
+        if !μs_arefixed
+            δμ = μs_or_Ns isa Number ? v[end] : v[end-nc+i] # additional term if 𝜇s are not fixed;
+            @. u²_sum -= δμ/2 # divide by 2 to compensate the overall factor in the next line
+        end
         @turbo @. Jvᵢ += 2uᵢ * u²_sum
         # add (3𝑔ᵢᵢ𝑢ᵢ² + ∑ⱼ𝑔ᵢⱼ𝑢ⱼ² - 𝜇)𝑣ᵢ to `Jvᵢ`
         @turbo @. u²_sum = 3g[i,i] * u²[i]
@@ -399,15 +403,18 @@ Used for finding the steady state with nonlinear solve.
             (j == i || g[i,j] == 0) && continue
             @turbo @. u²_sum += g[i,j] * u²[j]
         end
-        @turbo @. Jvᵢ += (u²_sum - μ[i]) * vᵢ
+        # make `μᵢ` point to the chemical potential: that contained in `μs_or_Ns[i]` if 𝜇s are fixed, or last elements of `u` otherwise
+        μᵢ = μs_arefixed ? μs_or_Ns[i] :
+             μs_or_Ns isa Number ? u[end] : u[end-nc+i]
+        @turbo @. Jvᵢ += (u²_sum - μᵢ) * vᵢ
     end
     if !μs_arefixed # then update last `nc` elements of `Jv` corresponding to the chemical potentials. In this case, `μs_or_Ns` contains 𝑁ᵢ's.
-        if μs_or_Ns isa Number # then only total number of atoms is fixed -- will place 2∑ᵢ∫𝑢ᵢ𝑣ᵢd𝑥 into `nc` last elements of `Jv`
+        if μs_or_Ns isa Number # then only the total number of atoms is fixed -- will place 2∑ᵢ∫𝑢ᵢ𝑣ᵢd𝑥 into the last element of `Jv`
             uᵢvᵢ_sum = zero(μs_or_Ns) # for storing the sum ∑ᵢ∫𝑢ᵢ𝑣ᵢd𝑥
             for i in 1:nc
                 uᵢvᵢ_sum += integrate(uⱼvⱼ[i], qh)
             end
-            Jv[end-nc+1:end] .= 2uᵢvᵢ_sum # put the sum into place; we have `nc` identical elements to keep the general structure
+            Jv[end] = 2uᵢvᵢ_sum
         else # numbers of atoms in each component are fixed -- will place 2∫𝑢ᵢ𝑣ᵢd𝑥 into `nc` last elements of `du` respectively
             if isnothing(complex_buff1) # true in the "searchreal" case
                 for i in 1:nc

@@ -171,6 +171,7 @@ mutable struct GPEJacobiPreconditioner{R, T, FourierTransformer, Jₚ_T}
     nc_physical::Int
     B::Int
     searchreal::Bool
+    N_isfixed::Bool # true if total number of atoms is fixed
     μs::Vector{R} # fixed 𝜇s of each component. Will contain zeros if 𝜇s are not fixed
     g::Matrix{R}
     Jₚ::Vector{Jₚ_T}
@@ -195,7 +196,7 @@ Base.eltype(::Type{<:GPEJacobiPreconditioner{R}}) where R = R
 
 "Construct a `GPEJacobiPreconditioner` object. If 𝜇s are fixed, pass them as `μs`, otherwise do not pass."
 function GPEJacobiPreconditioner(xh::XSpaceHamiltonian{R, T}, g::AbstractMatrix{R}, nc_effective::Integer;
-                                 searchreal::Bool=false, μs::AbstractVector{R}=zeros(R, xh.nc)) where {R, T}
+                                 searchreal::Bool=false, μs::AbstractVector{R}=zeros(R, xh.nc), N_isfixed::Bool=false) where {R, T}
     nc_effective == (searchreal ? xh.nc : 2xh.nc) || throw(DimensionMismatch("effective component count does not match searchreal"))
     size(g) == (xh.nc, xh.nc) || throw(DimensionMismatch("g must have size ($(xh.nc), $(xh.nc))"))
     length(μs) == xh.nc || throw(DimensionMismatch("μs has the wrong number of physical components"))
@@ -215,12 +216,12 @@ function GPEJacobiPreconditioner(xh::XSpaceHamiltonian{R, T}, g::AbstractMatrix{
 
     wf_length = nc_effective * xh.B # length of the wave function vector of a single component, which is doubled in the complex case
     prec = GPEJacobiPreconditioner{R, T, typeof(xh.ft), eltype(Jₚ)}(
-        nc_effective, xh.nc, xh.B, searchreal, μs, g, Jₚ, U_avg,
+        nc_effective, xh.nc, xh.B, searchreal, N_isfixed, μs, g, Jₚ, U_avg,
         A_avg, xh.∇, xh.∇², xh.ft,
         Vector{R}(undef, wf_length), Vector{Complex{R}}(undef, wf_length),
         Vector{Complex{R}}(undef, wf_length), Vector{Complex{R}}(undef, nc_effective))
 
-    u_length = wf_length + (iszero(μs) ? 0 : nc_effective) # length of the `u` vector on which the preconditioner acts, containing extra elements if 𝜇s are not fixed
+    u_length = wf_length + (iszero(μs) ? (N_isfixed ? 1 : nc_effective) : 0) # include unknown chemical potentials when present
     update!(prec, zeros(R, u_length))
 
     return prec
@@ -231,7 +232,8 @@ function update!(prec::GPEJacobiPreconditioner{R, T}, u::AbstractVector) where {
     (;B, nc, nc_physical, g, ∇, ∇², searchreal) = prec
 
     μs = !iszero(prec.μs) ? prec.μs :
-         searchreal ? @view(u[end-nc+1:end]) : @view(u[end-nc+1:2:end]) # if !searchreal, take every second element from the end because every second is the same as previous; note that `μs` is always of length `nc_physical`
+         prec.N_isfixed ? fill(u[end], nc_physical) :
+         searchreal ? @view(u[end-nc+1:end]) : @view(u[end-nc+1:2:end]) # take every second element because every μ is duplicated in the per-component-N case
 
     u²_avg = zeros(R, nc_physical)
     uᶜuᵈ_avg = zeros(R, 2, 2, nc_physical, nc_physical) # when !searchreal, the first two dimensions enumerate real and imaginary parts. When searchreal, then we only use the (1, 1, :, :) slice
@@ -330,7 +332,10 @@ end
             transform!(f′[window], prec.ft, buff[window]; direction=:backward, normalise=true)
         end
     end
-    iszero(prec.μs) && copyto!(f′, length(f)-prec.nc+1, f, length(f)-prec.nc+1, prec.nc) # if 𝜇s are not fixed, then copy extra elements correpsonding to 𝜇s as-is
+    if iszero(prec.μs)
+        nμ = prec.N_isfixed ? 1 : prec.nc
+        copyto!(f′, length(f)-nμ+1, f, length(f)-nμ+1, nμ)
+    end
     return f′
 end
 
