@@ -1,7 +1,7 @@
 "A version of `find_stationary` accepting `ψ₀` as a vector of analytic functions (one for each component)."
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:Function},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{R}}=nothing; searchreal=false,
-                         solver=nothing, kwargs...) where {Storage, R, T}
+                         solver=NLS.NewtonRaphson, ls_solver=LS.KrylovJL_GMRES, ls_prec::Symbol=:none, ls_kwargs=(;), kwargs...) where {Storage, R, T}
     (;B, nc, ft) = qh
 
     # Prepare the input wf `ψ_input`. By default, its length is `nc*B`, but if `natoms` is passed then we need additional `nc` elements to represent the 𝜇s that are being optimised.
@@ -19,13 +19,13 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
         end
     end
 
-    find_stationary(qh, ψ_input, g, μ, natoms; searchreal, solver, kwargs...)
+    find_stationary(qh, ψ_input, g, μ, natoms; searchreal, solver, ls_prec, ls_solver, ls_kwargs, kwargs...)
 end
 
 "A version of `find_stationary` accepting `ψ₀` as a vector of etiher D-dimensional arrays or flattened vectors, one for each component, representing discretised x-space functions."
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:AbstractArray},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{R}}=nothing; searchreal=false,
-                         solver=nothing, kwargs...) where {Storage, R, T}
+                         solver=NLS.NewtonRaphson, ls_solver=LS.KrylovJL_GMRES, ls_prec::Symbol=:none, ls_kwargs=(;), kwargs...) where {Storage, R, T}
     (;B, nc) = qh
 
     # Prepare the input wf `ψ_input`. By default, its length is `nc*B`, but if `natoms` is passed then we need additional `nc` elements to represent the 𝜇s that are being optimised.
@@ -43,7 +43,7 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
         end
     end
 
-    find_stationary(qh, ψ_input, g, μ, natoms; searchreal, solver, kwargs...)
+    find_stationary(qh, ψ_input, g, μ, natoms; searchreal, solver, ls_prec, ls_solver, ls_kwargs, kwargs...)
 end
 
 """
@@ -65,19 +65,21 @@ The solver support 3 modes:
     1. A vector of x-space analytic functions (one for each component);
     2. A vector of etiher D-dimensional arrays or flattened vectors, one for each component, representing discretised x-space functions.
     3. An x-space flattened vector, such as one obtained during diagonalisation. This is the format using throughout the solving; inputs of types 1 and 2 are converted to this type.
-`solver` is a solver from NonlinearSolvers.jl. We do not construct a concrete Jacobian but rather declare its action on a vector. Autodiff will fail because it doesn't work with FFT, which we are using.
-Therefore, when passing the solver, always turn off concrete Jacobian and/or set linear solving to an iterative method.
-Default solver is `NewtonRaphson(;linsolve=KrylovJL_GMRES())`.
-You can also try using BICSTAB and/or Eisenstat-Walker forcing as in `NewtonRaphson(;linsolve=KrylovJL_BICGSTAB(), forcing=EisenstatWalkerForcing2())`.
-Forcing might fail to converge, but it accelerates solving since otherwise the linear system is solved to the same accuracy as the nonlinear system, which is often (but not always!) reundant.
-Default termination mode is `AbsNormSafeBestTerminationMode` with L-inf norm with `abstol` defined in NonlinearSolve.
-Any additional keyword arguments will be passed directly to `NonlinearSolve.solve()`.
-Return the tuple `(xs, ys, …, ψ, μs)`, where `ψ` is a flattened x-space vector holding all components, while `μs` is a vector/scalar of the 
+Keyword arguments:
+    * `searchreal`: search for a real solution, applicable when the Hamiltonian is real (in x-space)
+    * `solver`: a solver from NonlinearSolvers.jl, defaults to `NewtonRaphson`. Default termination mode is `AbsNormSafeBestTerminationMode` with L-inf norm with `abstol` defined in NonlinearSolve.
+    * `ls_solver`: linear system solver from LinearSolve.jl, defaults to `KrylovJL_GMRES`. We do not construct a concrete Jacobian but rather declare its action on a vector.
+      Autodiff will fail because it doesn't work with FFT, which we are using. Therefore, Krylov methods are used.
+    * `ls_prec`: precodnitioner for the linear system. Currently only `:block_jacobi` is supported, and only for `XSpaceHamiltonian`.
+    * `ls_kwargs`: a named tuple of keyword arguments to pass to the Krylov solver, such as `verbose` (0 or 1), `itmax`, `rtol`, `atol`, etc.
+      Note that these are passed to the solver constructor [such as `KrylovJL_GMRES()`] rather than passing to `LinearSolve.solve()`.
+Any additional keyword arguments, such as `abstol`, `maiters`, `maxtime`, will be passed directly to `NonlinearSolve.solve()`.
+Return a tuple `(xs, ys, …, ψ, μs)`, where `ψ` is a flattened x-space vector holding all components, while `μs` is a vector/scalar of the 
 found chemical potentials; if solving was performed under fixed 𝜇s given by the input `μ`, then the same input values are returned, i.e. `μs = μ`.
 """
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:Number},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing; searchreal=false,
-                         solver=nothing, ls_prec::Symbol=:none, ls_verbose::Bool=false, kwargs...) where {Storage, R, T}
+                         solver=NLS.NewtonRaphson, ls_solver=LS.KrylovJL_GMRES, ls_prec::Symbol=:none, ls_kwargs=(;), kwargs...) where {Storage, R, T}
     ls_prec in (:none, :block_jacobi) || throw(ArgumentError("unsupported preconditioner: $ls_prec"))
     (;B, nc) = qh
     N_isfixed = natoms isa Number # true if total number of atoms is fixed
@@ -167,17 +169,14 @@ function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamil
         prob = NLS.NonlinearProblem(nlfunction, ψ_input, params) # use specialisation `NonlinearProblem{true, SciMLBase.FullSpecialize}` for production!
     end
 
-    if isnothing(solver)
-        linsolver = isnothing(prec) ? LS.KrylovJL_GMRES(;verbose=Int(ls_verbose)) :
-                                      LS.KrylovJL_GMRES(;verbose=Int(ls_verbose), precs=(_, _) -> (LA.I, prec))
-        solver = NLS.NewtonRaphson(;linsolve=linsolver)
-    elseif !isnothing(prec)
-        throw(ArgumentError("pass solver=nothing when jacobian_preconditioner=true"))
+    if !isnothing(prec) # if a preconditioner is requested, then append it to the keyword arguments for linear solve
+        ls_kwargs = (;precs=(_, _) -> (LA.I, prec), ls_kwargs...)
     end
+    nls_solver = solver(;linsolve=ls_solver(;ls_kwargs...))
 
     # we will pass on user's kwargs to NLS.solve, but we override some of NLS's defaults. User's kwargs will in turn override ours.
     finalkwargs = (;verbose=false, termination_condition=NLS.AbsNormSafeBestTerminationMode(Base.Fix1(maximum, abs)), kwargs...)
-    sol = NLS.solve(prob, solver; finalkwargs...)
+    sol = NLS.solve(prob, nls_solver; finalkwargs...)
 
     if searchreal
         if length(sol.u) > B*nc # solution has extra elements for 𝜇s -- extract them
