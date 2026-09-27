@@ -134,7 +134,8 @@ plot_comps_2D(xs, ys, ψ₀_3comp) # check
 get_EμN(xh_3comp, vcat(vec.(ψ₀_3comp)...), g_3comp)
 
 if a == 0.5
-    @time xs, ys, ψ_3comp_nr, μ_3comp_nr = find_stationary(xh_3comp, ψ₀_3comp, g_3comp, μ_nr[1], natoms; abstol=1e-4, ls_prec=:block_jacobi, show_trace=Val(true), ls_kwargs=(;verbose=1)) # ν=1, abstol=1e-4: 85 s (for `xh_3comp` without Γ: 23 s)
+    # preconditioner changes with every iteration, so FMGRES is recommened over GMRES. ν=1, abstol=1e-4: 23 s (for `xh_3comp` without Γ: 15 s). GMRES: 85 s (for `xh_3comp` without Γ: 23 s).
+    @time xs, ys, ψ_3comp_nr, μ_3comp_nr = find_stationary(xh_3comp, ψ₀_3comp, g_3comp, μ_nr[1], natoms; abstol=1e-4, ls_prec=:block_jacobi, show_trace=Val(true), ls_kwargs=(;verbose=1), ls_solver=QH.LS.KrylovJL_FGMRES)
 else # if a == 0.02 # here Ω₀ is very large and NewtonRaphson stalls. But atol ~ 5e-2 can be obtained reasonably quickly
     @time xs, ys, ψ_3comp_nr, μ_3comp_nr = find_stationary(xh_3comp, ψ₀_3comp, g_3comp, μ_nr[1], natoms; abstol=1e-4, show_trace=Val(true), ls_kwargs=(;verbose=0, itmax=200), maxtime=60) # ν=1, a=0.02: will reach abstol ~ 5e-2. Works faster without linear preconditioner
     # @time xs, ys, ψ_3comp_nr, μ_3comp_nr = find_stationary(xh_3comp, ψ₀_3comp, g_3comp, μ_nr[1], natoms; abstol=1e-4, show_trace=Val(true), ls_kwargs=(;verbose=0, itmax=500), ls_solver=QH.LS.KrylovJL_MINRES, maxiters=100) # useful when solving without Γ: 5 s
