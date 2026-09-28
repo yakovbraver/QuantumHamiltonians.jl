@@ -119,7 +119,7 @@ phΓ = PSpaceHamiltonian{:dense}([xlimits], 𝑉; basis, M, Γ=[0, 0, Γ₃])
 diagonalize!(phΓ; nev=3)
 phΓ.ε # real parts should agree with `phD.ε`. The imaginary part for the ground state is ~1e-7
 
-# Run Newton-Raphson for 50 iterations. The solver works with real 𝜇; since actual is complex, it cannot reach abstol=1e-10. Will stop at abstol≈1e-5; this is L-inf norm, meaning the imaginary part of 𝜇 does not exceed 1e-3
+# Run Newton-Raphson for 50 iterations. The solver works with real 𝜇; since actual is complex, it cannot reach abstol=1e-10. Will stop at abstol≈1e-5; this is L-inf norm, meaning the imaginary part of 𝜇 does not exceed 1e-5
 xs, ψΓ, μΓ = find_stationary(phΓ, ψ_3comp, g, μD, natoms; maxiters=50, abstol=1e-10, show_trace=Val(true))
 E, μs, ηΓ = get_EμN(phΓ, ψΓ, g, state_is_pspace=false, makereal=false)
 plot_comps_complex(xs, ψΓ)

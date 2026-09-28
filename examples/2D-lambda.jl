@@ -4,6 +4,7 @@
 ╚═══════════════════════════════════════════════════════════════════════════════════════════════════════╝
 =# 
 using QuantumHamiltonians, AppleAccelerate
+import QuantumHamiltonians as QH
 
 using Plots
 plotlyjs()
@@ -66,13 +67,14 @@ surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 ### Diagonalisation in x-space -- faster than p-space for higher M.
 # basis=:cis, M=64, nev=1. diagonalize!: 0.40s (w/o AA: 0.76s).  [AppleAccelerate speeds up. Tested with --check-bounds=no]
 #           diagonalize_via_statevector: 0.76s (w/o AA: 2.4s).   [AppleAccelerate speeds up. Tested with --check-bounds=no]
-@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=64);
-@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cos, M=64);
-@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:sin, M=63);
-@time diagonalize!(xh, nev=1, verbose=true) # increase `maxdim` to say 30 for convergence if using nev=5
-@time diagonalize!(xh, nev=1, verbose=true, invert=true, preconditioner=:fourier_block, preconditioner_shift=0.0);
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=128);
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cos, M=128);
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:sin, M=127);
+@time diagonalize!(xh, nev=5, verbose=true, maxdim=30) # can use default `maxdim` if using nev=1. If doesn't converge, then increase `maxdim`. Note that actual eigenvalues no. 2 and no. 3 are degenerate; usually only one is obtained.
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12)); # faster than without inversion, especially for larger M, and converges with smaller `maxdim`. Also, finds both degenerate eigenvalues.
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # slightly faster than the default GMRES, but supports only left preconditioning
 xh.ε
-xs, ys, ψ = make_eigenfunction(xh, 1) # eigenvalues 2 and 3 are degenerate; usually only one is obtained. But works well for nev=1. Increase to krylovdim=40 to converge to 1e-12
+xs, ys, ψ = make_eigenfunction(xh, 1)
 surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 
 # Diagonalising via `StateVector`
@@ -182,9 +184,10 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 ### Diagonalisation in x-space: faster than p-space
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=128);
 @time diagonalize!(xh, nev=1, verbose=true, maxdim=30); # M=64, nev=1: 1.4 s. M=128, nev=1: 12.8s with `maxdim=30`
-@time diagonalize!(xh, nev=1, verbose=true, invert=true, maxdim=30, preconditioner=:fourier_block, preconditioner_shift=0.0); # TODO: benchmark
+@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12)); # M=128, nev=1: 3.7 s
+@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # M=128, nev=1: 2.8 s
 xh.ε
-xs, ys, ψ = make_eigenfunction(xh, 1);
+xs, ys, ψ = make_eigenfunction(xh, 1)
 heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
@@ -226,8 +229,10 @@ surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Diagonalisation in x-space: faster than p-space
-xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64);
-@time diagonalize!(xh, nev=1, verbose=true, tol=1e-5); # using less strict tolerance to get convergence. Alternatively, can increase `maxdim` to say 30.
+xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=128);
+@time diagonalize!(xh, nev=1, verbose=true, maxdim=30); # M=128: 17 s
+@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12)); # M=128, nev=1: 4.8 s
+@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # M=128, nev=1: 3.3 s
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, 1);
 heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)

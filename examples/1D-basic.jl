@@ -1,4 +1,5 @@
 using QuantumHamiltonians, AppleAccelerate
+import QuantumHamiltonians as QH
 
 using Plots
 plotlyjs()
@@ -48,8 +49,9 @@ xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cis, M=128, δ=Float(√0.5))
 xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:cos, M=128, δ=Float(√0.5))
 xh = XSpaceHamiltonian([xlimits], 𝑈; basis=:sin, M=127, δ=Float(√0.5))
 @time diagonalize!(xh, nev=5, verbose=true) # for M=128 with default `partialschur` precision of `tol=1e-8` converges to absolute accuracy of eigenvalues of ~1e-14. Does ~265 matrix-vector products
-@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_abstol=1e-12, ls_reltol=1e-12) # using inversion reduces matrix-vector products to 26 (but does ~170 linear solves on each iteration (check with `ls_verbose=true`)). Must tighten the linear solving tolerance to get the absolute accuracy of ~1e-14
-@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_abstol=1e-12, ls_reltol=1e-12) # using preconditioner reduces linear solves to ~40
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_kwargs=(;atol=1e-12, rtol=1e-12, verbose=1)) # using inversion reduces matrix-vector products to 26 (but does ~130 linear solves on each iteration). Must tighten the linear solving tolerance to get the absolute accuracy of ~1e-14
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_kwargs=(;atol=1e-12, rtol=1e-12, verbose=0), ls_prec=:jacobi) # using a preconditioner reduces linear solves to ~40
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_kwargs=(;atol=1e-12, rtol=1e-12, verbose=0), ls_prec=:jacobi, ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left) # slightly faster with CG (applicable in Hermitian posdef case) instead of the default GMRES
 @time xs, ψ = make_eigenfunction(xh, stateno);
 plot!(xs, ψ[1] .+ xh.ε[stateno])
 xh.ε
@@ -69,8 +71,6 @@ xh.ε
 function 𝑈(x::Real)
     gₗ*cos(2x)^2 + Vₗ*cos(x)^2
 end
-
-Float = Float64 # operating type
 
 gₗ::Float = -7640
 Vₗ::Float = -2

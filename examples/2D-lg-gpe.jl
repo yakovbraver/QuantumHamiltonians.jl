@@ -43,7 +43,7 @@ b::Float = 17
 ρ₀::Float = 0.7
 
 ν::Int = 1 # Laguerre-Gauss winding number
-a::Float = 0.5
+a::Float = 0.02
 
 ######## Linear analysis ########
 
@@ -107,11 +107,12 @@ w₀::Float64 = 2
 𝑈_3comp = [      𝑉  nothing  conj∘𝛺₁
            nothing        𝑉       𝛺₂
            nothing  nothing      𝑈₃₃]
-# construct an XSpaceHamiltonian, which is better than PSpaceHamiltonian for GPE analysis.
-# For a = 0.5, diagonalisation takes 39 s with `M=64`. For a = 0.02 linear solving stalls -- solution can only be found for `M=16` 
+# Construct an XSpaceHamiltonian, which is better than PSpaceHamiltonian for GPE analysis.
+# For a = 0.02, linear solving stalls -- solution can only be found for `M=16` 
 xh_3comp = XSpaceHamiltonian([xlimits, xlimits], 𝑈_3comp; basis=:cis, M, Γ=[0, 0, Γ₃])
-@time diagonalize!(xh_3comp, nev=3, verbose=true, ls_prec=:block_jacobi, ls_abstol=1e-9, ls_reltol=1e-9, tol=1e-5, ls_verbose=true);
-xh_3comp.ε
+@time diagonalize!(xh_3comp, nev=3, verbose=true, ls_prec=:block_jacobi, tol=1e-5, ls_kwargs=(;atol=1e-7, rtol=1e-7, verbose=1)); # a=0.5, M=64: 100 s
+@time diagonalize!(xh_3comp, nev=3, verbose=true, ls_prec=:block_jacobi, tol=1e-5, ls_kwargs=(;verbose=1), ls_prec_side=:left); # a=0.5, M=64: 30 s, agrees with right-preconditioned result above at abstol of 1e-4
+e_right = copy(xh_3comp.ε)
 xs, ys, ψ_3comp_linear = make_eigenfunction(xh_3comp, stateno)
 plot_comps_2D(xs, ys, ψ_3comp_linear)
 

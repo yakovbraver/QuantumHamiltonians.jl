@@ -226,27 +226,28 @@ Calculate `nev` eigenvectors and eigenvalues.
 The result is written into `xh.ε` and `xh.V`.
 """
 function diagonalize!(xh::XSpaceHamiltonian{R, T}; nev::Integer, invert::Bool=(xh.nc > 1), verbose::Bool=false,
-                      ls_prec::Symbol=:none, ls_prec_shift::R=zero(R), kwargs...) where {R, T}
-    xh.ε, xh.V = diagonalize(xh; nev, verbose, invert, ls_prec, ls_prec_shift, kwargs...)
+                      ls_solver=LS.KrylovJL_GMRES, ls_prec::Symbol=:none, ls_prec_shift::R=zero(R), ls_prec_side::Symbol=:right, ls_kwargs=(;), kwargs...) where {R, T}
+    xh.ε, xh.V = diagonalize(xh; nev, verbose, invert, ls_solver, ls_prec, ls_prec_shift, ls_prec_side, ls_kwargs, kwargs...)
     return
 end
 
 """
-Return `nev` eigenvectors and eigenvalues.
-By default, if number of components is bigger than one, then smallest-magnitude eigenvalues are calculated using inversion.
+Return `nev` eigenvectors and eigenvalues as a tuple (eigenvalues, eigenvectors).
+By default, if the number of components > 1, then smallest-magnitude eigenvalues are calculated using inversion.
 For a single component, the smallest (most negative) eigenvalues are calculated, without using inversion.
 Inversion can be set/unset manually using `invert`.
-The keyword arguments with the `ls_` prefix control linear solving used during inversion.
-`ls_prec` can be `:none`, `:jacobi`, or `:block_jacobi`.
-`ls_prec_shift` is added to the diagonal to avoid singularity of the kinetic operator when no 𝑈 or 𝐴 is present. The default is zero, but when singularity is detected, a scale-aware shift is added.
-The default linear solver is `LS.KrylovJL_GMRES`. Any other `KrylovJL_*` solver can be used (https://docs.sciml.ai/LinearSolve/stable/solvers/solvers/).
-Useful alternatives are `LS.KrylovJL_CG` for Hermitian positive definite and `LS.KrylovJL_MINRES` for Hermitian possibly indefinite.
-`ls_solver` should be the function name rather than the costructed object, i.e. `LS.KrylovJL_GMRES` instead of `LS.KrylovJL_GMRES()`.
+Keyword arguments:
+    * `ls_solver`: linear system solver from LinearSolve.jl, defaults to `KrylovJL_GMRES`. Any other `KrylovJL_*` solver can be used (https://docs.sciml.ai/LinearSolve/stable/solvers/solvers/).
+      Useful alternatives are `LS.KrylovJL_CG` for Hermitian positive definite and `LS.KrylovJL_MINRES` for Hermitian possibly indefinite.
+    * `ls_prec`: precodnitioner for the linear system, defaults to `:none`. Can be `:jacobi` or `:block_jacobi`.
+    * `ls_prec_shift`: a shift added to the diagonal to avoid singularity of the kinetic operator when no 𝑈 or 𝐴 is present. The default is zero, but when singularity is detected, a scale-aware shift is added.
+    * `ls_prec_side`: `:left` or `:right` (default). Left-preconditioning usually executes faster but is not faithful to the requested tolerance. Also, CG and MINRES support only right.
+    * `ls_kwargs`: a named tuple of keyword arguments to pass to the Krylov solver, such as `verbose` (0 or 1), `itmax`, `rtol`, `atol`, etc.
+      Note that these are passed to the solver constructor [such as `KrylovJL_GMRES()`] rather than passing to `LinearSolve.solve()`.
 Any additional kwargs (such as `tol`, `mindim`, `maxdim`, `restarts`) will be passed to `partialschur`.
-Return a tuple (eigenvalues, eigenvectors).
 """
 function diagonalize(xh::XSpaceHamiltonian{R, T}; invert::Bool=(xh.nc > 1), nev::Integer, verbose::Bool=false,
-                     ls_solver=LS.KrylovJL_GMRES, ls_reltol=√eps(R), ls_abstol=√eps(R), ls_prec::Symbol=:none, ls_prec_shift::R=zero(R), ls_verbose::Bool=false, kwargs...) where {R, T}
+                     ls_solver=LS.KrylovJL_GMRES, ls_prec::Symbol=:none, ls_prec_shift::R=zero(R), ls_prec_side::Symbol=:right, ls_kwargs=(;), kwargs...) where {R, T}
     ls_prec in (:none, :jacobi, :block_jacobi) || throw(ArgumentError("unsupported preconditioner: $ls_prec"))
     if invert
         # Here we do shift-invert: we want to diagonalise 𝐻⁻¹, defined by its action 𝑥 = 𝐻⁻¹𝑏; 𝑥 is found by solving 𝐻𝑥 = 𝑏. But `LS.LinearProblem` does not work with LinearMaps, so we wrap `bdg_map` in a SciMLOperator
@@ -254,10 +255,13 @@ function diagonalize(xh::XSpaceHamiltonian{R, T}; invert::Bool=(xh.nc > 1), nev:
         prob = LS.LinearProblem(xh_op, Vector{T}(undef, xh.nc*xh.B))
         if ls_prec != :none
             prec = JacobiPreconditioner(xh; type=(ls_prec == :jacobi ? :simple : :block), shift=ls_prec_shift)
-            linsolve = LS.init(prob, ls_solver(;verbose=Int(ls_verbose), precs=(_, _) -> (prec, LA.I)); reltol=ls_reltol, abstol=ls_abstol)
-        else
-            linsolve = LS.init(prob, ls_solver(;verbose=Int(ls_verbose)); reltol=ls_reltol, abstol=ls_abstol)
+            if ls_prec_side == :right
+                ls_kwargs = (;precs=(_, _) -> (LA.I, prec), ls_kwargs...) # append preconditioner to the keyword arguments for linear solve
+            else
+                ls_kwargs = (;precs=(_, _) -> (prec, LA.I), ls_kwargs...) # append preconditioner to the keyword arguments for linear solve
+            end
         end
+        linsolve = LS.init(prob, ls_solver(;ls_kwargs...))
         linmap = LinSolveLinMap{T, typeof(linsolve)}(linsolve, size(xh))
         ps, info = partialschur(linmap; nev, which=:LM, kwargs...)
     else
