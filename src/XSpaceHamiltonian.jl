@@ -303,21 +303,67 @@ end
 Construct D-dimensional x-space wave function of eigenstate `stateno` having the format `ψ[component][x, y, …]`.
 Return a tuple `(xs, ys, …, ψ)`.
 """
-function make_eigenfunction(xh::XSpaceHamiltonian, stateno::Int)
-    make_wavefunction(xh, xh.V[:, stateno])
+function make_eigenfunction(xh::XSpaceHamiltonian, stateno::Int; pad::Integer=0)
+    make_wavefunction(xh, xh.V[:, stateno]; pad)
 end
 
 """
 Construct D-dimensional x-space wave function by reshaping `ψ_flat` into `ψ` having the format `ψ[component][x, y, …]`.
-The two arrays share the same underlying data.
-Return a tuple `(xs, ys, …, ψ)`.
+By default, the arrays share the same underlying data. Pass integer `pad` to interpolate the wave function using `2^pad` times as many harmonics.
+Return a tuple `(xs, ys, …, ψ)`; with padding, the coordinate arrays and wavefunction have a finer grid.
 """
-function make_wavefunction(xh::XSpaceHamiltonian, ψ_flat::AbstractVector)
+function make_wavefunction(xh::XSpaceHamiltonian{R}, ψ_flat::AbstractVector{T}; pad::Integer=0) where {R, T<:Number}
+    pad < 0 && throw(ArgumentError("pad must be nonnegative"))
     (;B, nc) = xh
-    ψ = map(1:nc) do c
-        @views reshape(ψ_flat[(c-1)B+1:c*B], size(xh.ft.plan_forward))
+    if pad == 0
+        ψ = map(1:nc) do c
+            @views reshape(ψ_flat[(c-1)B+1:c*B], size(xh.ft.plan_forward))
+        end
+        return ntuple(i -> xh.ft.xs[:, i], size(xh.ft.xs, 2))..., ψ
     end
-    return ntuple(i -> xh.ft.xs[:, i], size(xh.ft.xs, 2))..., ψ # first part splits xs into a tuple (𝑥, 𝑦, …)
+
+    (;basis) = xh.ft
+    D = length(xh.xlims)
+    M = basis == :cis ? size(xh.ft.plan_forward, 1) ÷ 2 :
+        basis == :cos ? size(xh.ft.plan_forward, 1) - 1 : size(xh.ft.plan_forward, 1)
+    ft = FourierTransformerX(xh.xlims, 2^pad * M; basis)
+    old_dims = size(xh.ft.plan_forward)
+    new_dims = size(ft.plan_forward)
+
+    ψₚ_type = basis == :cis || T <: Complex ? Complex{R} : R
+    ψₚ = Array{ψₚ_type}(undef, old_dims)
+
+    ψ = map(1:nc) do c
+        ψᶜ = @view ψ_flat[(c-1)B+1:c*B]
+        transform!(ψₚ, xh.ft, ψₚ_type.(ψᶜ); direction=:forward)
+
+        ψₚᶜ_padded = zeros(ψₚ_type, new_dims)
+        # rescale because forward transform is done for less points than backward
+        scale = basis == :cis ? prod(new_dims[d] / old_dims[d] for d in 1:D) :
+                                ft.normalisation / xh.ft.normalisation
+        for I in CartesianIndices(ψₚ)
+            endpoint_scale = basis == :cos ? prod(I[d] == old_dims[d] ? 1/2 : 1 for d in 1:D) : 1 # TODO: double-check
+            destinations = ntuple(D) do d
+                if basis == :cis && I[d] == old_dims[d] ÷ 2 + 1
+                    ((I[d], 1/2), (new_dims[d] - old_dims[d] ÷ 2 + 1, 1/2))
+                elseif basis == :cis && I[d] > old_dims[d] ÷ 2 + 1
+                    ((new_dims[d] - old_dims[d] + I[d], 1),)
+                else
+                    ((I[d], 1),)
+                end
+            end
+            for destination in Iterators.product(destinations...)
+                J = CartesianIndex(ntuple(d -> destination[d][1], D))
+                weight = prod(destination[d][2] for d in 1:D) # Nyquist splitting
+                ψₚᶜ_padded[J] = ψₚ[I] * scale * endpoint_scale * weight
+            end
+        end
+
+        ψᶜ_x = Array{ψₚ_type}(undef, new_dims)
+        transform!(ψᶜ_x, ft, ψₚᶜ_padded; direction=:backward, normalise=true)
+        ψᶜ_x
+    end
+    return ntuple(i -> ft.xs[:, i], size(ft.xs, 2))..., ψ
 end
 
 # TODO these four methods work both with PSpaceHamiltonian and XSpaceHamiltonian, move to furute QuantumHamiltonian.jl
