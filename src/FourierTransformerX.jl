@@ -73,7 +73,7 @@ The transformation is forward or backward depending on the `direction` keyword a
 """
 function transform!(f′::AbstractArray{<:Number}, ft::FourierTransformerX, f::AbstractArray{<:Number}; direction::Symbol=:forward, normalise::Bool=false)
     (;basis, normalisation, buff_re, buff_im) = ft
-    # if dimensions of `f` or `f′` do not agree with dimensions of the plans, then reshape
+    # if dimensions of `f` or `f′` do not agree with dimensions of the plans, then reshape. Each gives (1 allocation: 48 bytes), maybe should not be here but rather the caller should take care
     f_in = axes(f) == axes(ft.plan_forward) ? f : reshape(f, size(ft.plan_forward))
     f_out = axes(f′) == axes(ft.plan_forward) ? f′ : reshape(f′, size(ft.plan_forward))
 

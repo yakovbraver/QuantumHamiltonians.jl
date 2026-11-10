@@ -17,7 +17,7 @@ mutable struct XSpaceHamiltonian{R, T, S, FourierTransformer} <: LM.LinearMap{T}
     basis::Symbol
     ishermitian::Bool # the map is nonhermitian if decays Γ are present
     𝑈::Matrix{<:Union{Function, Nothing}} # nc-component matrix containing coordinate-space potentials and couplings. Return type must be `R` or `Complex{R}`
-    U::Matrix{Vector{T}} # diagonal elements will contain 𝑈ᵃᵃ + (𝐀ᵃ)² + i𝛿∇𝐀ᵃ - iΓᵃ/2; hence `U` is complex if 𝐴 or Γ is present
+    U::Matrix{Vector{T}} # diagonal elements will contain 𝑈ᵃᵃ + (𝐀ᵃ)² - iΓᵃ/2; hence `U` is complex if 𝐴 or Γ is present
     𝐴::Matrix{<:Union{Function, Nothing}} # `𝐴[c, i]` is `i`th projection of the `c`th component of the vector potential
     A::Matrix{Vector{R}} # `A[c, i]` is `i`th projection of the `c`th component of the vector potential
     ∇::Vector{Vector{R}} # `∇[i]` is the p-space flattened vector of 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise. Real in both cases.
@@ -82,51 +82,35 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
     B = length(ft.plan_forward) # "block size" -- number of points in the contiguous array corresponding to each component
 
     ∇ = [make_pⁱ(L, M, δ, basis, i) for i in 1:D]
-    ∇² = make_p²(L, M, δ, basis)
-    # U[a, c] contains a flattened vector with diagonal entries representing 𝑈ᵃᵃ + (𝐀ᵃ)² + i𝛿∇𝐀ᵃ - iΓᵃ/2 and off-diagonal entries representing 𝑈ᵃᶜ
+    ∇² = make_p²(L, M, δ, basis, projections=(𝐴[1, :] .== nothing)) # for each absent projection, Δᵢ² will be added; in practice ∇² could be different for each component
+    # U[a, c] contains a flattened vector with diagonal entries representing 𝑈ᵃᵃ - iΓᵃ/2 and off-diagonal entries representing 𝑈ᵃᶜ
     U = [T[] for _ in 1:nc, _ in 1:nc] # by default, make a rank-D 0×0×… tensor
     # A[c, i] contains a flattened vector representing `i`th projection of the `c`th component of 𝐀
     A = [R[] for _ in 1:nc, _ in 1:D]
     
-    δ∇ⁱAᵇⁱ = similar(∇²) # temporary buffer
-
-    # allocate buffers needed for application of the map, but also used in the calculation of i𝛿𝐴 below
+    # allocate buffers needed for application of the map
     buff_real = similar(∇²) # taking ∇² as a real array of the appropriate size
     buff_complex = similar(buff_real, Complex{R})
     buff_complex2 = similar(buff_real, Complex{R})
     buff_complex3 = similar(buff_real, Complex{R})
 
+    # sample 𝑈 and 𝐴 at the grid points and populate `U` and `A`
     for c in 1:nc
         for b in 1:c # only upper triangle is scanned. The lower triangle is filled automatically
             if isnothing(𝑈[b, c])
-                if b == c && (any(𝐴[b, :] .!== nothing) || Γ[b] != 0) # if at least one projection for this component is nonzero or if Γ is nonzero
-                    U[b, c] = zeros(T, B) # then allocate zeros for storing 𝐴² or Γ
+                if b == c && Γ[b] != 0 # if Γ is nonzero
+                    U[b, c] = zeros(T, B) # then allocate zeros for storing Γ
                 end
             else
                 U[b, c] = Vector{T}(undef, B)
                 sample!(U[b, c], 𝑈[b, c], xs)
             end
-            # for a diagonal block, also add 𝐴² + i𝛿∇𝐴 - iΓ/2
+            # for a diagonal block, also add -iΓ/2
             if b == c
                 for i in 1:D # for each projection of 𝐴: 𝐴[c, i] is `i`th projection of the `c`th component
                     if !isnothing(𝐴[b, i]) 
                         A[b, i] = Vector{R}(undef, B)
                         sample!(A[b, i], 𝐴[b, i], xs)
-                        
-                        # compute 𝛿∇𝐴
-                        if basis == :cis
-                            copy!(buff_complex2, A[b, i]) # `ft` can only act on complex vectors, so need to copy real `A[b, i]` into a complex buffer
-                            transform!(buff_complex, ft, buff_complex2; direction=:forward)
-                            @. buff_complex *= im*∇[i] # `∇[i]` holds -i𝛿𝜕ᵢ, but we want to apply just 𝛿𝜕ᵢ (so that we are calculating 𝛿𝜕ᵢ𝐴ᵢ, which is real), hence additional factor of i
-                            transform!(buff_complex2, ft, buff_complex; direction=:backward)
-                            @. δ∇ⁱAᵇⁱ = real(buff_complex2)
-                        else
-                            transform!(buff_real, ft, A[b, i]; direction=:forward)
-                            @. buff_real *= ∇[i] # `∇[i]` holds 𝛿𝜕ᵢ
-                            transform!(δ∇ⁱAᵇⁱ, ft, buff_real; direction=:backward, normalise=true)
-                        end
-                        # add 𝐴² + i𝛿∇𝐴
-                        @. U[b, b] += A[b, i]^2 + im * δ∇ⁱAᵇⁱ
                     end
                 end
                 if Γ[b] != 0
@@ -154,60 +138,74 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
     f_isreal = S <: Real
     f′_isreal = eltype(f′) <: Real
 
-    buff = (basis == :cis || !f_isreal) ? xh.buff_complex : xh.buff_real
+    fᶜₚ = (basis == :cis || !f_isreal) ? xh.buff_complex : xh.buff_real # will store `fᶜ` in p-space
     buff2 = xh.buff_complex2
     buff3 = xh.buff_complex3
+
+    f′ .= 0
 
     # apply Hamiltonian to each component
     for c in 1:nc
         fᶜ = @view f[(c-1)B+1:c*B]
         f′ᶜ = @view f′[(c-1)B+1:c*B]
-        ### apply Laplacian -𝛿²Δ ###
+        
+        # transform `fᶜ` to p-space, write into `fᶜₚ`
         if f_isreal && basis == :cis
             copy!(buff2, fᶜ) # `ft` can only act on complex vectors, so need to copy real `fᶜ` into a complex buffer
-            transform!(buff, ft, buff2; direction=:forward)
+            transform!(fᶜₚ, ft, buff2; direction=:forward)
         else
-            transform!(buff, ft, fᶜ; direction=:forward)
+            transform!(fᶜₚ, ft, fᶜ; direction=:forward)
+        end
+
+        𝐴_present = row_has_something(A, c)
+
+        if any(isnothing.(xh.𝐴[c, :])) # at least one projection of 𝐴 is absent (for the `c`th component)
+            if 𝐴_present # at least one projection of 𝐴 is present (for `c`th component)
+                copy!(buff3, fᶜₚ) # copy fᶜₚ into `buff3` for subsequent mutation of `buff3`; fᶜₚ will be needed and remains intact
+            else
+                buff3 = fᶜₚ # `fᶜₚ` will not be needed, so just make a reference
+            end
+
+            @. buff3 *= ∇² # apply Laplacian -𝛿²Δ (applies relevant projections such that 𝐴ᵢ = 0, i.e. ∑ᵢ-𝛿²Δᵢ)
+            # transform -𝛿²Δfᶜ back to x-space, write into `f′ᶜ`
+            if f′_isreal && basis == :cis
+                # cannot write directly to `f′ᶜ` because it is real; write into a complex buffer `buff2` instead
+                transform!(buff2, ft, buff3; direction=:backward)
+                @. f′ᶜ = real.(buff2)
+            else
+                transform!(f′ᶜ, ft, buff3; direction=:backward, normalise=true)
+            end
         end
         
-        # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3`. We use it below for calculating 2i𝛿∑ᵢ𝐴ᵢ∇ᵢ𝑓
-        𝐴_present = row_has_something(A, c)
-        𝐴_present && copy!(buff3, buff)
-
-        @. buff *= ∇²
-
-        if f′_isreal && basis == :cis
-            # cannot write directly to `f′ᶜ` because it is real; write into a complex buffer `buff2` instead
-            transform!(buff2, ft, buff; direction=:backward)
-            @. f′ᶜ = real.(buff2)
-        else
-            transform!(f′ᶜ, ft, buff; direction=:backward, normalise=true)
+        if 𝐴_present # at least one projection of 𝐴 is present (for `c`th component)
+            # apply (𝑝 - 𝐴) twice
+            for i in axes(A, 2) # for each projection
+                if !iszero(A[c, i])
+                    # first application of (𝑝 - 𝐴), result will be in `buff3`
+                    # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
+                    @. buff2 = ∇[i] * fᶜₚ # compute 𝑝ᵢfᶜ in p-space
+                    transform!(buff3, ft, buff2; direction=:backward, normalise=true) # transform 𝑝ᵢfᶜ to x-space
+                    @. buff3 -= A[c, i] * fᶜ # subtract 𝐴ᶜⁱfᶜ from 𝑝ᵢfᶜ, write in-place. `buff3` will then contain the result of (𝑝ⁱ - 𝐴ⁱᶜ)fᶜ =: 𝑔
+                    # second application of (𝑝 - 𝐴), result is in `buff3`
+                    @. f′ᶜ -= A[c, i] * buff3 # add -𝐴ᶜⁱ𝑔 to the final result 
+                    transform!(buff2, ft, buff3; direction=:forward) # transform 𝑔 to p-space
+                    @. buff2 *= ∇[i] # compute 𝑝ᵢ𝑔 in p-space
+                    transform!(buff3, ft, buff2; direction=:backward, normalise=true) # transform 𝑝ᵢ𝑔 back to x-space
+                    # add the result to the final result f′ᶜ
+                    @. f′ᶜ += buff3 # add 𝑝ᵢ𝑔 to the final result 
+                end
+            end
         end
-        ###
 
-        # appply `U`: diagonal elements U[c, c] also include 𝐴², i𝛿∇𝐴 and decay
+        # apply U: diagonal elements also include decay
         for b in 1:nc
             fᵇ = @view f[(b-1)B+1:b*B]
             if !iszero(U[c, b])
                 @. f′ᶜ += U[c, b] * fᵇ
             end
         end
-        
-        # add 2i𝛿∑ᵢ𝐴ᵢ∇ᵢ𝑓 (sum over projections)
-        for i in axes(A, 2)
-            if !iszero(A[c, i])
-                # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
-                @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `fᶜ`
-                transform!(buff, ft, buff2; direction=:backward, normalise=true)
-                if basis == :cis
-                    @. f′ᶜ -= 2A[c, i] * buff # if 𝑓 is real, 𝐴ᵢ∇ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f′` is complex anyway, so we don't bother
-                else
-                    @. f′ᶜ += 2A[c, i] * buff * im
-                end
-            end
-        end
     end
-    return
+    return f′
 end
 
 """

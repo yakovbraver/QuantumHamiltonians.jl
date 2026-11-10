@@ -123,16 +123,17 @@ end
 Return the momentum-squared tensor (𝛿𝑝)² = -𝛿²Δ in `D = length(L)` dimensions. If `basis=:cis`, then return (𝛿𝑝 + 𝑞)² with quasimomenta provided in `qs`.
 A flattened vector is returned.
 """
-function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zeros(R, length(L))) where R <: AbstractFloat
+function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol; qs=zeros(R, length(L)), projections=trues(length(L))) where R <: AbstractFloat
     D = length(L)
     PI = R(π) # for type stability. Otherwise 2*π*2f0 gets converted to Float64 (and so does 2f0*2π, while 2f0*2*π does not...)
     if basis == :cis
-        cx = 2PI*δ/L[1]
         M_range = [0:M-1; -M:-1]
+        cx = 2PI*δ/L[1]
         if D == 1
             return [(cx*jˣ + qs[1])^2 for jˣ in M_range]
         elseif D == 2
-            cy = 2PI*δ/L[2]
+            cx = projections[1] * cx
+            cy = projections[2] * 2PI*δ/L[2]
             return [((cx*jˣ + qs[1])^2 + (cy*jʸ + qs[2])^2) for jʸ in M_range for jˣ in M_range]
         # else # arbitrary `D`
         #     Ms = ntuple(Returns(M_range), D)

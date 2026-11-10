@@ -68,7 +68,7 @@ function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Fu
     tspan = (zero(R), T_max)
     xh_op = SciMLOperators.FunctionOperator(XSpaceHamiltonianGPE!, similar(ψ_input); u=ψ_input, p=params, isconstant=true)
 
-    prob = ODE.SplitODEProblem(xh_op, (nc == 1 ? gpe_1comp! : gpe!), ψ_input, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
+    prob = ODE.SplitODEProblem(xh_op, (nc == 1 ? gpe_1comp! : gpe!), ψ_input, tspan, params) # specialisation does not improve speed, but here it is (requires import SciMLBase): split_f = SciMLBase.SplitFunction{true, SciMLBase.FullSpecialize}(SciMLBase.ODEFunction{true, SciMLBase.FullSpecialize}(xh_op), SciMLBase.ODEFunction{true, SciMLBase.FullSpecialize}(nc == 1 ? gpe_1comp! : gpe!) );  prob = ODE.SplitODEProblem{true}(split_f, ψ_input, tspan, params)
     
     if itime
         # prepare the callback that renormalises wf at every step
