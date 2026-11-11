@@ -1,6 +1,6 @@
 #=
 ╔═══════════════════════════════════════════════════════════════════════════════════════════════════════╗
-║ Dark state analysis of https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302) ║
+║ Dark-state analysis of https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302) ║
 ╚═══════════════════════════════════════════════════════════════════════════════════════════════════════╝
 =# 
 using QuantumHamiltonians, AppleAccelerate
@@ -182,8 +182,8 @@ surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Diagonalisation in x-space: faster than p-space
-@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=128);
-@time diagonalize!(xh, nev=1, verbose=true, maxdim=30); # M=64, nev=1: 1.4 s. M=128, nev=1: 12.8s with `maxdim=30`
+xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64);
+@time diagonalize!(xh, nev=1, verbose=true, maxdim=30); # M=64, nev=1: 1.4 s. M=128, nev=1: 12.8s (w/ AA: 16.6s) with `maxdim=30`
 @time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12)); # M=128, nev=1: 3.7 s
 @time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # M=128, nev=1: 2.8 s
 xh.ε
@@ -192,11 +192,12 @@ heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 # Diagonalising via `StateVector`
-# Setting `ishermitian=false` because solver claims that map is nonhermitian. TODO: investigate
-# @time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh, nev=1, ishermitian=false); # M=64, nev=1: 2.4s [w/ AA]. Increase `krylovdim` ot say 40 (or maxiter to say 200) if you want better convergence.
-# vals
-# heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-# heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+# The solver in KrylovKit is sensitive to hermiticity, so must use `symmetrize_pA=true`
+xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64, symmetrize_pA=true);
+@time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh, nev=1, krylovdim=40); # M=64, nev=1: 2.2 s [w/o AA: 5.23]. (Alternatively, can increase `maxiter` to say 200 instead of `krylovdim=40`.)
+vals
+heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ########## χ = 1.4, full period
 
@@ -229,7 +230,7 @@ surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Diagonalisation in x-space: faster than p-space
-xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=128);
+xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64); # for M=64, `symmetrize_pA` makes a difference, but for M=128 it doesn't
 @time diagonalize!(xh, nev=1, verbose=true, maxdim=30); # M=128: 17 s
 @time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12)); # M=128, nev=1: 4.8 s
 @time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # M=128, nev=1: 3.3 s
@@ -239,12 +240,12 @@ heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 # Diagonalising via `StateVector`
-# @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64);
-# # Setting `ishermitian=false` because solver claims that map is nonhermitian. TODO: investigate
-# @time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh, nev=1, ishermitian=false);
-# vals
-# heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
-# heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
+# The solver in KrylovKit is sensitive to hermiticity, so must use `symmetrize_pA=true`.
+@time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64, symmetrize_pA=true);
+@time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh, nev=1, krylovdim=40);
+vals
+heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+heatmap(xh.ft.xs[:, 1], xh.ft.xs[:, 2], angle.(vecs[stateno][1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 
 ### Quasimomenta

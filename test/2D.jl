@@ -106,42 +106,46 @@ end
     ϵ::Float32 = 0.1
     ϵc::Float32 = 1
 
-    ########## χ = 0
+    ########## χ = 0 (no 𝐴)
 
     χ::Float32 = 0
 
     xlimits = (0, π) .|> Float32
     ylimits = (0, π) .|> Float32
 
-    M = 5
+    M = 16
 
     ### sin basis
     qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:sin, M)
     @test qh.H isa Matrix{Float32}
     @test qh.V isa Matrix{Float32}
 
-    # exact diagonalisation
-    diagonalize!(qh, nev=0)
-    @test qh.ε[1] ≈ 2.064 rtol=1e-3
-
-    # approximate diagonalisation
-    diagonalize!(qh, nev=1)
-    @test qh.ε[1] ≈ 2.064 rtol=1e-3
-
+    # exact diagonalisation (nev=0) and approximate (nev=1)
+    for nev in (0, 1)
+        diagonalize!(qh; nev)
+        @test qh.ε[1] ≈ 2.117 rtol=1e-3
+    end
+    
     ### cis basis
     qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven=true)
     @test qh.H isa Matrix{Float32}
 
-    # exact diagonalisation
-    diagonalize!(qh, nev=0)
-    @test qh.ε[1] ≈ 2.018 rtol=1e-3
-
-    # approximate diagonalisation
-    diagonalize!(qh, nev=1)
-    @test qh.ε[1] ≈ 2.018 rtol=1e-3
+    # exact diagonalisation (nev=0) and approximate (nev=1)
+    for nev in (0, 1)
+        diagonalize!(qh; nev)
+        @test qh.ε[1] ≈ 1.960 rtol=1e-3
+    end
+    
+    # XSpaceHamiltonian. It's faster, so we can test with Float64 and larger `M` (but seems less accurate than p-space for small M?)
+    for symmetrize_pA in (true, false) # there is no 𝐴 so `symmetrize_pA` should have no effect and yield identical results
+        qh = XSpaceHamiltonian([Float64.(xlimits), Float64.(ylimits)], 𝑈; basis=:cis, M=32, symmetrize_pA)
+        diagonalize!(qh, nev=1)
+        @test qh.ε[1] ≈ 1.9599702145 rtol=1e-10
+    end
 
     ########## χ = π/2, x from -π/2 to π/2
 
+    M = 5
     χ = π/2
 
     xlimits = (-π/2, π/2) .|> Float32
@@ -150,13 +154,11 @@ end
     ### sin basis
     qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:sin, M)
     
-    # exact diagonalisation
-    diagonalize!(qh, nev=0)
-    @test qh.ε[1] ≈ 3.179 rtol=1e-3
-
-    # approximate diagonalisation
-    diagonalize!(qh, nev=1)
-    @test qh.ε[1] ≈ 3.179 rtol=1e-3
+    # exact diagonalisation (nev=0) and approximate (nev=1)
+    for nev in (0, 1)
+        diagonalize!(qh; nev)
+        @test qh.ε[1] ≈ 3.179 rtol=1e-3
+    end
 
     ########## χ = π/2, full period
 
@@ -178,6 +180,24 @@ end
     qh = PSpaceHamiltonian{:sparse}([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, 𝑈_iseven=true) # cast to Float64 manually to suppress info message
     diagonalize!(qh, nev=1)
     @test qh.ε[1] ≈ 0.571 atol=1e-3
+
+    ### XSpaceHamiltonian. It's faster, so we can test with Float64 and larger `M` (but seems less accurate than p-space for small M?)
+    M = 32
+
+    # two random vectors for checking Hermiticity as (⟨𝑣₁, 𝐻𝑣₂⟩ - ⟨𝐻𝑣₁, 𝑣₂⟩)
+    Random.seed!(47)
+    v1 = rand(ComplexF64, (2M)^2) |> normalize # don't bother with actual x-space normalisation
+    v2 = rand(ComplexF64, (2M)^2) |> normalize
+
+    for symmetrize_pA in (true, false)
+        qh = XSpaceHamiltonian([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, symmetrize_pA)
+        diagonalize!(qh, nev=1)
+        ε_true = symmetrize_pA ? 0.6523291893 : 0.6524389189 # the result depends on `symmetrize_pA`; the `false` case should be considered inaccurate
+        @test qh.ε[1] ≈ ε_true atol=1e-10
+
+        defect = dot(v1, qh*v2) - dot(qh*v1, v2) # if `symmetrize_pA`, the nonhermiticity defect should be on the order of machine precision
+        @test defect ≈ 0 atol=(symmetrize_pA ? 1e-13 : 0.3) 
+    end
 end
 
 @testset "Test dense 2D 3-component diagonalisation" begin

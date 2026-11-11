@@ -17,13 +17,14 @@ mutable struct XSpaceHamiltonian{R, T, S, FourierTransformer} <: LM.LinearMap{T}
     basis::Symbol
     ishermitian::Bool # the map is nonhermitian if decays Γ are present
     𝑈::Matrix{<:Union{Function, Nothing}} # nc-component matrix containing coordinate-space potentials and couplings. Return type must be `R` or `Complex{R}`
-    U::Matrix{Vector{T}} # diagonal elements will contain 𝑈ᵃᵃ + (𝐀ᵃ)² + i𝛿∇𝐀ᵃ - iΓᵃ/2; hence `U` is complex if 𝐴 or Γ is present
+    U::Matrix{Vector{T}} # diagonal elements will contain 𝑈ᵃᵃ + (𝐀ᵃ)² - iΓᵃ/2 (plus i𝛿∇𝐀ᵃ if `!symmetrize_pA`); hence `U` is complex if 𝐴 or Γ is present
     𝐴::Matrix{<:Union{Function, Nothing}} # `𝐴[c, i]` is `i`th projection of the `c`th component of the vector potential
     A::Matrix{Vector{R}} # `A[c, i]` is `i`th projection of the `c`th component of the vector potential
+    symmetrize_pA::Bool # if true, the kinetic term (𝐩 - 𝐀)² will be applied as (𝐩² - 𝐩𝐀 - 𝐀𝐩 + 𝐀²); if false, then as (𝐩² - (𝐩𝐀) - 2𝐀𝐩 + 𝐀²)
     ∇::Vector{Vector{R}} # `∇[i]` is the p-space flattened vector of 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise. Real in both cases.
     ∇²::Vector{R} # p-space flattened vector of 𝑝² = -𝛿²Δ
     Γ::Vector{R}  # decay rates
-    ε::Vector{S}  # eigenvalues, can be complex for nonhermitian Hamiltonian, hence additional type `S`
+    ε::Vector{S}  # eigenvalues, can be complex for nonhermitian Hamiltonian (due to Γ), hence additional type `S`
     V::Matrix{T}  # eigenvectors matrix
     ft::FourierTransformer
     # buffers needed for the application of the map, of length `B`
@@ -43,21 +44,27 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
                            𝑈::Union{Function, Nothing},
                            𝐴::AbstractVector{<:Union{Function, Nothing}}=fill(nothing, length(xlims));
                            basis::Symbol, M::Integer, δ::R=one(R),
-                           Γ::R=zero(R)) where R <: AbstractFloat
-    return XSpaceHamiltonian(xlims, [𝑈;;], reshape(𝐴, (1, length(xlims))); basis, M, δ, Γ=[Γ])
+                           Γ::R=zero(R), symmetrize_pA::Bool=false) where R <: AbstractFloat
+    return XSpaceHamiltonian(xlims, [𝑈;;], reshape(𝐴, (1, length(xlims))); basis, M, δ, Γ=[Γ], symmetrize_pA)
 end
 
 """
 Construct a `XSpaceHamiltonian` object using the coordinate-space functions stored in `𝑈`, decay rates `Γ`, and gauge fields stored in `𝐴`.
-`𝐴[c, i]` is the `i`th projection `𝐴ⁱ` of `c`th component.
-`M` is the maximum harmonic number (will use -M+1:M for cis, 1:M for sin, 0:M for cos).
+`𝐴[c, i]` is the `i`th projection `𝐴ⁱ` of the `c`th component.
+`M` is the maximum harmonic number (will use `-M+1:M` for cis, `1:M` for sin, `0:M` for cos).
+`symmetrize_pA`: if true, the kinetic term (𝐩 - 𝐀)² will be applied in the symmetrized form as (𝐩² - 𝐩𝐀 - 𝐀𝐩 + 𝐀²); if false, then as (𝐩² - (𝐩𝐀) - 2𝐀𝐩 + 𝐀²).
+In symmetric form, the action of the map is ~2x slower, but it is more accurate because the resulting Hamiltonian is then Hermitian to machine precision.
+When diagonalising, symmetric form ensures higher accuracy. However, for higher number of harmonics (e.g. M = 128 in 2D) there seems to be no difference.
+When propagating GPE, symmetric form ensures better energy conservation. However, if propagating for "not too long" times (and depending on the problem), the non-symmetric form is often enough.
+By default, `symmetrize_pA=false` for faster solving; for production, check against `symmetrize_pA=true`.
+If 𝐀 is not present, then the kinetic term is just 𝐩² and `symmetrize_pA` has no effect.
 """
 function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
                            𝑈::AbstractMatrix{<:Union{Function, Nothing}},
                            𝐴::AbstractVecOrMat{<:Union{Function, Nothing}}=fill(nothing, size(𝑈, 1), length(xlims));
                            basis::Symbol, M::Integer, δ::R=one(R),
-                           Γ::Vector{R}=zeros(R, size(𝑈, 1))) where R <: AbstractFloat
-    # Warn if M is not optimal
+                           Γ::Vector{R}=zeros(R, size(𝑈, 1)), symmetrize_pA::Bool=false) where R <: AbstractFloat
+    # warn if M is not optimal
     if basis == :cis || basis == :cos
         !ispow2(M) && println("Maximum harmonic number M = 2ⁿ recommended for $basis basis. Consider changing M.")
     else # basis == :sin
@@ -83,14 +90,12 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
 
     ∇ = [make_pⁱ(L, M, δ, basis, i) for i in 1:D]
     ∇² = make_p²(L, M, δ, basis)
-    # U[a, c] contains a flattened vector with diagonal entries representing 𝑈ᵃᵃ + (𝐀ᵃ)² + i𝛿∇𝐀ᵃ - iΓᵃ/2 and off-diagonal entries representing 𝑈ᵃᶜ
+    # U[a, c] contains a flattened vector with diagonal entries representing 𝑈ᵃᵃ + (𝐀ᵃ)² - iΓᵃ/2 (plus i𝛿∇𝐀ᵃ if `!symmetrize_pA`) and off-diagonal entries representing 𝑈ᵃᶜ
     U = [T[] for _ in 1:nc, _ in 1:nc] # by default, make a rank-D 0×0×… tensor
     # A[c, i] contains a flattened vector representing `i`th projection of the `c`th component of 𝐀
     A = [R[] for _ in 1:nc, _ in 1:D]
-    
-    δ∇ⁱAᵇⁱ = similar(∇²) # temporary buffer
 
-    # allocate buffers needed for application of the map, but also used in the calculation of i𝛿𝐴 below
+    # allocate buffers needed for application of the map, also used in the calculation of i𝛿𝐴 below (if `!symmetrize_pA`)
     buff_real = similar(∇²) # taking ∇² as a real array of the appropriate size
     buff_complex = similar(buff_real, Complex{R})
     buff_complex2 = similar(buff_real, Complex{R})
@@ -106,27 +111,22 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
                 U[b, c] = Vector{T}(undef, B)
                 sample!(U[b, c], 𝑈[b, c], xs)
             end
-            # for a diagonal block, also add 𝐴² + i𝛿∇𝐴 - iΓ/2
+            # for a diagonal block, also add 𝐴² - iΓ/2, and i𝛿𝐴 (if `!symmetrize_pA`)
             if b == c
                 for i in 1:D # for each projection of 𝐴: 𝐴[c, i] is `i`th projection of the `c`th component
                     if !isnothing(𝐴[b, i]) 
                         A[b, i] = Vector{R}(undef, B)
                         sample!(A[b, i], 𝐴[b, i], xs)
                         
-                        # compute 𝛿∇𝐴
-                        if basis == :cis
+                        @. U[b, b] += A[b, i]^2
+                        
+                        if !symmetrize_pA
                             copy!(buff_complex2, A[b, i]) # `ft` can only act on complex vectors, so need to copy real `A[b, i]` into a complex buffer
                             transform!(buff_complex, ft, buff_complex2; direction=:forward)
                             @. buff_complex *= im*∇[i] # `∇[i]` holds -i𝛿𝜕ᵢ, but we want to apply just 𝛿𝜕ᵢ (so that we are calculating 𝛿𝜕ᵢ𝐴ᵢ, which is real), hence additional factor of i
                             transform!(buff_complex2, ft, buff_complex; direction=:backward)
-                            @. δ∇ⁱAᵇⁱ = real(buff_complex2)
-                        else
-                            transform!(buff_real, ft, A[b, i]; direction=:forward)
-                            @. buff_real *= ∇[i] # `∇[i]` holds 𝛿𝜕ᵢ
-                            transform!(δ∇ⁱAᵇⁱ, ft, buff_real; direction=:backward, normalise=true)
+                            @. U[b, b] += im * real(buff_complex2)
                         end
-                        # add 𝐴² + i𝛿∇𝐴
-                        @. U[b, b] += A[b, i]^2 + im * δ∇ⁱAᵇⁱ
                     end
                 end
                 if Γ[b] != 0
@@ -145,12 +145,12 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
     ε = S[] # eigenvalues, can be complex for nonhermitian Hamiltonian, hence additional type `S`
     V = T[;;] # eigenvectors matrix
 
-    return XSpaceHamiltonian(xlims, L, B, δ, nc, basis, ishermitian, 𝑈, U, 𝐴, A, ∇, ∇², Γ, ε, V, ft, buff_real, buff_complex, buff_complex2, buff_complex3, (nc*B, nc*B))
+    return XSpaceHamiltonian(xlims, L, B, δ, nc, basis, ishermitian, 𝑈, U, 𝐴, A, symmetrize_pA, ∇, ∇², Γ, ε, V, ft, buff_real, buff_complex, buff_complex2, buff_complex3, (nc*B, nc*B))
 end
 
 "Update `f′` by acting with `xh` on `f`. `f` must be a flattened x-space vector."
 function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}) where {R, T, S}
-    (;nc, B, basis, U, A, ∇, ∇², ft) = xh
+    (;nc, B, basis, U, A, ∇, ∇², ft, symmetrize_pA) = xh
     f_isreal = S <: Real
     f′_isreal = eltype(f′) <: Real
 
@@ -170,7 +170,7 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
             transform!(buff, ft, fᶜ; direction=:forward)
         end
         
-        # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3`. We use it below for calculating 2i𝛿∑ᵢ𝐴ᵢ∇ᵢ𝑓
+        # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3` –– will be needed below
         𝐴_present = row_has_something(A, c)
         𝐴_present && copy!(buff3, buff)
 
@@ -185,7 +185,7 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
         end
         ###
 
-        # appply `U`: diagonal elements U[c, c] also include 𝐴², i𝛿∇𝐴 and decay
+        # apply U: diagonal elements also include 𝐴², Γ, and i𝛿∇𝐴 if `!symmetrize_pA`
         for b in 1:nc
             fᵇ = @view f[(b-1)B+1:b*B]
             if !iszero(U[c, b])
@@ -193,21 +193,26 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
             end
         end
         
-        # add 2i𝛿∑ᵢ𝐴ᵢ∇ᵢ𝑓 (sum over projections)
+        # if `symmetrize_pA`, then add (-𝐩𝐀 - 𝐀𝐩)𝑓 = i𝛿∑ᵢ(𝜕ᵢ𝐴ᵢ + 𝐴ᵢ𝜕ᵢ)𝑓; otherwise, add (-2𝐀𝐩)𝑓 as 2i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ𝑓 (sum over projections)
         for i in axes(A, 2)
             if !iszero(A[c, i])
                 # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
-                @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `fᶜ`
-                transform!(buff, ft, buff2; direction=:backward, normalise=true)
-                if basis == :cis
-                    @. f′ᶜ -= 2A[c, i] * buff # if 𝑓 is real, 𝐴ᵢ∇ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f′` is complex anyway, so we don't bother
+                @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `fᶜ`. Calculate 𝑝ᵢfᶜ in p-space
+                transform!(buff, ft, buff2; direction=:backward, normalise=true) # transform 𝑝ᵢfᶜ to x-space
+                if symmetrize_pA
+                    @. f′ᶜ -= A[c, i] * buff # subtract 𝐴ᶜⁱ𝑝ᵢfᶜ
+                    @. buff2 = A[c, i] * fᶜ # compute 𝐴ᶜⁱfᶜ
+                    transform!(buff, ft, buff2; direction=:forward) # transform 𝐴ᶜⁱfᶜ to p-space
+                    @. buff *= ∇[i] # compute 𝑝ᵢ𝐴ᶜⁱfᶜ in p-space
+                    transform!(buff2, ft, buff; direction=:backward, normalise=true) # transform 𝑝ᵢ𝐴ᶜⁱfᶜ to x-space
+                    @. f′ᶜ -= buff2 # subtract 𝑝ᵢ𝐴ᶜⁱfᶜ from the final result
                 else
-                    @. f′ᶜ += 2A[c, i] * buff * im
+                    @. f′ᶜ -= 2A[c, i] * buff # if 𝑓 is real, 𝐴ᵢ𝜕ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f′` is complex anyway, so we don't bother
                 end
             end
         end
     end
-    return
+    return f′
 end
 
 """
@@ -526,7 +531,7 @@ Act with `xh` on a `StateVector`, producing a new `StateVector`.
 Note that components of `f_in` are D-dimensional tensors, while `xh` uses the flattened approach. Therefore, we use `vec`-reshaping on `f_in`.
 """
 function (xh::XSpaceHamiltonian{R, T})(f_in::StateVector{S, D}) where {R, T, D, S}
-    (;nc, basis, U, A, ∇, ∇², ft) = xh
+    (;nc, basis, U, A, ∇, ∇², ft, symmetrize_pA) = xh
     
     f_in_isreal = S <: Real
     f_out_isreal = f_in_isreal && T <: Real
@@ -546,7 +551,7 @@ function (xh::XSpaceHamiltonian{R, T})(f_in::StateVector{S, D}) where {R, T, D, 
             transform!(buff, ft, f_in[c]; direction=:forward)
         end
 
-        # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3`. We use it below for calculating 2i𝛿∑ᵢ𝐴ᵢ∇ᵢ𝑓
+        # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3` –– will be needed below
         𝐴_present = row_has_something(A, c)
         𝐴_present && copy!(buff3, buff)
 
@@ -561,23 +566,28 @@ function (xh::XSpaceHamiltonian{R, T})(f_in::StateVector{S, D}) where {R, T, D, 
         end
         # --- 
 
-        # appply `U`: diagonal elements U[c, c] also include 𝐴², i𝛿∇𝐴 and decay
+        # apply U: diagonal elements also include 𝐴², Γ, and i𝛿∇𝐴 if `!symmetrize_pA`
         for b in 1:nc
             if !iszero(U[c, b])
                 vec(f_out[c]) .+= U[c, b] .* vec(f_in[b])
             end
         end
         
-        # add 2i𝛿∑ᵢ𝐴ᵢ∇ᵢ𝑓 (sum over projections)
+        # if `symmetrize_pA`, then add (-𝐩𝐀 - 𝐀𝐩)𝑓 = i𝛿∑ᵢ(𝜕ᵢ𝐴ᵢ + 𝐴ᵢ𝜕ᵢ)𝑓; otherwise, add (-2𝐀𝐩)𝑓 as 2i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ𝑓 (sum over projections)
         for i in 1:D
             if !iszero(A[c, i])
                 # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
                 @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `f_in[c]`
                 transform!(buff, ft, buff2; direction=:backward, normalise=true)
-                if basis == :cis
-                    vec(f_out[c]) .-= 2 .* A[c, i] .* buff # if 𝑓 is real, 𝐴ᵢ∇ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f_out` is complex anyway, so we don't bother
+                if symmetrize_pA
+                    vec(f_out[c]) .-= A[c, i] .* buff
+                    buff2 .= A[c, i] .* vec(f_in[c])
+                    transform!(buff, ft, buff2; direction=:forward)
+                    @. buff *= ∇[i]
+                    transform!(buff2, ft, buff; direction=:backward, normalise=true)
+                    vec(f_out[c]) .-= buff2
                 else
-                    vec(f_out[c]) .+= 2 .* A[c, i] .* buff .* im
+                    vec(f_out[c]) .-= 2 .* A[c, i] .* buff # if 𝑓 is real, 𝐴ᵢ𝜕ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f′` is complex anyway, so we don't bother
                 end
             end
         end

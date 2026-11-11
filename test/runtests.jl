@@ -1,12 +1,14 @@
 using QuantumHamiltonians
 using Test
+using LinearAlgebra: normalize, dot
+using Random
 
 # ~ 1 min
 @testset "1D tests" begin
     include("1D.jl")
 end
 
-# ~ 35 s
+# ~ 1 min
 @testset "2D tests" begin
     include("2D.jl")
 end
