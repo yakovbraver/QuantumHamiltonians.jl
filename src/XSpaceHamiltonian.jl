@@ -16,10 +16,8 @@ mutable struct XSpaceHamiltonian{R, T, S, FourierTransformer} <: LM.LinearMap{T}
     nc::Int # number of components
     basis::Symbol
     ishermitian::Bool # the map is nonhermitian if decays Γ are present
-    𝑈::Matrix{<:Union{Function, Nothing}} # nc-component matrix containing coordinate-space potentials and couplings. Return type must be `R` or `Complex{R}`
-    U::Matrix{Vector{T}} # diagonal elements will contain 𝑈ᵃᵃ + (𝐀ᵃ)² - iΓᵃ/2 (plus i𝛿∇𝐀ᵃ if `!symmetrize_pA`); hence `U` is complex if 𝐴 or Γ is present
-    𝐴::Matrix{<:Union{Function, Nothing}} # `𝐴[c, i]` is `i`th projection of the `c`th component of the vector potential
-    A::Matrix{Vector{R}} # `A[c, i]` is `i`th projection of the `c`th component of the vector potential
+    U::Matrix{Vector{T}} # # nc-component matrix containing sampled and flattened coordinate-space potentials and couplings. Diagonal elements will contain 𝑈ᵃᵃ + (𝐀ᵃ)² - iΓᵃ/2 (plus i𝛿∇𝐀ᵃ if `!symmetrize_pA`); hence `U` is complex if 𝐴 or Γ is present
+    A::Matrix{Vector{R}} # `A[c, i]` is `i`th projection of the `c`th component of the sampled vector potential
     symmetrize_pA::Bool # if true, the kinetic term (𝐩 - 𝐀)² will be applied as (𝐩² - 𝐩𝐀 - 𝐀𝐩 + 𝐀²); if false, then as (𝐩² - (𝐩𝐀) - 2𝐀𝐩 + 𝐀²)
     ∇::Vector{Vector{R}} # `∇[i]` is the p-space flattened vector of 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise. Real in both cases.
     ∇²::Vector{R} # p-space flattened vector of 𝑝² = -𝛿²Δ
@@ -145,12 +143,12 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
     ε = S[] # eigenvalues, can be complex for nonhermitian Hamiltonian, hence additional type `S`
     V = T[;;] # eigenvectors matrix
 
-    return XSpaceHamiltonian(xlims, L, B, δ, nc, basis, ishermitian, 𝑈, U, 𝐴, A, symmetrize_pA, ∇, ∇², Γ, ε, V, ft, buff_real, buff_complex, buff_complex2, buff_complex3, (nc*B, nc*B))
+    return XSpaceHamiltonian(xlims, L, B, δ, nc, basis, ishermitian, U, A, symmetrize_pA, ∇, ∇², Γ, ε, V, ft, buff_real, buff_complex, buff_complex2, buff_complex3, (nc*B, nc*B))
 end
 
 "Update `f′` by acting with `xh` on `f`. `f` must be a flattened x-space vector."
 function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}) where {R, T, S}
-    (;nc, B, basis, U, A, 𝐴, ∇, ∇², ft, symmetrize_pA) = xh
+    (;nc, B, basis, U, A, ∇, ∇², ft, symmetrize_pA) = xh
     f_isreal = S <: Real
     f′_isreal = eltype(f′) <: Real
 
@@ -171,8 +169,8 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
         end
         
         # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3` –– will be needed below
-        𝐴_ispresent = row_has_something(𝐴, c)
-        𝐴_ispresent && copy!(buff3, buff)
+        A_ispresent = row_has_something(A, c)
+        A_ispresent && copy!(buff3, buff)
 
         @. buff *= ∇²
 
@@ -188,16 +186,16 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
         # apply U: diagonal elements also include 𝐴², Γ, and i𝛿∇𝐴 if `!symmetrize_pA`
         for b in 1:nc
             fᵇ = @view f[(b-1)B+1:b*B]
-            if !iszero(U[c, b])
+            if !isempty(U[c, b])
                 @. f′ᶜ += U[c, b] * fᵇ
             end
         end
 
         # if `symmetrize_pA`, then we add (-𝐩𝐀 - 𝐀𝐩)𝑓 = i𝛿∑ᵢ(𝜕ᵢ𝐴ᵢ + 𝐴ᵢ𝜕ᵢ)𝑓; otherwise, add (-2𝐀𝐩)𝑓 as 2i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ𝑓 (sum over projections)
-        if 𝐴_ispresent
+        if A_ispresent
             # first, we add the term i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ which is needed in both cases; nonsymmetric case also has a factor of 2
             for i in axes(A, 2)
-                if !iszero(A[c, i])
+                if !isempty(A[c, i])
                     # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
                     @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `fᶜ`. Calculate 𝑝ᵢfᶜ in p-space
                     transform!(buff, ft, buff2; direction=:backward, normalise=true) # transform 𝑝ᵢfᶜ to x-space
@@ -212,7 +210,7 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
             if symmetrize_pA
                 firsttime = true # for the first nonzero `A[c, i]`, assign into `buff3`; for subsequent ones, accumulate
                 for i in axes(A, 2)
-                    if !iszero(A[c, i]) # the enclosing `if 𝐴_ispresent` ensures that this condition will be true at least once
+                    if !isempty(A[c, i]) # the enclosing `if A_ispresent` ensures that this condition will be true at least once
                         @. buff = A[c, i] * fᶜ # compute 𝐴ᶜⁱfᶜ
                         transform!(buff2, ft, buff; direction=:forward) # transform 𝐴ᶜⁱfᶜ to p-space
                         if firsttime
@@ -232,12 +230,12 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
 end
 
 """
-Check if `r`th row of a matrix `A` contains at least one element that is not `nothing`.
-Same as `any(A[r, :] .!== nothing)` but doesn't allocate.
+For `A` a matrix of vectors, check if `r`th row contains at least one non-empty vector.
+Same as `any(.!isempty(A[r, :]))` but doesn't allocate (the `any` approach allocates even for a view).
 """
-function row_has_something(A::AbstractMatrix, r::Integer)
+function row_has_something(A::AbstractMatrix{<:AbstractVector}, r::Integer)
     @inbounds for i in axes(A, 2)
-        !isnothing(A[r, i]) && return true
+        !isempty(A[r, i]) && return true
     end
     false
 end
@@ -568,8 +566,8 @@ function (xh::XSpaceHamiltonian{R, T})(f_in::StateVector{S, D}) where {R, T, D, 
         end
 
         # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3` –– will be needed below
-        𝐴_present = row_has_something(A, c)
-        𝐴_present && copy!(buff3, buff)
+        A_present = row_has_something(A, c)
+        A_present && copy!(buff3, buff)
 
         @. buff *= ∇²
 

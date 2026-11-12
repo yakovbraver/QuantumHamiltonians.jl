@@ -63,7 +63,7 @@ function JacobiPreconditioner(xh::XSpaceHamiltonian{R, T}; shift::R=zero(R), typ
     end
     # calculate the shifts for each component
     shifts = map(1:nc) do c 
-        if isempty(U[c, c]) && !row_has_something(xh.𝐴, c) # no U or A, so must shift
+        if isempty(U[c, c]) && !row_has_something(xh.A, c) # no U or A, so must shift
             iszero(shift) ? √eps(R) * scale : R(shift) # is `shift` is not provided (or is zero), then use scale × ϵ
         else
             zero(R)
