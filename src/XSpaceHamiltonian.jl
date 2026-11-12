@@ -193,7 +193,7 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
             for i in axes(A, 2)
                 if !isempty(A[c, i])
                     # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
-                    @. buff2 = ∇[i] * buff # `buff3` contains p-space `fᶜ`. Calculate 𝑝ᵢfᶜ in p-space
+                    @. buff2 = ∇[i] * buff # `buff` contains p-space `fᶜ`. Calculate 𝑝ᵢfᶜ in p-space
                     transform!(buff3, ft, buff2; direction=:backward, normalise=true) # transform 𝑝ᵢfᶜ to x-space
                     if symmetrize_pA
                         @. f′ᶜ -= A[c, i] * buff3 # subtract 𝐴ᶜⁱ𝑝ᵢfᶜ
@@ -204,16 +204,16 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
             end
             # next, in the symmetric case we add the term i𝛿∑ᵢ𝜕ᵢ(𝐴ᵢ𝑓). We no longer need the p-space 𝑓, so `buff` can be used to accumulate the sum ∑ᵢ𝜕ᵢ(𝐴ᵢ𝑓) in p-space; then we can perform a single transform back
             if symmetrize_pA
-                firsttime = true # for the first nonzero `A[c, i]`, assign into `buff3`; for subsequent ones, accumulate
+                firsttime = true # for the first nonzero `A[c, i]`, assign into `buff`; for subsequent ones, accumulate
                 for i in axes(A, 2)
-                    if !isempty(A[c, i]) # the enclosing `if A_ispresent` ensures that this condition will be true at least once
-                        @. buff3 = A[c, i] * fᶜ # compute 𝐴ᶜⁱfᶜ
-                        transform!(buff2, ft, buff3; direction=:forward) # transform 𝐴ᶜⁱfᶜ to p-space
+                    if !isempty(A[c, i]) # the enclosing `if row_has_something(A, c)` ensures that this condition will be true at least once
+                        @. buff2 = A[c, i] * fᶜ # compute 𝐴ᶜⁱfᶜ
+                        transform!(buff3, ft, buff2; direction=:forward) # transform 𝐴ᶜⁱfᶜ to p-space
                         if firsttime
-                            @. buff = buff2 * ∇[i] # compute 𝑝ᵢ𝐴ᶜⁱfᶜ in p-space and assign in `buff3`
+                            @. buff = ∇[i] * buff3 # compute 𝑝ᵢ𝐴ᶜⁱfᶜ in p-space and assign in `buff`
                             firsttime = false
                         else
-                            @. buff += buff2 * ∇[i] # compute 𝑝ᵢ𝐴ᶜⁱfᶜ in p-space and accumulate in `buff3`
+                            @. buff += ∇[i] * buff3 # compute 𝑝ᵢ𝐴ᶜⁱfᶜ in p-space and accumulate in `buff`
                         end
                     end
                 end
@@ -553,7 +553,7 @@ function (xh::XSpaceHamiltonian{R, T})(f_in::StateVector{S, D}) where {R, T, D, 
 
     # apply Hamiltonian to each component
     for c in 1:nc
-        # --- apply Laplacian -𝛿²Δ
+        ### apply Laplacian -𝛿²Δ ###
         if f_in_isreal && basis == :cis
             copyto!(buff2, f_in[c]) # `ft` can only act on complex vectors, so need to copy real `f_in[c]` into a complex buffer
             transform!(buff, ft, buff2; direction=:forward)
@@ -561,48 +561,59 @@ function (xh::XSpaceHamiltonian{R, T})(f_in::StateVector{S, D}) where {R, T, D, 
             transform!(buff, ft, f_in[c]; direction=:forward)
         end
 
-        # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3` –– will be needed below
-        A_present = row_has_something(A, c)
-        A_present && copy!(buff3, buff)
-
-        @. buff *= ∇²
+        @. buff2 = ∇² * buff # saving into a different buffer because `buff` stores p-space 𝑓 that will be needed again if 𝐴 is present
 
         if f_out_isreal && basis == :cis
             # cannot write directly to `f_out[c]` because it is real; write into a complex buffer `buff2` instead
-            transform!(buff2, ft, buff; direction=:backward)
-            vec(f_out[c]) .= real.(buff2)
+            transform!(buff3, ft, buff2; direction=:backward)
+            vec(f_out[c]) .= real.(buff3)
         else
-            transform!(f_out[c], ft, buff; direction=:backward, normalise=true)
+            transform!(f_out[c], ft, buff2; direction=:backward, normalise=true)
         end
-        # --- 
+        ###
 
         # apply U: diagonal elements also include 𝐴², Γ, and i𝛿∇𝐴 if `!symmetrize_pA`
         for b in 1:nc
-            if !iszero(U[c, b])
+            if !isempty(U[c, b])
                 vec(f_out[c]) .+= U[c, b] .* vec(f_in[b])
             end
         end
         
-        # if `symmetrize_pA`, then add (-𝐩𝐀 - 𝐀𝐩)𝑓 = i𝛿∑ᵢ(𝜕ᵢ𝐴ᵢ + 𝐴ᵢ𝜕ᵢ)𝑓; otherwise, add (-2𝐀𝐩)𝑓 as 2i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ𝑓 (sum over projections)
-        for i in 1:D
-            if !iszero(A[c, i])
-                # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
-                @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `f_in[c]`
-                transform!(buff, ft, buff2; direction=:backward, normalise=true)
-                if symmetrize_pA
-                    vec(f_out[c]) .-= A[c, i] .* buff
-                    buff2 .= A[c, i] .* vec(f_in[c])
-                    transform!(buff, ft, buff2; direction=:forward)
-                    @. buff *= ∇[i]
-                    transform!(buff2, ft, buff; direction=:backward, normalise=true)
-                    vec(f_out[c]) .-= buff2
-                else
-                    vec(f_out[c]) .-= 2 .* A[c, i] .* buff # if 𝑓 is real, 𝐴ᵢ𝜕ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f′` is complex anyway, so we don't bother
+        # if `symmetrize_pA`, then we add (-𝐩𝐀 - 𝐀𝐩)𝑓 = i𝛿∑ᵢ(𝜕ᵢ𝐴ᵢ + 𝐴ᵢ𝜕ᵢ)𝑓; otherwise, add (-2𝐀𝐩)𝑓 as 2i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ𝑓 (sum over projections)
+        if row_has_something(A, c) # if at least one projection of 𝐴 is present (for `c`th component)
+            # first, we add the term i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ which is needed in both cases; nonsymmetric case also has a factor of 2
+            for i in 1:D
+                if !isempty(A[c, i])
+                    # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
+                    @. buff2 = ∇[i] * buff # `buff3` contains p-space `f_in[c]`
+                    transform!(buff3, ft, buff2; direction=:backward, normalise=true)
+                    if symmetrize_pA
+                        vec(f_out[c]) .-= A[c, i] .* buff3
+                    else
+                        vec(f_out[c]) .-= 2 .* A[c, i] .* buff3 # if 𝑓 is real, 𝐴ᵢ𝜕ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f′` is complex anyway, so we don't bother
+                    end
                 end
+            end
+            # next, in the symmetric case we add the term i𝛿∑ᵢ𝜕ᵢ(𝐴ᵢ𝑓). We no longer need the p-space 𝑓, so `buff` can be used to accumulate the sum ∑ᵢ𝜕ᵢ(𝐴ᵢ𝑓) in p-space; then we can perform a single transform back
+            if symmetrize_pA
+                firsttime = true # for the first nonzero `A[c, i]`, assign into `buff`; for subsequent ones, accumulate
+                for i in 1:D
+                    if !isempty(A[c, i]) # the enclosing `if row_has_something(A, c)` ensures that this condition will be true at least once
+                        buff2 .= A[c, i] .* vec(f_in[c])
+                        transform!(buff3, ft, buff2; direction=:forward)
+                        if firsttime
+                            @. buff = ∇[i] * buff3
+                            firsttime = false
+                        else
+                            @. buff += ∇[i] * buff3
+                        end
+                    end
+                end
+                transform!(buff2, ft, buff; direction=:backward, normalise=true)
+                vec(f_out[c]) .-= buff2
             end
         end
     end
-    
     return f_out
 end
 
