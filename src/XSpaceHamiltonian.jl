@@ -192,7 +192,7 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
                 @. f′ᶜ += U[c, b] * fᵇ
             end
         end
-        ∂
+
         # if `symmetrize_pA`, then we add (-𝐩𝐀 - 𝐀𝐩)𝑓 = i𝛿∑ᵢ(𝜕ᵢ𝐴ᵢ + 𝐴ᵢ𝜕ᵢ)𝑓; otherwise, add (-2𝐀𝐩)𝑓 as 2i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ𝑓 (sum over projections)
         if 𝐴_ispresent
             # first, we add the term i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ which is needed in both cases; nonsymmetric case also has a factor of 2
