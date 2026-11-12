@@ -171,8 +171,8 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
         end
         
         # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3` –– will be needed below
-        𝐴_present = row_has_something(A, c)
-        𝐴_present && copy!(buff3, buff)
+        𝐴_ispresent = row_has_something(A, c)
+        𝐴_ispresent && copy!(buff3, buff)
 
         @. buff *= ∇²
 
@@ -192,23 +192,39 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
                 @. f′ᶜ += U[c, b] * fᵇ
             end
         end
-        
-        # if `symmetrize_pA`, then add (-𝐩𝐀 - 𝐀𝐩)𝑓 = i𝛿∑ᵢ(𝜕ᵢ𝐴ᵢ + 𝐴ᵢ𝜕ᵢ)𝑓; otherwise, add (-2𝐀𝐩)𝑓 as 2i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ𝑓 (sum over projections)
-        for i in axes(A, 2)
-            if !iszero(A[c, i])
-                # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
-                @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `fᶜ`. Calculate 𝑝ᵢfᶜ in p-space
-                transform!(buff, ft, buff2; direction=:backward, normalise=true) # transform 𝑝ᵢfᶜ to x-space
-                if symmetrize_pA
-                    @. f′ᶜ -= A[c, i] * buff # subtract 𝐴ᶜⁱ𝑝ᵢfᶜ
-                    @. buff2 = A[c, i] * fᶜ # compute 𝐴ᶜⁱfᶜ
-                    transform!(buff, ft, buff2; direction=:forward) # transform 𝐴ᶜⁱfᶜ to p-space
-                    @. buff *= ∇[i] # compute 𝑝ᵢ𝐴ᶜⁱfᶜ in p-space
-                    transform!(buff2, ft, buff; direction=:backward, normalise=true) # transform 𝑝ᵢ𝐴ᶜⁱfᶜ to x-space
-                    @. f′ᶜ -= buff2 # subtract 𝑝ᵢ𝐴ᶜⁱfᶜ from the final result
-                else
-                    @. f′ᶜ -= 2A[c, i] * buff # if 𝑓 is real, 𝐴ᵢ𝜕ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f′` is complex anyway, so we don't bother
+        ∂
+        # if `symmetrize_pA`, then we add (-𝐩𝐀 - 𝐀𝐩)𝑓 = i𝛿∑ᵢ(𝜕ᵢ𝐴ᵢ + 𝐴ᵢ𝜕ᵢ)𝑓; otherwise, add (-2𝐀𝐩)𝑓 as 2i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ𝑓 (sum over projections)
+        if 𝐴_ispresent
+            # first, we add the term i𝛿∑ᵢ𝐴ᵢ𝜕ᵢ which is needed in both cases; nonsymmetric case also has a factor of 2
+            for i in axes(A, 2)
+                if !iszero(A[c, i])
+                    # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
+                    @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `fᶜ`. Calculate 𝑝ᵢfᶜ in p-space
+                    transform!(buff, ft, buff2; direction=:backward, normalise=true) # transform 𝑝ᵢfᶜ to x-space
+                    if symmetrize_pA
+                        @. f′ᶜ -= A[c, i] * buff # subtract 𝐴ᶜⁱ𝑝ᵢfᶜ
+                    else
+                        @. f′ᶜ -= 2A[c, i] * buff # if 𝑓 is real, 𝐴ᵢ𝜕ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f′` is complex anyway, so we don't bother
+                    end
                 end
+            end
+            # next, in the symmetric case we add the term i𝛿∑ᵢ𝜕ᵢ(𝐴ᵢ𝑓). We no longer need the p-space 𝑓, so `buff3` can be used to accumulate the sum ∑ᵢ𝜕ᵢ(𝐴ᵢ𝑓) in p-space; then we can perform a single transform back
+            if symmetrize_pA
+                firsttime = true # for the first nonzero `A[c, i]`, assign into `buff3`; for subsequent ones, accumulate
+                for i in axes(A, 2)
+                    if !iszero(A[c, i]) # the enclosing `if 𝐴_ispresent` ensures that this condition will be true at least once
+                        @. buff = A[c, i] * fᶜ # compute 𝐴ᶜⁱfᶜ
+                        transform!(buff2, ft, buff; direction=:forward) # transform 𝐴ᶜⁱfᶜ to p-space
+                        if firsttime
+                            @. buff3 = buff2 * ∇[i] # compute 𝑝ᵢ𝐴ᶜⁱfᶜ in p-space and assign in `buff3`
+                            firsttime = false
+                        else
+                            @. buff3 += buff2 * ∇[i] # compute 𝑝ᵢ𝐴ᶜⁱfᶜ in p-space and accumulate in `buff3`
+                        end
+                    end
+                end
+                transform!(buff, ft, buff3; direction=:backward, normalise=true) # transform 𝑝ᵢ𝐴ᶜⁱfᶜ to x-space
+                @. f′ᶜ -= buff # subtract 𝑝ᵢ𝐴ᶜⁱfᶜ from the final result
             end
         end
     end
@@ -371,7 +387,7 @@ function make_wavefunction(xh::XSpaceHamiltonian{R}, ψ_flat::AbstractVector{T};
     return ntuple(i -> ft.xs[:, i], size(ft.xs, 2))..., ψ
 end
 
-# TODO these four methods work both with PSpaceHamiltonian and XSpaceHamiltonian, move to furute QuantumHamiltonian.jl
+# TODO these four methods work both with PSpaceHamiltonian and XSpaceHamiltonian, move to future QuantumHamiltonian.jl
 
 """
 Calculate inner product ∫𝑣𝑤d𝑥 (but without d𝑥) between `v` and `w` representing single-component x-space vectors.
