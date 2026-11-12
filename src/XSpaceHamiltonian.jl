@@ -150,7 +150,7 @@ end
 
 "Update `f′` by acting with `xh` on `f`. `f` must be a flattened x-space vector."
 function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}) where {R, T, S}
-    (;nc, B, basis, U, A, ∇, ∇², ft, symmetrize_pA) = xh
+    (;nc, B, basis, U, A, 𝐴, ∇, ∇², ft, symmetrize_pA) = xh
     f_isreal = S <: Real
     f′_isreal = eltype(f′) <: Real
 
@@ -171,7 +171,7 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
         end
         
         # if at least one projection of 𝐴 is present (for `c`th component), then save p-space function into `buff3` –– will be needed below
-        𝐴_ispresent = row_has_something(A, c)
+        𝐴_ispresent = row_has_something(𝐴, c)
         𝐴_ispresent && copy!(buff3, buff)
 
         @. buff *= ∇²
@@ -233,7 +233,7 @@ end
 
 """
 Check if `r`th row of a matrix `A` contains at least one element that is not `nothing`.
-Same as `any(𝐴[r, :] .!== nothing)` but doesn't allocate.
+Same as `any(A[r, :] .!== nothing)` but doesn't allocate.
 """
 function row_has_something(A::AbstractMatrix, r::Integer)
     @inbounds for i in axes(A, 2)
