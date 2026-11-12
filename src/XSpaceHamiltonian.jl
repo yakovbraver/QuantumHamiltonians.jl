@@ -162,11 +162,11 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
 
     # apply Hamiltonian to each component
     for c in 1:nc
-        fᶜ = reshape(@view(f[(c-1)B+1:c*B]), size(ft.plan_forward))
-        f′ᶜ = reshape(@view(f′[(c-1)B+1:c*B]), size(ft.plan_forward))
+        fᶜ = @view f[(c-1)B+1:c*B]
+        f′ᶜ = @view f′[(c-1)B+1:c*B]
         ### apply Laplacian -𝛿²Δ ###
         if f_isreal && basis == :cis
-            copy!(buff2, fᶜ) # `ft` can only act on complex vectors, so need to copy real `fᶜ` into a complex buffer
+            copyto!(buff2, fᶜ) # `ft` can only act on complex vectors, so need to copy real `fᶜ` into a complex buffer
             transform!(buff, ft, buff2; direction=:forward)
         else
             transform!(buff, ft, fᶜ; direction=:forward)
@@ -176,12 +176,12 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
         𝐴_present = row_has_something(A, c)
         𝐴_present && copy!(buff3, buff)
 
-        @. buff *= ∇²
+        _mul!(buff, buff, ∇²)
 
         if f′_isreal && basis == :cis
             # cannot write directly to `f′ᶜ` because it is real; write into a complex buffer `buff2` instead
             transform!(buff2, ft, buff; direction=:backward)
-            @. f′ᶜ = real(buff2)
+            _assignreal!(f′ᶜ, buff2)
         else
             transform!(f′ᶜ, ft, buff; direction=:backward, normalise=true)
         end
@@ -189,9 +189,9 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
 
         # apply U: diagonal elements also include 𝐴², Γ, and i𝛿∇𝐴 if `!symmetrize_pA`
         for b in 1:nc
-            fᵇ = reshape(@view(f[(b-1)B+1:b*B]), size(ft.plan_forward))
+            fᵇ = @view f[(b-1)B+1:b*B]
             if !iszero(U[c, b])
-                @. f′ᶜ += U[c, b] * fᵇ
+                _addmul!(f′ᶜ, f′ᶜ, U[c, b], fᵇ)
             end
         end
         
@@ -199,17 +199,17 @@ function LM._unsafe_mul!(f′, xh::XSpaceHamiltonian{R, T}, f::AbstractVector{S}
         for i in axes(A, 2)
             if !iszero(A[c, i])
                 # `∇[i]` contains 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise
-                @. buff2 = ∇[i] * buff3 # `buff3` contains p-space `fᶜ`. Calculate 𝑝ᵢfᶜ in p-space
+                _mul!(buff2, ∇[i], buff3) # `buff3` contains p-space `fᶜ`. Calculate 𝑝ᵢfᶜ in p-space
                 transform!(buff, ft, buff2; direction=:backward, normalise=true) # transform 𝑝ᵢfᶜ to x-space
                 if symmetrize_pA
-                    @. f′ᶜ -= A[c, i] * buff # subtract 𝐴ᶜⁱ𝑝ᵢfᶜ
-                    @. buff2 = A[c, i] * fᶜ # compute 𝐴ᶜⁱfᶜ
+                    _subtrmul!(f′ᶜ, f′ᶜ, A[c, i], buff) # subtract 𝐴ᶜⁱ𝑝ᵢfᶜ
+                    _mul!(buff2, A[c, i], fᶜ) # compute 𝐴ᶜⁱfᶜ
                     transform!(buff, ft, buff2; direction=:forward) # transform 𝐴ᶜⁱfᶜ to p-space
-                    @. buff *= ∇[i] # compute 𝑝ᵢ𝐴ᶜⁱfᶜ in p-space
+                    _mul!(buff, buff, ∇[i]) # compute 𝑝ᵢ𝐴ᶜⁱfᶜ in p-space
                     transform!(buff2, ft, buff; direction=:backward, normalise=true) # transform 𝑝ᵢ𝐴ᶜⁱfᶜ to x-space
-                    @. f′ᶜ -= buff2 # subtract 𝑝ᵢ𝐴ᶜⁱfᶜ from the final result
+                    _subtr!(f′ᶜ, f′ᶜ, buff2) # subtract 𝑝ᵢ𝐴ᶜⁱfᶜ from the final result
                 else
-                    @. f′ᶜ -= 2A[c, i] * buff # if 𝑓 is real, 𝐴ᵢ𝜕ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f′` is complex anyway, so we don't bother
+                    _subtrmul!(f′ᶜ, f′ᶜ, A[c, i], buff, 2) # if 𝑓 is real, 𝐴ᵢ𝜕ᵢ𝑓 is also, so we could play around with dropping real/imaginary part after FFT. But if 𝐴 is present, then `f′` is complex anyway, so we don't bother
                 end
             end
         end
@@ -226,6 +226,59 @@ function row_has_something(A::AbstractMatrix, r::Integer)
         !isnothing(A[r, i]) && return true
     end
     false
+end
+
+# Helper methods that allow element wise operators for diferent shapes of inputs, provided the total number of elements are the same.
+# The main reason is that we need e.g. `@. a = a * c` where `a` stores the x-space function as a matrix, while `c` is a linearise x-space state.
+# Moreover, a direct for loop is faster for doing point-wise multiplication of matrices, reaching the speed obtained in the case of multiplying vectors with the same data.
+
+"@. a = b * c"
+function _mul!(a, b, c)
+    for i in eachindex(a)
+        a[i] = b[i] * c[i]
+    end
+end
+
+"@. a = b + c"
+function _add!(a, b, c)
+    for i in eachindex(a)
+        a[i] = b[i] + c[i]
+    end
+end
+
+"@. a = b - c"
+function _subtr!(a, b, c)
+    for i in eachindex(a)
+        a[i] = b[i] - c[i]
+    end
+end
+
+"@. a = b + c*d"
+function _addmul!(a, b, c, d)
+    for i in eachindex(a)
+        a[i] = b[i] + c[i]*d[i]
+    end
+end
+
+"@. a = b - c*d"
+function _subtrmul!(a, b, c, d)
+    for i in eachindex(a)
+        a[i] = b[i] - c[i]*d[i]
+    end
+end
+
+"`@. a = b - c*d*n` with `n` a number"
+function _subtrmul!(a, b, c, d, n::Number)
+    for i in eachindex(a)
+        a[i] = b[i] - c[i]*d[i]*n
+    end
+end
+
+"`@. a = real(b)`"
+function _assignreal!(a, b)
+    for i in eachindex(a)
+        a[i] = real(b[i])
+    end
 end
 
 """
