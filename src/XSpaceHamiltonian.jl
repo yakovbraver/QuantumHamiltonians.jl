@@ -18,7 +18,7 @@ mutable struct XSpaceHamiltonian{R, T, S, FourierTransformer} <: LM.LinearMap{T}
     ishermitian::Bool # the map is nonhermitian if decays Γ are present
     U::Matrix{Vector{T}} # # nc-component matrix containing sampled and flattened coordinate-space potentials and couplings. Diagonal elements will contain 𝑈ᵃᵃ + (𝐀ᵃ)² - iΓᵃ/2 (plus i𝛿∇𝐀ᵃ if `!symmetrize_pA`); hence `U` is complex if 𝐴 or Γ is present
     A::Matrix{Vector{R}} # `A[c, i]` is `i`th projection of the `c`th component of the sampled vector potential
-    symmetrize_pA::Bool # if true, the kinetic term (𝐩 - 𝐀)² will be applied as (𝐩² - 𝐩𝐀 - 𝐀𝐩 + 𝐀²); if false, then as (𝐩² - (𝐩𝐀) - 2𝐀𝐩 + 𝐀²)
+    symmetrize_pA::Bool  # if true, the kinetic term (𝐩 - 𝐀)² will be applied as (𝐩² - 𝐩𝐀 - 𝐀𝐩 + 𝐀²); if false, then as (𝐩² - (𝐩𝐀) - 2𝐀𝐩 + 𝐀²)
     ∇::Vector{Vector{R}} # `∇[i]` is the p-space flattened vector of 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise. Real in both cases.
     ∇²::Vector{R} # p-space flattened vector of 𝑝² = -𝛿²Δ
     Γ::Vector{R}  # decay rates
