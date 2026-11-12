@@ -1,0 +1,30 @@
+ symmetrize_pA=false
+M = 128
+julia> @time diagonalize!(xh; nev=5, verbose=true, maxdim=20)
+info = Converged: 5 of 5 eigenvalues in 1341 matrix-vector products
+  6.072778 seconds (10.89 k allocations: 47.800 MiB, 0.87% gc time)
+ -> Arrays with reshaping:  5.866921 seconds (2.72 k allocations: 47.414 MiB, 0.98% gc time)
+ -> Arrays w/o reshaping:  5.789273 seconds (2.69 k allocations: 47.419 MiB)
+
+T_max = 1e-1 |> Float
+dt = 1e-3 |> Float
+nsaves = 600
+@time sol = propagate(xh, [ψ_ofc], [g;;]; T_max, dt, nsaves, solver=QH.ODE_EXP.ETDRK4(;krylov=true, m=5))
+ 6.886360 seconds (19.77 k allocations: 682.899 MiB, 0.85% gc time)
+ -> Arrays with reshaping:  6.861637 seconds (2.95 k allocations: 682.129 MiB, 1.02% gc time)
+ -> Arrays w/o reshaping:  6.837538 seconds (2.95 k allocations: 690.129 MiB, 2.10% gc time)
+######################
+
+ symmetrize_pA=true
+ info = Converged: 5 of 5 eigenvalues in 1325 matrix-vector products
+  9.373550 seconds (21.35 k allocations: 48.276 MiB)
+ -> Arrays with reshaping:  9.226892 seconds (2.83 k allocations: 47.431 MiB)
+ -> Arrays w/o reshaping:  9.145669 seconds (2.86 k allocations: 47.434 MiB, 0.09% gc time)
+
+T_max = 1e-1 |> Float
+dt = 1e-3 |> Float
+nsaves = 600
+@time sol = propagate(xh, [ψ_ofc], [g;;]; T_max, dt, nsaves, solver=QH.ODE_EXP.ETDRK4(;krylov=true, m=5))
+13.750094 seconds (42.20 k allocations: 675.925 MiB, 1.01% gc time)
+ -> Arrays with reshaping:  13.450860 seconds (2.95 k allocations: 690.129 MiB, 1.05% gc time)
+ -> Arrays w/o reshaping:  13.175941 seconds (2.95 k allocations: 690.129 MiB, 0.63% gc time)

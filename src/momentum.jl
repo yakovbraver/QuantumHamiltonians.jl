@@ -121,7 +121,7 @@ end
 
 """
 Return the momentum-squared tensor (𝛿𝑝)² = -𝛿²Δ in `D = length(L)` dimensions. If `basis=:cis`, then return (𝛿𝑝 + 𝑞)² with quasimomenta provided in `qs`.
-A flattened vector is returned.
+A D-dimensional array is returned.
 """
 function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zeros(R, length(L))) where R <: AbstractFloat
     D = length(L)
@@ -133,7 +133,7 @@ function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zer
             return [(cx*jˣ + qs[1])^2 for jˣ in M_range]
         elseif D == 2
             cy = 2PI*δ/L[2]
-            return [((cx*jˣ + qs[1])^2 + (cy*jʸ + qs[2])^2) for jʸ in M_range for jˣ in M_range]
+            return [((cx*jˣ + qs[1])^2 + (cy*jʸ + qs[2])^2) for jˣ in M_range, jʸ in M_range]
         # else # arbitrary `D`
         #     Ms = ntuple(Returns(M_range), D)
         #     L_r = reverse(L) # because `J` will be be enumerated in "reverse" order compared to that used by us (first dimesnion is 𝑥, then 𝑦, ...)
@@ -147,7 +147,7 @@ function make_p²(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, qs=zer
             return [(bx*jˣ)^2 for jˣ in j₁:M]
         elseif D == 2
             by = PI*δ/L[2]
-            return [(bx*jˣ)^2 + (by*jʸ)^2 for jʸ in j₁:M for jˣ in j₁:M]
+            return [(bx*jˣ)^2 + (by*jʸ)^2 for jˣ in j₁:M, jʸ in j₁:M]
         end
     end
     error("make_p² not implemented for $D dimensions and $basis basis.")
@@ -155,11 +155,11 @@ end
 
 ################ Fourier (p-space) images ################
 
-# The following methods create flattened vectors representing Fourier images of momentum operators, such as ℱ[𝑝²(𝑥, 𝑦)](𝑗ʸ𝑗ˣ). These are used in the x-space approach.
+# The following methods create D-dimensional arrays representing Fourier images of momentum operators, such as ℱ[𝑝²(𝑥, 𝑦)](𝑗ˣ, 𝑗ʸ). These are used in the x-space approach.
 
 """
 Return the Fourier image of 𝑝ⁱ = -i𝛿𝜕ⁱ if `basis=:cis` and 𝛿𝜕ⁱ otherwise. The output is real in both cases.
-A flattened vector is returned.
+A D-dimensional array is returned.
 """
 function make_pⁱ(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol, i::Integer) where R <: AbstractFloat
     if i == 1
@@ -172,7 +172,7 @@ end
 
 """
 Return the Fourier image of 𝑝ˣ = -i𝛿𝜕ˣ if `basis=:cis` and 𝛿𝜕ˣ otherwise. The output is real in both cases.
-A flattened vector is returned.
+A D-dimensional array is returned.
 """
 function make_pˣ(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
     D = length(L)
@@ -183,7 +183,7 @@ function make_pˣ(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where 
         if D == 1
             return [cx * jˣ for jˣ in M_range]
         elseif D == 2
-            return [cx * jˣ for jʸ in M_range for jˣ in M_range]
+            return [cx * jˣ for jˣ in M_range, jʸ in M_range]
         end
     else # basis == :sin || basis == :cos # TODO reconsider because inverse transform for sin is cos and for cos is sin
         j₁ = basis == :sin ? 1 : 0
@@ -191,7 +191,7 @@ function make_pˣ(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where 
         if D == 1
             return [bx*jˣ for jˣ in j₁:M] 
         elseif D == 2
-            return [bx*jˣ for jʸ in j₁:M for jˣ in j₁:M]
+            return [bx*jˣ for jˣ in j₁:M, jʸ in j₁:M]
         end
     end
     error("make_pˣ not implemented for $D dimensions and $basis basis.")
@@ -199,7 +199,7 @@ end
 
 """
 Return the Fourier image of 𝑝ʸ = -i𝛿𝜕ʸ if `basis=:cis` and 𝛿𝜕ʸ otherwise. The output is real in both cases.
-A flattened vector is returned.
+A D-dimensional array is returned.
 """
 function make_pʸ(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where R <: AbstractFloat
     D = length(L)
@@ -207,12 +207,12 @@ function make_pʸ(L::AbstractVector{R}, M::Integer, δ::R, basis::Symbol) where 
     if basis == :cis
         M_range = [0:M-1; -M:-1]
         cy = 2PI*δ/L[2]
-        return [cy * jʸ for jʸ in M_range for jˣ in M_range]
+        return [cy * jʸ for jˣ in M_range, jʸ in M_range]
     else # basis == :sin || basis == :cos # TODO reconsider because inverse transform for sin is cos and for cos is sin
         j₁ = basis == :sin ? 1 : 0
         by = (-1)^j₁ * PI*δ/L[2] # different name than `cx` above to prevent Core.Box. The prefactor is because we need a minus in the sin case.
         if D == 2
-            return [by*jʸ for jʸ in j₁:M for jˣ in j₁:M]
+            return [by*jʸ for jˣ in j₁:M, jʸ in j₁:M]
         end
     end
     error("make_pʸ not implemented for $D dimensions and $basis basis.")
