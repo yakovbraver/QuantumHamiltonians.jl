@@ -3,7 +3,7 @@ using Test
 using LinearAlgebra: normalize, dot
 using Random
 
-# ~ 1 min
+# ~ 1.5 min
 @testset "1D tests" begin
     include("1D.jl")
 end

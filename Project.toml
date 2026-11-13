@@ -1,7 +1,7 @@
 name = "QuantumHamiltonians"
 uuid = "60faaa36-42bd-44c6-92a9-1db15a778fca"
 version = "0.1.0"
-authors = ["Yakov <jakovbraver@gmail.com>"]
+authors = ["Yakov Braver <jakovbraver@gmail.com>"]
 
 [deps]
 ArnoldiMethod = "ec485272-7323-5ecc-a04f-4719b315124d"
@@ -20,8 +20,10 @@ SciMLOperators = "c0aeaf25-5076-4817-a8d5-81caf7dfa961"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [compat]
+julia = "1.12"
 ArnoldiMethod = "0.4.0"
 FFTW = "1.10.0"
+FLoops = "0.2.1"
 KrylovKit = "0.10.3"
 LinearMaps = "3.11.4"
 LinearSolve = "5.0.0"
@@ -31,4 +33,6 @@ OrdinaryDiffEq = "7.8.1"
 OrdinaryDiffEqExponentialRK = "2.3.1"
 OrdinaryDiffEqLinear = "2.3.0"
 SciMLOperators = "1.14.1"
-julia = "1.12"
+
+[workspace]
+projects = ["test"]
