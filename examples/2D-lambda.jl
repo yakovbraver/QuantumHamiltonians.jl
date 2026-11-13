@@ -73,7 +73,7 @@ surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 @time diagonalize!(xh, nev=5, verbose=true, maxdim=40) # can use default `maxdim` if using nev=1. If doesn't converge, then increase `maxdim`. Note that actual eigenvalues no. 2 and no. 3 are degenerate; usually only one is obtained.
 @time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14)); # faster than without inversion, especially for larger M, and converges with smaller `maxdim`. Also, finds both degenerate eigenvalues. When both `atol` and `rtol` are set, the requested number of digits fully converge (are the same across runs)
 @time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14), ls_prec_side=:right); # right preconditioning also works
-@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # slightly faster than the default GMRES, but supports only left preconditioning
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14), ls_solver=QH.LS.KrylovJL_CG); # slightly faster than the default GMRES, but supports only left preconditioning
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, 1)
 surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)

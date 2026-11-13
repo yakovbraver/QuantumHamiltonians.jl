@@ -1,4 +1,4 @@
-@testset "Test various `fft_to_operator`" begin
+@testset "Various `fft_to_operator`" begin
     H_true =
     [11  15  14  51  55  54  41  45  44
      12  11  15  52  51  55  42  41  45
@@ -40,7 +40,7 @@
     # @test H == Symmetric(H_true, :L)
 end
 
-@testset "1-component diagonalisation" begin
+@testset "1-component diagonalisation for a scalar potential (all bases, all Hamiltonian kinds)." begin
     # Assymetric quantum harmonic oscillator: 𝐻 = -Δ/2 + 𝑥²/2 + 3𝑦²/2
 
     ω₁ = 1; ω₂ = 3;
@@ -83,7 +83,7 @@ end
 end
 
 # TODO add additional type checks
-@testset "Test dense and sparse 2D 1-component diagonalisation" begin
+@testset "1-component diagonalisation for a vector potential (all bases, all Hamiltonian kinds, preconditioning)" begin
     # Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
 
     function 𝑈(x::Real, y::Real)
@@ -169,13 +169,11 @@ end
 
     qh = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, 𝑈_iseven=true);
 
-    # exact diagonalisation
-    diagonalize!(qh, nev=0)
-    @test qh.ε[1] ≈ 0.571 atol=1e-3
-
-    # approximate diagonalisation
-    diagonalize!(qh, nev=1)
-    @test qh.ε[1] ≈ 0.571 atol=1e-3
+    # exact diagonalisation (nev=0) and approximate (nev=1)
+    for nev in (0, 1)
+        diagonalize!(qh; nev)
+        @test qh.ε[1] ≈ 0.571 atol=1e-3
+    end
 
     qh = PSpaceHamiltonian{:sparse}([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, 𝑈_iseven=true) # cast to Float64 manually to suppress info message
     diagonalize!(qh, nev=1)
@@ -190,17 +188,31 @@ end
     v2 = rand(ComplexF64, (2M)^2) |> normalize
 
     for symmetrize_pA in (true, false)
-        qh = XSpaceHamiltonian([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, symmetrize_pA)
-        diagonalize!(qh, nev=1)
         ε_true = symmetrize_pA ? 0.6523291893 : 0.6524389189 # the result depends on `symmetrize_pA`; the `false` case should be considered inaccurate
-        @test qh.ε[1] ≈ ε_true atol=1e-10
+        qh = XSpaceHamiltonian([Float64.(xlimits), Float64.(ylimits)], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M, symmetrize_pA)
 
+        # test hermiticity
         defect = dot(v1, qh*v2) - dot(qh*v1, v2) # if `symmetrize_pA`, the nonhermiticity defect should be on the order of machine precision
         @test defect ≈ 0 atol=(symmetrize_pA ? 1e-13 : 0.3) 
+
+        # test diagonalisation
+        for kwargs in ((;),
+                       (;invert=true, ls_kwargs=(;atol=1e-12, rtol=1e-12)),
+                       (;invert=true, ls_kwargs=(;atol=1e-12, rtol=1e-12), ls_prec=:jacobi),
+                       (;invert=true, ls_kwargs=(;atol=1e-12, rtol=1e-12), ls_prec=:jacobi, ls_prec_side=:right))
+            diagonalize!(qh; nev=1, kwargs...)
+            @test qh.ε[1] ≈ ε_true atol=1e-10
+        end
+        
+        # in the symmetric case, also check diagonalisation with CG
+        if symmetrize_pA
+            diagonalize!(qh; nev=1, invert=true, ls_kwargs=(;atol=1e-12, rtol=1e-12), ls_prec=:jacobi, ls_solver=QuantumHamiltonians.LS.KrylovJL_CG)
+            @test qh.ε[1] ≈ ε_true atol=1e-10
+        end
     end
 end
 
-@testset "Test dense 2D 3-component diagonalisation" begin
+@testset "3-component diagonalisation (dense, cis/sin)" begin
     # Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
 
     function 𝛺₁(x::Real, y::Real)
@@ -284,7 +296,7 @@ end
     @test qh.ε[1] ≈ 0.5 rtol=1e-3
 end
 
-@testset "Test sparse 2D 3-component diagonalisation" begin
+@testset "3-component diagonalisation (sparse)" begin
     # Tests based on the system in https://doi.org/10.1103/PhysRevA.107.033328 (https://arxiv.org/abs/2304.00302)
 
     function 𝛺₁(x::Real, y::Real)
@@ -311,26 +323,18 @@ end
          nothing nothing nothing] # only upper triangle is needed
     𝑈_iseven = trues(3, 3)
 
-    ### Hermitian cis basis diagonalisation
-    qh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven)
-    @test qh.H[1, 19] ≈ Ω₁₀ / 2
-    @test qh.H[10, 23] ≈ Ω₊ / 4
-    @test qh.H[11, 22] ≈ -Ω₊ / 4
+    for γ in (0.0, Γ₃)
+        qh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, γ])
+        @test qh.H[1, 19] ≈ Ω₁₀ / 2
+        @test qh.H[10, 23] ≈ Ω₊ / 4
+        @test qh.H[11, 22] ≈ -Ω₊ / 4
         
-    diagonalize!(qh, nev=1)
-    @test qh.ε[1] ≈ 0.039 atol=1e-3
-
-    ### Non-Hermitian cis basis diagonalisation
-    qh = PSpaceHamiltonian{:sparse}([xlimits, ylimits], 𝑈; basis=:cis, M, 𝑈_iseven, Γ=[0, 0, Γ₃])
-    @test qh.H[1, 19] ≈ Ω₁₀ / 2
-    @test qh.H[10, 23] ≈ Ω₊ / 4
-    @test qh.H[11, 22] ≈ -Ω₊ / 4
-        
-    diagonalize!(qh, nev=1)
-    @test qh.ε[1] ≈ 0.039 atol=1e-3
+        diagonalize!(qh, nev=1)
+        @test qh.ε[1] ≈ 0.039 atol=1e-3
+    end
 end
 
-@testset "1-component real stationary state via Newton-Raphson" begin
+@testset "1-component GPE real stationary state via Newton-Raphson (all bases, all Hamiltonian kinds)" begin
     # Ground state in a parabolic potential
 
     𝑈(x::Real, y::Real) = x^2 + y^2

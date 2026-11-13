@@ -256,24 +256,25 @@ Keyword arguments:
       Useful alternatives are `LS.KrylovJL_CG` for Hermitian positive definite and `LS.KrylovJL_MINRES` for Hermitian possibly indefinite.
     * `ls_prec`: precodnitioner for the linear system, defaults to `:none`. Can be `:jacobi` or `:block_jacobi`.
     * `ls_prec_shift`: a shift added to the diagonal to avoid singularity of the kinetic operator when no 𝑈 or 𝐴 is present. The default is zero, but when singularity is detected, a scale-aware shift is added.
-    * `ls_prec_side`: `:left` or `:right` (default). Left-preconditioning usually executes faster but is not faithful to the requested tolerance. Also, CG and MINRES support only right.
+    * `ls_prec_side`: `:left` (default) or `:right`. Left-preconditioning usually executes faster but is not faithful to the requested tolerance. Note that CG and MINRES support only left.
     * `ls_kwargs`: a named tuple of keyword arguments to pass to the Krylov solver, such as `verbose` (0 or 1), `itmax`, `rtol`, `atol`, etc.
       Note that these are passed to the solver constructor [such as `KrylovJL_GMRES()`] rather than passing to `LinearSolve.solve()`.
 Any additional kwargs (such as `tol`, `mindim`, `maxdim`, `restarts`) will be passed to `partialschur`.
 """
 function diagonalize(xh::XSpaceHamiltonian{R, T}; invert::Bool=(xh.nc > 1), nev::Integer, verbose::Bool=false,
-                     ls_solver=LS.KrylovJL_GMRES, ls_prec::Symbol=:none, ls_prec_shift::R=zero(R), ls_prec_side::Symbol=:right, ls_kwargs=(;), kwargs...) where {R, T}
-    ls_prec in (:none, :jacobi, :block_jacobi) || throw(ArgumentError("unsupported preconditioner: $ls_prec"))
+                     ls_solver=LS.KrylovJL_GMRES, ls_prec::Symbol=:none, ls_prec_shift::R=zero(R), ls_prec_side::Symbol=:left, ls_kwargs=(;), kwargs...) where {R, T}
+    ls_prec in (:none, :jacobi, :block_jacobi) || throw(ArgumentError("unsupported preconditioner `$ls_prec`. Available options: `:none`, `:jacobi`, `:block_jacobi`."))
+    ls_prec_side in (:left, :right) || throw(ArgumentError("unsupported preconditioner side `$ls_prec`. Available option: `:left`, `:right`."))
     if invert
         # Here we do shift-invert: we want to diagonalise 𝐻⁻¹, defined by its action 𝑥 = 𝐻⁻¹𝑏; 𝑥 is found by solving 𝐻𝑥 = 𝑏. But `LS.LinearProblem` does not work with LinearMaps, so we wrap `bdg_map` in a SciMLOperator
         xh_op = SciMLOperators.FunctionOperator(XSpaceHamiltonian!, Vector{T}(undef, xh.nc*xh.B); p=xh, isconstant=true)
         prob = LS.LinearProblem(xh_op, Vector{T}(undef, xh.nc*xh.B))
         if ls_prec != :none
             prec = JacobiPreconditioner(xh; type=(ls_prec == :jacobi ? :simple : :block), shift=ls_prec_shift)
-            if ls_prec_side == :right
-                ls_kwargs = (;precs=(_, _) -> (LA.I, prec), ls_kwargs...) # append preconditioner to the keyword arguments for linear solve
-            else
+            if ls_prec_side == :left
                 ls_kwargs = (;precs=(_, _) -> (prec, LA.I), ls_kwargs...) # append preconditioner to the keyword arguments for linear solve
+            else
+                ls_kwargs = (;precs=(_, _) -> (LA.I, prec), ls_kwargs...) # append preconditioner to the keyword arguments for linear solve
             end
         end
         linsolve = LS.init(prob, ls_solver(;ls_kwargs...))

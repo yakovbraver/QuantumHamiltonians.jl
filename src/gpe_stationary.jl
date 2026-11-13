@@ -80,7 +80,7 @@ found chemical potentials; if solving was performed under fixed 𝜇s given by t
 function find_stationary(qh::Union{PSpaceHamiltonian{Storage, R, T}, XSpaceHamiltonian{R, T}}, ψ₀::AbstractVector{<:Number},
                          g::AbstractMatrix{R}, μ::Union{R, AbstractVector{R}}, natoms::Union{Nothing, R, AbstractVector{<:R}}=nothing; searchreal=false,
                          solver=NLS.NewtonRaphson, ls_solver=LS.KrylovJL_GMRES, ls_prec::Symbol=:none, ls_kwargs=(;), kwargs...) where {Storage, R, T}
-    ls_prec in (:none, :block_jacobi) || throw(ArgumentError("unsupported preconditioner: $ls_prec"))
+    ls_prec in (:none, :block_jacobi) || throw(ArgumentError("unsupported preconditioner `$ls_prec`. Available options: `:none`, `:block_jacobi`."))
     (;B, nc) = qh
     N_isfixed = natoms isa Number # true if total number of atoms is fixed
 
