@@ -3,7 +3,6 @@
 ║ Calculations for https://doi.org/10.1103/qlbm-9sps (https://arxiv.org/abs/2506.08683), originally done using GPELab. ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
 =#
-
 using QuantumHamiltonians, AppleAccelerate
 import QuantumHamiltonians as QH
 
@@ -43,7 +42,7 @@ b::Float = 17
 ρ₀::Float = 0.7
 
 ν::Int = 1 # Laguerre-Gauss winding number
-a::Float = 0.02
+a::Float = 0.5
 
 ######## Linear analysis ########
 
@@ -111,8 +110,7 @@ w₀::Float64 = 2
 # For a = 0.02, linear solving stalls -- solution can only be found for `M=16` 
 xh_3comp = XSpaceHamiltonian([xlimits, xlimits], 𝑈_3comp; basis=:cis, M, Γ=[0, 0, Γ₃])
 @time diagonalize!(xh_3comp, nev=3, verbose=true, ls_prec=:block_jacobi, tol=1e-5, ls_kwargs=(;atol=1e-7, rtol=1e-7, verbose=1)); # a=0.5, M=64: 100 s
-@time diagonalize!(xh_3comp, nev=3, verbose=true, ls_prec=:block_jacobi, tol=1e-5, ls_kwargs=(;verbose=1), ls_prec_side=:left); # a=0.5, M=64: 30 s, agrees with right-preconditioned result above at abstol of 1e-4
-e_right = copy(xh_3comp.ε)
+@time diagonalize!(xh_3comp, nev=3, verbose=true, ls_prec=:block_jacobi, tol=1e-5, ls_kwargs=(;verbose=0), ls_prec_side=:left); # a=0.5, M=64: 30 s, agrees with right-preconditioned result above at abstol of 1e-4
 xs, ys, ψ_3comp_linear = make_eigenfunction(xh_3comp, stateno)
 plot_comps_2D(xs, ys, ψ_3comp_linear)
 
@@ -136,7 +134,7 @@ get_EμN(xh_3comp, vcat(vec.(ψ₀_3comp)...), g_3comp)
 
 if a == 0.5
     # preconditioner changes with every iteration, so FMGRES is recommened over GMRES. ν=1, abstol=1e-4: 23 s (for `xh_3comp` without Γ: 15 s). GMRES: 85 s (for `xh_3comp` without Γ: 23 s).
-    @time xs, ys, ψ_3comp_nr, μ_3comp_nr = find_stationary(xh_3comp, ψ₀_3comp, g_3comp, μ_nr[1], natoms; abstol=1e-4, ls_prec=:block_jacobi, show_trace=Val(true), ls_kwargs=(;verbose=1), ls_solver=QH.LS.KrylovJL_FGMRES)
+    @time xs, ys, ψ_3comp_nr, μ_3comp_nr = find_stationary(xh_3comp, ψ₀_3comp, g_3comp, μ_nr[1], natoms; abstol=1e-4, ls_prec=:block_jacobi, show_trace=Val(true), ls_kwargs=(;verbose=0), ls_solver=QH.LS.KrylovJL_FGMRES)
 else # if a == 0.02 # here Ω₀ is very large and NewtonRaphson stalls. But atol ~ 5e-2 can be obtained reasonably quickly
     @time xs, ys, ψ_3comp_nr, μ_3comp_nr = find_stationary(xh_3comp, ψ₀_3comp, g_3comp, μ_nr[1], natoms; abstol=1e-4, show_trace=Val(true), ls_kwargs=(;verbose=0, itmax=200), maxtime=60) # ν=1, a=0.02: will reach abstol ~ 5e-2. Works faster without linear preconditioner
     # @time xs, ys, ψ_3comp_nr, μ_3comp_nr = find_stationary(xh_3comp, ψ₀_3comp, g_3comp, μ_nr[1], natoms; abstol=1e-4, show_trace=Val(true), ls_kwargs=(;verbose=0, itmax=500), ls_solver=QH.LS.KrylovJL_MINRES, maxiters=100) # useful when solving without Γ: 5 s

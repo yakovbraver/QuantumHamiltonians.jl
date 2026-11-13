@@ -39,26 +39,47 @@ end
 Construct a block-Jacobi (`type=:block`) or simple Jacobi (`type=:simple`) preconditioner for `xh`.
 If a given component has no 𝑈 and no 𝐴, then the diagonal element is shifted by `shift`. If not passed (or zero is passed), then a scale-aware shift is used.
 """
-function JacobiPreconditioner(xh::XSpaceHamiltonian{R, T}; shift::R=zero(R), type::Symbol=:block) where {R, T}
-    (;nc, B, U, A, ∇, ∇², ft) = xh
+@views function JacobiPreconditioner(xh::XSpaceHamiltonian{R, T}; shift::R=zero(R), type::Symbol=:block) where {R, T}
+    (;nc, B, δ, U, A, ∇, ∇², ft) = xh
 
     # Here `T` is the element type of `xh` in real-space. Meanwhile, we need the type of `xh` in p-space.
     # But the Laplacian is real in p-space, and the zeroth harmonic of 𝑈 will be of the same type as `U` (whose type is `T`). So the required type is just `T`.
     U_avg = zeros(T, nc, nc)
-    for c in axes(U, 1), b in axes(U, 2)
-        !isempty(U[c, b]) && (U_avg[c, b] = sum(U[c, b]) / B)
+    for c in eachindex(U_avg) # indexing linearly
+        !isempty(U[c]) && (U_avg[c] = sum(U[c]) / B)
     end
 
-    A_avg = zeros(R, nc, length(∇)) # `𝐴` is assumed real in `xh`
-    for c in axes(A, 1), i in axes(A, 2)
-        !isempty(A[c, i]) && (A_avg[c, i] = sum(A[c, i]) / B)
+    D = length(∇) # number of dimensions
+
+    if xh.symmetrize_pA # then calculate i𝛿∇𝐀 and add to the diagonal elements of `U_avg`
+        for c in 1:nc
+            ∇A_avg = Complex{R}(0)
+            for i in 1:D
+                if !isempty(A[c, i])
+                    if D == 2
+                        ∇A_avg += (sum(A[c, i][end, :]) - sum(A[c, i][1, :])) + 
+                                  (sum(A[c, i][:, end]) - sum(A[c, i][:, 1]))
+                    else
+                        ∇A_avg += (sum(A[c, i][end, :, :]) - sum(A[c, i][1, :, :])) + 
+                                  (sum(A[c, i][:, end, :]) - sum(A[c, i][:, 1, :])) +
+                                  (sum(A[c, i][:, :, end]) - sum(A[c, i][:, :, 1]))
+                    end
+                end
+            end
+            U_avg[c, c] += im*δ/B * ∇A_avg
+        end
+    end
+
+    A_avg = zeros(R, nc, D) # `𝐴` is assumed real in `xh`
+    for c in eachindex(A_avg) # indexing linearly
+        !isempty(A[c]) && (A_avg[c] = sum(A[c]) / B)
     end
 
     # determine the `scale`, used if `shift` is needed but was not provided
     scale = max(one(R), maximum(abs, ∇²), maximum(abs, U_avg))
     if xh.basis == :cis
         for i in axes(A_avg, 2)
-            scale += 2 * maximum(abs, @view(A_avg[:, i])) * maximum(abs, ∇[i])
+            scale += 2 * maximum(abs, A_avg[:, i]) * maximum(abs, ∇[i])
         end
     end
     # calculate the shifts for each component
@@ -71,7 +92,7 @@ function JacobiPreconditioner(xh::XSpaceHamiltonian{R, T}; shift::R=zero(R), typ
     end
 
     if type == :block # block-Jacobi: will construct nc × nc blocks for each mode
-        Jₚ = map(1:B) do j # iterate over all momenta, where `j` is a linearised momentum index
+        Jₚ = map(1:B) do j # iterate over all momenta, where `j` is the linearised momentum index
             block = Matrix{T}(undef, nc, nc)
             fill_jacobi_block!(block, xh, U_avg, A_avg, j, shifts)
             lu!(block; check=true) # this in-place verion will alias `block` -- this is why we create new `block` at each iteration
@@ -171,8 +192,8 @@ mutable struct GPEJacobiPreconditioner{R, T, FourierTransformer, Jₚ_T}
     nc_physical::Int
     B::Int
     searchreal::Bool
-    N_isfixed::Bool # true if total number of atoms is fixed
-    μs::Vector{R} # fixed 𝜇s of each component. Will contain zeros if 𝜇s are not fixed
+    N_isfixed::Bool # true if the total number of atoms is fixed
+    μs::Vector{R}   # fixed 𝜇s of each component. Will contain zeros if 𝜇s are not fixed
     g::Matrix{R}
     Jₚ::Vector{Jₚ_T}
     U_avg::Matrix{T}
@@ -200,26 +221,46 @@ function GPEJacobiPreconditioner(xh::XSpaceHamiltonian{R, T}, g::AbstractMatrix{
     nc_effective == (searchreal ? xh.nc : 2xh.nc) || throw(DimensionMismatch("effective component count does not match searchreal"))
     size(g) == (xh.nc, xh.nc) || throw(DimensionMismatch("g must have size ($(xh.nc), $(xh.nc))"))
     length(μs) == xh.nc || throw(DimensionMismatch("μs has the wrong number of physical components"))
+    (;nc, B, δ, U, A, ∇, ∇², ft) = xh
 
-    U_avg = zeros(T, xh.nc, xh.nc)
-    for c in axes(xh.U, 1), b in axes(xh.U, 2)
-        !isempty(xh.U[c, b]) && (U_avg[c, b] = sum(xh.U[c, b]) / xh.B)
+    U_avg = zeros(T, nc, nc)
+    for c in eachindex(U_avg) # indexing linearly
+        !isempty(U[c]) && (U_avg[c] = sum(U[c]) / B)
     end
 
-    A_avg = zeros(R, xh.nc, length(xh.∇))
-    for c in axes(xh.A, 1), i in axes(xh.A, 2)
-        !isempty(xh.A[c, i]) && (A_avg[c, i] = sum(xh.A[c, i]) / xh.B)
+    D = length(∇) # number of dimensions
+
+    if xh.symmetrize_pA # then calculate i𝛿∇𝐀 and add to the diagonal elements of `U_avg`
+        for c in 1:nc
+            ∇A_avg = Complex{R}(0)
+            for i in 1:D
+                if !isempty(A[c, i])
+                    if D == 2
+                        ∇A_avg += (sum(A[c, i][end, :]) - sum(A[c, i][1, :])) + 
+                                  (sum(A[c, i][:, end]) - sum(A[c, i][:, 1]))
+                    else
+                        ∇A_avg += (sum(A[c, i][end, :, :]) - sum(A[c, i][1, :, :])) + 
+                                  (sum(A[c, i][:, end, :]) - sum(A[c, i][:, 1, :])) +
+                                  (sum(A[c, i][:, :, end]) - sum(A[c, i][:, :, 1]))
+                    end
+                end
+            end
+            U_avg[c, c] += im*δ/B * ∇A_avg
+        end
+    end
+
+    A_avg = zeros(R, nc, D) # `𝐴` is assumed real in `xh`
+    for c in eachindex(A_avg) # indexing linearly
+        !isempty(A[c]) && (A_avg[c] = sum(A[c]) / B)
     end
 
     # perform LU for identity matrices just to initialise with the correct type
-    Jₚ = [lu!(Matrix{R}(LA.I, nc_effective, nc_effective); check=true) for _ in 1:xh.B]
+    Jₚ = [lu!(Matrix{R}(LA.I, nc_effective, nc_effective); check=true) for _ in 1:B]
 
-    wf_length = nc_effective * xh.B # length of the wave function vector of a single component, which is doubled in the complex case
-    prec = GPEJacobiPreconditioner{R, T, typeof(xh.ft), eltype(Jₚ)}(
-        nc_effective, xh.nc, xh.B, searchreal, N_isfixed, μs, g, Jₚ, U_avg,
-        A_avg, xh.∇, xh.∇², xh.ft,
-        Vector{R}(undef, wf_length), Vector{Complex{R}}(undef, wf_length),
-        Vector{Complex{R}}(undef, wf_length), Vector{Complex{R}}(undef, nc_effective))
+    wf_length = nc_effective * B # length of the wave function vector of a single component, which is doubled in the complex case
+    prec = GPEJacobiPreconditioner(nc_effective, nc, B, searchreal, N_isfixed, μs, g, Jₚ, U_avg, A_avg, ∇, ∇², ft,
+                                   Vector{R}(undef, wf_length), Vector{Complex{R}}(undef, wf_length),
+                                   Vector{Complex{R}}(undef, wf_length), Vector{Complex{R}}(undef, nc_effective))
 
     u_length = wf_length + (iszero(μs) ? (N_isfixed ? 1 : nc_effective) : 0) # include unknown chemical potentials when present
     update!(prec, zeros(R, u_length))

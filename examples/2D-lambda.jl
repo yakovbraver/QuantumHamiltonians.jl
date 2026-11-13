@@ -70,9 +70,10 @@ surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=128);
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cos, M=128);
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:sin, M=127);
-@time diagonalize!(xh, nev=5, verbose=true, maxdim=30) # can use default `maxdim` if using nev=1. If doesn't converge, then increase `maxdim`. Note that actual eigenvalues no. 2 and no. 3 are degenerate; usually only one is obtained.
-@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12)); # faster than without inversion, especially for larger M, and converges with smaller `maxdim`. Also, finds both degenerate eigenvalues.
-@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # slightly faster than the default GMRES, but supports only left preconditioning
+@time diagonalize!(xh, nev=5, verbose=true, maxdim=40) # can use default `maxdim` if using nev=1. If doesn't converge, then increase `maxdim`. Note that actual eigenvalues no. 2 and no. 3 are degenerate; usually only one is obtained.
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14)); # faster than without inversion, especially for larger M, and converges with smaller `maxdim`. Also, finds both degenerate eigenvalues. When both `atol` and `rtol` are set, the requested number of digits fully converge (are the same across runs)
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14), ls_prec_side=:right); # right preconditioning also works
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # slightly faster than the default GMRES, but supports only left preconditioning
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, 1)
 surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
@@ -182,10 +183,13 @@ surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 
 ### Diagonalisation in x-space: faster than p-space
-xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64);
+# For M=64, `symmetrize_pA` gives a difference only in the 7th digit, which is not strictly correct anyway since taking M=128 changes already the 6th digit
+# For M=128, `symmetrize_pA` gives a difference in the 11th digit, which is again not strictly correct since taking M=256 changes the 11th digit
+# Thus, `symmetrize_pA=true` is not needed, in this case at least
+xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=256, symmetrize_pA=false);
 @time diagonalize!(xh, nev=1, verbose=true, maxdim=30); # M=64, nev=1: 1.4 s. M=128, nev=1: 12.8s (w/ AA: 16.6s) with `maxdim=30`
-@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12)); # M=128, nev=1: 3.7 s
-@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # M=128, nev=1: 2.8 s
+@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-12, rtol=1e-12)); # M=128, nev=1: 3.7 s
+@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-12, rtol=1e-12), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # M=128, nev=1: 2.8 s
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, 1)
 heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
@@ -232,8 +236,8 @@ heatmap(xs, ys, angle.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_phase)
 ### Diagonalisation in x-space: faster than p-space
 xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈, [𝐴ˣ, 𝐴ʸ]; basis=:cis, M=64); # for M=64, `symmetrize_pA` makes a difference, but for M=128 it doesn't
 @time diagonalize!(xh, nev=1, verbose=true, maxdim=30); # M=128: 17 s
-@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12)); # M=128, nev=1: 4.8 s
-@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(atol=1e-12, rtol=1e-12), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # M=128, nev=1: 3.3 s
+@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-12, rtol=1e-12)); # M=128, nev=1: 4.8 s
+@time diagonalize!(xh, nev=1, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-12, rtol=1e-12), ls_solver=QH.LS.KrylovJL_CG, ls_prec_side=:left); # M=128, nev=1: 3.3 s
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, 1);
 heatmap(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)

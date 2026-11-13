@@ -195,7 +195,6 @@ end
     @test isapprox.(sort(vals[indx]; by=imag), vals_true; atol=1e-2) |> all
 end
 
-# ~ 1 min 15 s
 @testset "1-component imaginary and real dynamics" begin
     # Soliton in a harmonic potential; Na-23 parameters similar to https://doi.org/10.1103/PhysRevLett.87.130402 (https://arxiv.org/abs/cond-mat/0104549)
 
@@ -258,7 +257,7 @@ end
         @test E_itime ≈ E_nr rtol=1e-5
         @test μ_itime[1] ≈ μ_nr[1] rtol=5e-4
 
-        ### real time test: calculate half-period of oscillations, check energy conservation and check that wf minimum is at roughly -5
+        ### real-time test: calculate half-period of oscillations, check energy conservation and check that wf minimum is at roughly -5
 
         # get ground state
         xs, ψ, _ = find_stationary(qh, [one], [g;;], μ₀, natoms; searchreal=true)
