@@ -179,7 +179,7 @@ end
     diagonalize!(qh, nev=1)
     @test qh.ε[1] ≈ 0.571 atol=1e-3
 
-    ### XSpaceHamiltonian. It's faster, so we can test with Float64 and larger `M` (but seems less accurate than p-space for small M?)
+    ### XSpaceHamiltonian. It's faster, so we can test with Float64 and larger `M`
     M = 32
 
     # two random vectors for checking Hermiticity as (⟨𝑣₁, 𝐻𝑣₂⟩ - ⟨𝐻𝑣₁, 𝑣₂⟩)
@@ -204,7 +204,7 @@ end
             @test qh.ε[1] ≈ ε_true atol=1e-10
         end
         
-        # in the symmetric case, also check diagonalisation with CG
+        # in the symmetrised case, also check diagonalisation with CG
         if symmetrize_pA
             diagonalize!(qh; nev=1, invert=true, ls_kwargs=(;atol=1e-12, rtol=1e-12), ls_prec=:jacobi, ls_solver=QuantumHamiltonians.LS.KrylovJL_CG)
             @test qh.ε[1] ≈ ε_true atol=1e-10

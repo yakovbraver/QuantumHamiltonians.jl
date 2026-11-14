@@ -48,7 +48,7 @@ xs = range(xlimits..., N)
 ys = range(ylimits..., N)
 surface(xs, ys, 𝑈)
 
-# Here we have no 𝐴, so Hamiltonian ph.H will be real. Eigenfunctions also since basis is real in nonperiodic case. `𝑈_iseven` is not used in the nonperiodic case
+# Here we have no 𝐴, so Hamiltonian ph.H will be real. We can solve the Neumann case using the cos basis (`𝑈_iseven` is not used then).
 ph = PSpaceHamiltonian{:dense}([xlimits, ylimits], 𝑈; basis=:cos, M)
 
 # Or we can solve periodic case. Potential is even, so we set `𝑈_iseven`, yielding a real Hamiltonian
@@ -65,23 +65,25 @@ xs, ys, ψ = make_eigenfunction(ph, stateno)
 surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 
 ### Diagonalisation in x-space -- faster than p-space for higher M.
-# basis=:cis, M=64, nev=1. diagonalize!: 0.40s (w/o AA: 0.76s).  [AppleAccelerate speeds up. Tested with --check-bounds=no]
-#           diagonalize_via_statevector: 0.76s (w/o AA: 2.4s).   [AppleAccelerate speeds up. Tested with --check-bounds=no]
+# For the same `M`, p-space approach is slightly more accurate because it uses double the number of harmonics when constructing the operator.
+# basis=:cis, M=128, diagonalize!(xh, nev=1, maxdim=40): 3.9s (w/o AA, using 8 BLAS threads: 4.3s).
+# basis=:cis, M=128, diagonalize!(xh, nev=1, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14)): 1.5s (w/o AA, using 8 BLAS threads: 1.9s).
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cis, M=128);
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:cos, M=128);
 @time xh = XSpaceHamiltonian([xlimits, ylimits], 𝑈; basis=:sin, M=127);
-@time diagonalize!(xh, nev=5, verbose=true, maxdim=40) # can use default `maxdim` if using nev=1. If doesn't converge, then increase `maxdim`. Note that actual eigenvalues no. 2 and no. 3 are degenerate; usually only one is obtained.
+@time diagonalize!(xh, nev=5, verbose=true, maxdim=40) # if doesn't converge, then increase `maxdim`. Note that actual eigenvalues no. 2 and no. 3 are degenerate; usually only one is obtained.
 @time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14)); # faster than without inversion, especially for larger M, and converges with smaller `maxdim`. Also, finds both degenerate eigenvalues. When both `atol` and `rtol` are set, the requested number of digits fully converge (are the same across runs)
 @time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14), ls_prec_side=:right); # right preconditioning also works
-@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14), ls_solver=QH.LS.KrylovJL_CG); # slightly faster than the default GMRES, but supports only left preconditioning
+@time diagonalize!(xh, nev=5, verbose=true, invert=true, ls_prec=:jacobi, ls_kwargs=(;atol=1e-14, rtol=1e-14), ls_solver=QH.LS.KrylovJL_CG); # slightly faster than the default GMRES for M=64, but 10x slower for M=128. Also, supports only left preconditioning
 xh.ε
 xs, ys, ψ = make_eigenfunction(xh, 1)
 surface(xs, ys, abs2.(ψ[1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 
 # Diagonalising via `StateVector`
-# @time vals, vecs, info = QuantumHamiltonians.diagonalize_via_statevector(xh, nev=1);
-# vals
-# surface(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[1][1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
+# basis=:cis, M=128, QH.diagonalize_via_statevector(xh, nev=1, krylovdim=50, maxiter=200): 8.0s (w/o AA, using 8 BLAS threads: 16.6s)
+@time vals, vecs, info = QH.diagonalize_via_statevector(xh, nev=1, krylovdim=50, maxiter=200);
+vals
+surface(xh.ft.xs[:, 1], xh.ft.xs[:, 2], abs2.(vecs[1][1])', xlabel="x/a", ylabel="y/a", c=cmap_rainbow)
 
 ### Quasimomenta
 
