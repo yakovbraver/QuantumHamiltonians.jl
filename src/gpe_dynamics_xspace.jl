@@ -66,7 +66,7 @@ function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Fu
 
     # initialise the problem
     tspan = (zero(R), T_max)
-    xh_op = SciMLOperators.FunctionOperator(XSpaceHamiltonianGPE!, similar(ψ_input); u=ψ_input, p=params, isconstant=true)
+    xh_op = SciMLOperators.FunctionOperator(XSpaceHamiltonianGPE!, similar(ψ_input); u=ψ_input, p=params, isconstant=true, ishermitian=(itime && xh.ishermitian), islinear=true)
 
     prob = ODE.SplitODEProblem(xh_op, (nc == 1 ? gpe_1comp! : gpe!), ψ_input, tspan, params) # use sepcialisation `ODEProblem{true, SciMLBase.FullSpecialize}` for production!
     
