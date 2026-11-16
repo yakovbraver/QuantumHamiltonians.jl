@@ -20,7 +20,10 @@ Return the DifferentialEquations solution object.
 function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}, AbstractVector{<:AbstractArray{<:Number}}}, g::AbstractMatrix{R};
                    T_max::R, dt::R, itime::Bool=false,
                    solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true) : ODE_EXP.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R, T}
+    T_max < dt && throw(ArgumentError("`T_max < dt` is not allowed")) 
+    nsaves < 0 && throw(ArgumentError("`nsaves < 0` is not allowed")) 
     (solver isa Symbol && !in(solver, (:strang2, :yoshida4))) && throw(ArgumentError("unsupported solver `$solver`. Available options: `:strang2`, `:yoshida4`, or a DifferentialEquations solver.")) 
+    
     (;xlims, B, nc, ft) = xh
 
     # determine if equation is real (in x-space)

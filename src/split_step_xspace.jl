@@ -5,9 +5,12 @@ struct GPESolution{R}
 end
 
 """
-Propagate the time-dependent GPE using split-step method, with `solver` being `strang2` or `yoshida4`.
+Propagate the time-dependent GPE using split-step method, with `solver` being `:strang2` or `:yoshida4`.
 Return a solution object containing the funtion in the `u` field, and time moments in the `t` field.
-`nsaves`: how many points in addition to the initial and final to save.
+The equation is ∂ₜ𝜓 = 𝑟𝐻𝜓 + 𝑟𝑔|𝜓|²𝜓 with `rhs_factor` 𝑟 = -1 for imaginary-time solving and 𝑟 = -i for real-time.
+We split as ∂ₜ𝜓 = 𝐿𝜓 + 𝑀𝜓 where 𝐿 = 𝑟(𝐩 - 𝐀)² while 𝑀 = 𝑟(𝑈 + 𝑔|𝜓|²𝜓).
+Intermediate solutions are saved `nsaves` times in addition to intial and final.
+The less you save the faster it goes because not saving allows for combining the exponents between successive steps.
 `g` must not include the rhs_factor.
 """
 function split_step(xh::XSpaceHamiltonian{R, T}, u::AbstractVector{<:Number}, g::AbstractMatrix{R};
@@ -27,59 +30,65 @@ function split_step(xh::XSpaceHamiltonian{R, T}, u::AbstractVector{<:Number}, g:
 
     uₚ = xh.buff_complex
     
-    # The equation i∂ₜ𝜓 = 𝐻𝜓 + 𝑔|𝜓|²𝜓 is coded as ∂ₜ𝜓 = -i𝐻𝜓 -i𝑔|𝜓|²𝜓.
-    # Denote the `rhs_factor` -i = 𝑟. For 𝐻 = -Δ + 𝑈 we have
-    # ∂ₜ𝜓 = 𝑟Δ𝜓 + 𝑟(𝑈 + 𝑔|𝜓|²)𝜓.
-    # The first equation is solved in momentum space by (ℎ is the time step)
-    # 𝜓ₚ = exp(𝑎𝑟ℎ𝑝²)𝜓ₚ [𝑝² already contains required signs. Meanwhile, 𝑟 comes from the equation; not present when 𝐻 is acting]
-    # The second equation is solved in coordinate space by
-    # 𝜓 = exp(𝑏𝑟ℎ(𝑈+𝑔|𝜓|²))𝜓
-
-    # scheme coefficients
-
-    if solver == :strang2
-        a = 1/2
+    if solver == :strang2 # applies exp(ℎ𝐿/2)exp(ℎ𝑀)exp(ℎ𝐿/2) but combines adjacent 𝐿-exponents if not saving during the present step
         b = rhs_factor * dt;
-        ex = @. exp(rhs_factor*a*dt*xh.∇²)
+        exp_L = @. exp(rhs_factor*dt*xh.∇²)
+        exp_L_2 = @. exp(rhs_factor*dt*xh.∇²/2)
 
+        apply_exp!(u, uₚ, xh.ft, exp_L_2)
         for it in 1:n_t
-            transform!(uₚ, xh.ft, u; direction=:forward)
-            uₚ .*= ex
-            transform!(u, xh.ft, uₚ; direction=:backward, normalise=true)
+            # apply exp(ℎ𝑀)
             @. u *= exp(b * (xh.U[1] + g[1] * abs2(u)))
-            transform!(uₚ, xh.ft, u; direction=:forward)
-            uₚ .*= ex
-            transform!(u, xh.ft, uₚ; direction=:backward, normalise=true)
-            if it == save_indices[nsave]
+            if it == save_indices[nsave] # if needs saving during this step, then apply exp(ℎ𝐿/2), save, and apply exp(ℎ𝐿/2) again to start the next step
+                apply_exp!(u, uₚ, xh.ft, exp_L_2)
                 us[nsave] = copy(u)
                 nsave += 1
+                # apply exp(ℎ𝐿/2) to start the next iteration, but not needed in the very end
+                if it < n_t
+                    apply_exp!(u, uₚ, xh.ft, exp_L_2)
+                end
+            else # if don't need to save during this step, then apply exp(ℎ𝐿)
+                apply_exp!(u, uₚ, xh.ft, exp_L)
             end
         end
-    else
+    else # :yoshida4
+        # scheme coefficients
         c = 1/(2-2^(1/3))
-        a = [c/2, (1-c)/2]    .* rhs_factor .* dt
-        b = [  c,    1-2c, c] .* rhs_factor .* dt
+        a1 = c/2; a2 = (1-c)/2;
+        b1, b2, b3 = [c, 1-2c, c] .* rhs_factor .* dt
         # prepare exponentials that apply the Laplacian
-        E = [typeof(rhs_factor)[] for _ in 1:4]
-        E[1] = @. exp(a[1]*xh.∇²)
-        E[2] = @. exp(a[2]*xh.∇²)
-        E[3] = E[2]
-        E[4] = E[1]
+        exp_a₁L = @. exp(a1*rhs_factor*dt*xh.∇²)
+        exp_a₂L = @. exp(a2*rhs_factor*dt*xh.∇²)
+        exp_2a₁L = @. exp(2a1*rhs_factor*dt*xh.∇²)
 
+        apply_exp!(u, uₚ, xh.ft, exp_a₁L)
         for it in 1:n_t
-            for i in 1:4
-                transform!(uₚ, xh.ft, u; direction=:forward)
-                uₚ .*= E[i]
-                transform!(u, xh.ft, uₚ; direction=:backward, normalise=true)
-                if i != 4
-                    @. u *= exp(b[i] * (xh.U[1] + g[1] * abs2(u)))
-                end
-            end
-            if it == save_indices[nsave]
+            @. u *= exp(b1 * (xh.U[1] + g[1] * abs2(u)))
+            apply_exp!(u, uₚ, xh.ft, exp_a₂L)
+            @. u *= exp(b2 * (xh.U[1] + g[1] * abs2(u)))
+            apply_exp!(u, uₚ, xh.ft, exp_a₂L)
+            @. u *= exp(b3 * (xh.U[1] + g[1] * abs2(u)))
+            
+            if it == save_indices[nsave] # if needs saving during this step, then apply exp(𝑎₁ℎ𝐿), save, and apply exp(𝑎₁ℎ𝐿) again to start the next step
+                apply_exp!(u, uₚ, xh.ft, exp_a₁L)
                 us[nsave] = copy(u)
                 nsave += 1
+                # apply exp(𝑎₁ℎ𝐿) to start the next iteration, but not needed in the very end
+                if it < n_t
+                    apply_exp!(u, uₚ, xh.ft, exp_a₁L)
+                end
+            else # if don't need to save during this step, then apply exp(2𝑎₁ℎ𝐿)
+                apply_exp!(u, uₚ, xh.ft, exp_2a₁L)
             end
         end
     end     
     return GPESolution(ts_saved, us) 
+end
+
+"Helper function used during split-step integration: apply the exponential factor `E` to `u` in p-space."
+function apply_exp!(u, uₚ, ft, E)
+    transform!(uₚ, ft, u; direction=:forward)
+    uₚ .*= E
+    transform!(u, ft, uₚ; direction=:backward, normalise=true)
+    return
 end
