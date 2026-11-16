@@ -36,6 +36,7 @@ include("XSpacePreconditioners.jl")
 
 include("gpe_stationary.jl")
 include("gpe_dynamics_pspace.jl")
+include("split_step_xspace.jl")
 include("gpe_dynamics_xspace.jl")
 include("BdGMaps.jl")
 

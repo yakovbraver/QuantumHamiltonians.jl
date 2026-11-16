@@ -20,6 +20,7 @@ Return the DifferentialEquations solution object.
 function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}, AbstractVector{<:AbstractArray{<:Number}}}, g::AbstractMatrix{R};
                    T_max::R, dt::R, itime::Bool=false,
                    solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true) : ODE_EXP.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R, T}
+    (solver isa Symbol && !in(solver, (:strang2, :yoshida4))) && throw(ArgumentError("unsupported solver `$solver`. Available options: `:strang2`, `:yoshida4`, or a DifferentialEquations solver.")) 
     (;xlims, B, nc, ft) = xh
 
     # determine if equation is real (in x-space)
@@ -46,10 +47,14 @@ function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Fu
         end
     end
 
-    # The equation i∂ₜ𝜓 = 𝐻𝜓 + g|𝜓|²𝜓 is coded as ∂ₜ𝜓 = -i𝐻𝜓 -i𝑔|𝜓|²𝜓.
+    # The equation i∂ₜ𝜓 = 𝐻𝜓 + 𝑔|𝜓|²𝜓 is coded as ∂ₜ𝜓 = -i𝐻𝜓 -i𝑔|𝜓|²𝜓.
     # In imaginary time, the equation is ∂ₜ𝜓 = -𝐻𝜓 -𝑔|𝜓|²𝜓. The factor multiplying 𝐻 and 𝑔 is called here `rhs_factor`
-    rhs_factor = itime ? -1 : -im
-    
+    rhs_factor = itime ? -1.0 : -1.0im
+
+    if solver isa Symbol
+        return split_step(xh, ψ_input, g; T_max, dt, rhs_factor, nsaves, solver)
+    end
+
     # Initialise the coupling matrix and problem parameters.
     # The split problem passes one shared parameter tuple to both the linear operator (`FunctionOperator`) and nonlinear part (encoded in `prob`).
     if nc == 1
