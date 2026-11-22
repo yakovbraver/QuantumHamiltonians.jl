@@ -16,7 +16,8 @@ mutable struct XSpaceHamiltonian{R, T, S, FourierTransformer} <: LM.LinearMap{T}
     nc::Int # number of components
     basis::Symbol
     ishermitian::Bool # the map is nonhermitian if decays Γ are present
-    U::Matrix{Vector{T}} # # nc-component matrix containing sampled and flattened coordinate-space potentials and couplings. Diagonal elements will contain 𝑈ᵃᵃ + (𝐀ᵃ)² - iΓᵃ/2 (plus i𝛿∇𝐀ᵃ if `!symmetrize_pA`); hence `U` is complex if 𝐴 or Γ is present
+    U::Matrix{Vector{T}} # nc-component matrix containing sampled and flattened coordinate-space potentials and couplings. Diagonal elements will contain 𝑈ᵃᵃ + (𝐀ᵃ)² - iΓᵃ/2 (plus i𝛿∇𝐀ᵃ if `!symmetrize_pA`); hence `U` is complex if 𝐴 or Γ is present
+    𝑈::AbstractMatrix{<:Union{Function, Nothing}} # original functions are needed to resample 𝑈 for magnetic split-step propagation
     A::Matrix{Vector{R}} # `A[c, i]` is `i`th projection of the `c`th component of the sampled vector potential
     symmetrize_pA::Bool  # if true, the kinetic term (𝐩 - 𝐀)² will be applied as (𝐩² - 𝐩𝐀 - 𝐀𝐩 + 𝐀²); if false, then as (𝐩² - (𝐩𝐀) - 2𝐀𝐩 + 𝐀²)
     ∇::Vector{Vector{R}} # `∇[i]` is the p-space flattened vector of 𝑝ᵢ = -i𝛿𝜕ᵢ if `basis=:cis` and 𝛿𝜕ᵢ otherwise. Real in both cases.
@@ -109,7 +110,7 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
                 U[b, c] = Vector{T}(undef, B)
                 sample!(U[b, c], 𝑈[b, c], xs)
             end
-            # for a diagonal block, also add 𝐴² - iΓ/2, and i𝛿𝐴 (if `!symmetrize_pA`)
+            # for a diagonal block, also add 𝐀² - iΓ/2, and i𝛿∇𝐀 (if `!symmetrize_pA`)
             if b == c
                 for i in 1:D # for each projection of 𝐴: 𝐴[c, i] is `i`th projection of the `c`th component
                     if !isnothing(𝐴[b, i]) 
@@ -143,7 +144,7 @@ function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
     ε = S[] # eigenvalues, can be complex for nonhermitian Hamiltonian, hence additional type `S`
     V = T[;;] # eigenvectors matrix
 
-    return XSpaceHamiltonian(xlims, L, B, δ, nc, basis, ishermitian, U, A, symmetrize_pA, ∇, ∇², Γ, ε, V, ft, buff_real, buff_complex, buff_complex2, buff_complex3, (nc*B, nc*B))
+    return XSpaceHamiltonian(xlims, L, B, δ, nc, basis, ishermitian, U, 𝑈, A, symmetrize_pA, ∇, ∇², Γ, ε, V, ft, buff_real, buff_complex, buff_complex2, buff_complex3, (nc*B, nc*B))
 end
 
 "Update `f′` by acting with `xh` on `f`. `f` must be a flattened x-space vector."
@@ -380,109 +381,6 @@ function make_wavefunction(xh::XSpaceHamiltonian{R}, ψ_flat::AbstractVector{T};
         ψᶜ_x
     end
     return ntuple(i -> ft.xs[:, i], size(ft.xs, 2))..., ψ
-end
-
-# TODO these four methods work both with PSpaceHamiltonian and XSpaceHamiltonian, move to future QuantumHamiltonian.jl
-
-"""
-Calculate inner product ∫𝑣𝑤d𝑥 (but without d𝑥) between `v` and `w` representing single-component x-space vectors.
-For cis and sin basis, this is just a dot, but for cos we have to treat the edges.
-The information of the basis and problem dimensions is contained in `qh`.
-"""
-@views function inner_prod(v::AbstractVector{<:Number}, w::AbstractVector{<:Number}, qh)
-    s = if qh.basis != :cos
-        dot(v, w)
-    else
-        D = length(qh.xlims)
-        if D == 1
-            dot(v, w) - (v[1]w[1] + v[end]w[end]) / 2
-        elseif D == 2
-            # create reshaped views for convenient indexing
-            v_tensor = reshape(v, size(qh.ft.plan_forward))
-            w_tensor = reshape(w, size(qh.ft.plan_forward))
-            dot(v, w) -
-            ( dot(v_tensor[1, 2:end-1]  , w_tensor[1, 2:end-1])   +
-              dot(v_tensor[end, 2:end-1], w_tensor[end, 2:end-1]) +
-              dot(v_tensor[2:end-1, 1]  , w_tensor[2:end-1, 1])   +
-              dot(v_tensor[2:end-1, end], w_tensor[2:end-1, end])) / 2 -
-            (v_tensor[1, 1]'*w_tensor[1, 1] + v_tensor[1, end]'*w_tensor[1, end] + v_tensor[end, 1]'*w_tensor[end, 1] + v_tensor[end, end]'*w_tensor[end, end]) * 3/4
-        else
-            error("inner_prod not implemented for cos basis in $D dimensions.")
-        end
-    end
-    dV = prod(qh.ft.xs[2, i] - qh.ft.xs[1, i] for i in axes(qh.ft.xs, 2)) # volume element
-    return s*dV
-end
-
-"""
-Calculate the squared norm ‖𝑣‖² = ∫|𝑣|²d𝑉 for `v` representing single-component x-space vectors.
-For cis and sin basis, this is `sum(abs2, v)`, but for cos we have to treat the edges.
-The information of the basis and problem dimensions is contained in `xh`.
-"""
-@views function norm²(v::AbstractVector{<:Number}, qh)
-    s = if qh.basis != :cos
-        sum(abs2, v)
-    else
-        D = length(qh.xlims)
-        if D == 1
-            sum(abs2, v) - (abs2(v[1]) + abs2(v[end])) / 2
-        elseif D == 2
-            # create reshaped views for convenient indexing
-            v_tensor = reshape(v, size(qh.ft.plan_forward))
-            sum(abs2, v) -
-            (sum(abs2, v_tensor[1, 2:end-1]  )  +
-             sum(abs2, v_tensor[end, 2:end-1])  +
-             sum(abs2, v_tensor[2:end-1, 1]  )  +
-             sum(abs2, v_tensor[2:end-1, end])) / 2 -
-            (abs2(v_tensor[1, 1]) + abs2(v_tensor[1, end]) + abs2(v_tensor[end, 1]) + abs2(v_tensor[end, end])) * 3/4
-        else
-            error("norm² not implemented for cos basis in $D dimensions.")
-        end
-    end
-    dV = prod(qh.ft.xs[2, i] - qh.ft.xs[1, i] for i in axes(qh.ft.xs, 2)) # volume element
-    return s*dV
-end
-
-"""
-Calculate the integral ∫𝑣d𝑉 for `v` representing single-component x-space vectors.
-For cis and sin basis, this is `sum(v)`, but for cos we have to treat the edges.
-The information of the basis and problem dimensions is contained in `xh`.
-"""
-@views function integrate(v::AbstractVector{<:Number}, qh)
-    s = if qh.basis != :cos
-        sum(v)
-    else
-        D = length(qh.xlims)
-        if D == 1
-            sum(v) - (v[1] + v[end]) / 2
-        elseif D == 2
-            # create reshaped views for convenient indexing
-            v_tensor = reshape(v, size(qh.ft.plan_forward))
-            sum(v) -
-            (sum(v_tensor[1, 2:end-1]  )  +
-             sum(v_tensor[end, 2:end-1])  +
-             sum(v_tensor[2:end-1, 1]  )  +
-             sum(v_tensor[2:end-1, end])) / 2 -
-            (v_tensor[1, 1] + v_tensor[1, end] + v_tensor[end, 1] + v_tensor[end, end]) * 3/4
-        else
-            error("integrate not implemented for cos basis in $D dimensions.")
-        end
-    end
-    dV = prod(qh.ft.xs[2, i] - qh.ft.xs[1, i] for i in axes(qh.ft.xs, 2)) # volume element
-    return s*dV
-end
-
-"""
-Normalise an x-space flattened multi-component state `v` so that ∑ᶜ∫|𝑣ᶜ|²d𝑉 = 1.
-The information of the basis and problem dimensions is contained in `qh`.
-"""
-function LA.normalize!(v::AbstractVector{T}, qh::XSpaceHamiltonian) where T <: Number
-    (;B, nc) = qh
-    N = zero(real(T))
-    for c in 1:nc
-        N += norm²(v[(c-1)B+1:c*B], qh)
-    end
-    v ./= √N
 end
 
 """

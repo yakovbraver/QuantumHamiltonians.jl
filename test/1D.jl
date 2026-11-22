@@ -1,4 +1,4 @@
-@testset "1-component diagonalisation" begin
+@testset "1-component diagonalisation (all Hamiltonian kinds, all bases, w/ and w/o preconditioners)" begin
     # Quantum harmonic oscillator: 𝐻 = -Δ/2 + 𝑥²/2 
 
     𝑈(x) = x^2 / 2
@@ -45,7 +45,7 @@
     end
 end
 
-@testset "1-component nonlinear stationary state and BdG" begin
+@testset "1-component nonlinear stationary state and BdG (dense p-space, all bases)" begin
     # Bright soliton in a "parabolic + bump at the centre" potential -- "Soliton on a hill" from https://doi.org/10.1093/oso/9780192843234.001.0001, Section 22.5
 
     𝑈(x::Real) = (Ω*x)^2 / 2 + B*sech(β*x)^2
@@ -84,7 +84,7 @@ end
     end
 end
 
-@testset "2-component nonlinear stationary state, BdG, and time evolution" begin
+@testset "2-component nonlinear stationary state, BdG, and time evolution (dense p-space, cos basis)" begin
     # Stationary Manakov dark-bright soliton, see e.g. https://doi.org/10.1093/oso/9780192843234.001.0001, Section 27.1
 
     Float = Float64 # operating type
@@ -155,7 +155,7 @@ end
     @test sum(abs2, abs2.(Ψ1[1]) - abs2.(Ψ2[1])) < 5e-8
 end
 
-@testset "2-component nonlinear Floquet-BdG" begin
+@testset "2-component nonlinear Floquet-BdG (dense p-space, cis basis)" begin
     # DB lattices from http://dx.doi.org/10.1103/PhysRevA.91.023619 (https://arxiv.org/abs/1402.1895)
 
     Float = Float64 # operating type
@@ -195,8 +195,9 @@ end
     @test isapprox.(sort(vals[indx]; by=imag), vals_true; atol=1e-2) |> all
 end
 
-@testset "1-component imaginary and real dynamics" begin
+@testset "1-component imaginary and real dynamics (all bases, all Hamiltonian kinds)" begin
     # Soliton in a harmonic potential; Na-23 parameters similar to https://doi.org/10.1103/PhysRevLett.87.130402 (https://arxiv.org/abs/cond-mat/0104549)
+    # TODO add split-step testing
 
     m = 3.8165e-26
     aₛ = 2.5e-9

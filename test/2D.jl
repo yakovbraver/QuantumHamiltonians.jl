@@ -382,3 +382,117 @@ end
     end
 
 end
+
+@testset "1-component GPE dynamics (x-space, cis basis, w/ and w/o vector potential)" begin
+    """
+    For each state, detect the vortex and claculates its (r, ϕ) coordinates. `ψs` is a vector of flattened state vectors at each time point.
+    `x_bound` is the maximum x of the windows in which to search for the vortex. The window is [-x_bound, x_bound] in both x and y.
+    """
+    function get_r_ϕ(xh, ψs; x_bound, pad=0)
+        rs = Vector{Float64}(undef, length(ψs))
+        ϕs = Vector{Float64}(undef, length(ψs))
+        previous_wrapped_ϕ = 0.0
+        for it in eachindex(ψs)
+            xs, ys, ψ = make_wavefunction(xh, ψs[it]; pad)
+            xwindow = findall(-x_bound .<= xs .<= x_bound)
+            ywindow = findall(-x_bound .<= ys .<= x_bound)
+            density = abs2.(ψ[1][xwindow, ywindow])
+            _, ix_min = findmin(density)
+            x_vortex = xs[xwindow[ix_min[1]]]
+            y_vortex = ys[ywindow[ix_min[2]]]
+            rs[it] = hypot(x_vortex, y_vortex)
+            wrapped_ϕ = atan(y_vortex, x_vortex)
+            if it == firstindex(ψs)
+                ϕs[it] = wrapped_ϕ
+            else
+                Δϕ = wrapped_ϕ - previous_wrapped_ϕ
+                Δϕ -= 2π * round(Δϕ / (2π))
+                ϕs[it] = ϕs[it - 1] + Δϕ
+            end
+            previous_wrapped_ϕ = wrapped_ϕ
+        end
+        return rs, ϕs
+    end
+
+    function 𝑈(x::Real, y::Real)
+        ω^2/2 * (x^2 + y^2)
+    end
+
+    R::Float64 = 8.5
+    xlimits = (-R, R) 
+    ω::Float64 = 0.5 # trap frequency, ω⟂ in equations
+    g::Float64 = 500
+
+    𝐴ˣ(x, y) = -B*y/2 / √2
+    𝐴ʸ(x, y) = B*x/2 / √2
+    𝛬ˣ(x, y) = -B*y*x/2 / √2
+    𝛬ʸ(x, y) = B*x*y/2 / √2
+
+    B::Float64 = 0.1
+
+    ℓ = +1
+    natoms = 1.0
+
+    M = 32
+
+    T_max = 50 |> Float64
+    dt = 1e-2 |> Float64
+    nsaves = 50
+
+    for A_present in (false, true)
+        𝐴 = A_present ? [𝐴ˣ, 𝐴ʸ] : [nothing, nothing]
+        xh = XSpaceHamiltonian([xlimits, xlimits], 𝑈, 𝐴; basis=:cis, M, δ=1/√2)
+
+        # Thomas-Fermi trial wf for ground state search
+        μ_TF = ω * √(g/π)
+        ψTF = reshape((μ_TF .- real.(xh.U[1])) ./ g, (2M, 2M))
+        clamp!(ψTF, 0, Inf)
+        @. ψTF = √ψTF
+
+        xs, ys, u, μ_gnd = find_stationary(xh, [ψTF], [g;;], μ_TF, natoms; reltol=1e-5, show_trace=Val(false))
+        xs, ys, ψ_gnd = make_wavefunction(xh, u)
+
+        ξ = 1/√(2μ_gnd[1]) # healing length
+
+        # create an off-centre vortex by multiplying the ground state by tanh(𝑟/𝜉√2)cis(𝜙)
+        xᶜ, yᶜ = 2.4, 0
+        ψ_ofc = map(CartesianIndices(ψ_gnd[1])) do I
+            x, y = xs[I[1]], ys[I[2]]
+            ψ_gnd[1][I] * tanh(hypot(x-xᶜ, y-yᶜ)/(ξ√2)) * cis(ℓ*atan(y-yᶜ, x-xᶜ))
+        end 
+
+        for solver in (:strang2, :yoshida4, QuantumHamiltonians.ODE_EXP.ETDRK4(;krylov=true, m=5))
+            if !A_present
+                E_drift = solver == :strang2 ? 3e-7 :
+                          solver == :yoshida4 ? 6e-9 : 5e-7
+                ω_fit_true = 0.10105
+                r_end_true = 2.38381326640467
+                ϕ_end_true = 5.01652021288370
+                rϕ_atol = 1e-14
+            else
+                solver == :yoshida4 && continue # Yoshida is not yet supported when 𝐴 is present
+                E_drift = solver == :strang2 ? 1e-4 : 4e-7
+                ω_fit_true = 0.0515
+                r_end_true = 2.40
+                ϕ_end_true = 2.53
+                rϕ_atol = 1e-2
+            end
+
+            sol = propagate(xh, [ψ_ofc], [g;;], [𝛬ˣ, 𝛬ʸ]; T_max, dt, nsaves, solver) # can always pass gauge phases -- will be ignored if not needed
+
+            E₀ = get_EμN(xh, sol.u[1], [g;;])[1]
+            ΔE = map(sol.u) do u
+                get_EμN(xh, u, [g;;])[1] - E₀ |> abs
+            end
+            @test maximum(ΔE) / E₀ < E_drift
+
+            rs, ϕs = get_r_ϕ(xh, sol.u; x_bound=1.5xᶜ, pad=4)
+            @test rs[end] ≈ r_end_true atol=rϕ_atol
+            @test ϕs[end] ≈ ϕ_end_true atol=rϕ_atol
+    
+            # do a linear fit for `ϕs`
+            K = [sol.t ones(length(sol.t))] \ ϕs
+            @test K[1] ≈ ω_fit_true atol=1e-4
+        end
+    end
+end

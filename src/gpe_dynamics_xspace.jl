@@ -1,8 +1,11 @@
-"Convenience caller for the 1-component case, where `ψ₀` is an analytic function or an array representing the discretised function, `g` is a number, and `ψ₀_iseven` is a Bool."
-function propagate(xh::XSpaceHamiltonian{R}, ψ₀::Union{Function, AbstractArray{<:Number}}, g::R;
+"""
+Convenience caller for the 1-component case, where `ψ₀` is an analytic function or an array representing the discretised function and `g` is a number.
+"""
+function propagate(xh::XSpaceHamiltonian{R}, ψ₀::Union{Function, AbstractArray{<:Number}}, g::R, 𝛬=nothing;
                    T_max::R, dt::R, itime::Bool=false,
-                   solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true) : ODE_EXP.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R}
-    propagate(xh, [ψ₀], [g;;]; T_max, dt, itime, solver, nsaves)
+                   solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true) : ODE_EXP.ETDRK4(;krylov=true)),
+                   nsaves::Integer=0) where {R}
+    propagate(xh, [ψ₀], [g;;], 𝛬; T_max, dt, itime, solver, nsaves)
 end
 
 """
@@ -12,14 +15,21 @@ Propagate the time-dependent Schrödinger or Gross-Pitaevskii (with nonlinearity
     2. A vector of etiher D-dimensional arrays or flattened vectors, one for each component, representing discretised x-space functions.
     3. An x-space flattened vector, such as one obtained during diagonalisation. This is the format using throughout the solving; inputs of types 1 and 2 are converted to this type.
 Set `itime=true` for imaginary time propagation.
-`solver` is a DifferentialEquations.jl Semilinear Split ODE Solvers from https://docs.sciml.ai/DiffEqDocs/stable/solvers/split_ode_solve/, with Krylov iteration necessarily enabled.
-For imaginary-time GPE, the default is `LawsonEuler(;krylov=true)`, which is first order (and hence fast), but is sufficient when the time step is small.
-For real-time GPE, the default is `ETDRK4(;krylov=true)`; lower order variants can also be used for quick results. `HochOst4` seems to conserve the norm even better, but is a bit slower.
-Return the DifferentialEquations solution object. 
+Two solving methods are supported:
+    1. Split-step method using 2nd order Strang splitting or 4th order Yoshida splitting. Pass `solver=:strang2` or `solver=:yoshida4`, respectively.
+       If a vector potential is present, then pass the gauge-phases vector `𝛬=[𝛬ˣ, 𝛬ʸ]` satisfying 𝜕ⁱ𝛬ⁱ = 𝐴ⁱ.
+       For the split-step method, the value of `xh.symmetrize_pA` does not matter.
+       The returned `sol` object is a simple struct containing saved time moments in `sol.t` and saved flattened states in `sol.u`.
+    2. Exponential integration. In this case, `solver` is a DifferentialEquations.jl Semilinear Split ODE Solvers from https://docs.sciml.ai/DiffEqDocs/stable/solvers/split_ode_solve/, with Krylov necessarily enabled.
+       Returns a DifferentialEquations.jl solution object.
+For imaginary-time GPE, the default is `LawsonEuler(;krylov=true, m=5)`, which is first order (and hence fast), but is sufficient when the time step is small.
+`nsaves` ≥ 0 shows how many intermediate solutions to save in addition to intial and final.
+For real-time GPE, the default is `ETDRK4(;krylov=true, m=5)`; lower order variants can also be used for quick results. `HochOst4` seems to conserve the energy even better, but is a bit slower.
 """
-function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}, AbstractVector{<:AbstractArray{<:Number}}}, g::AbstractMatrix{R};
+function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}, AbstractVector{<:AbstractArray{<:Number}}}, g::AbstractMatrix{R}, 𝛬=nothing;
                    T_max::R, dt::R, itime::Bool=false,
-                   solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true) : ODE_EXP.ETDRK4(;krylov=true)), nsaves::Integer=0) where {R, T}
+                   solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true, m=5) : ODE_EXP.ETDRK4(;krylov=true, m=5)),
+                   nsaves::Integer=0) where {R, T}
     T_max < dt && throw(ArgumentError("`T_max < dt` is not allowed")) 
     nsaves < 0 && throw(ArgumentError("`nsaves < 0` is not allowed")) 
     (solver isa Symbol && !in(solver, (:strang2, :yoshida4))) && throw(ArgumentError("unsupported solver `$solver`. Available options: `:strang2`, `:yoshida4`, or a DifferentialEquations solver.")) 
@@ -55,7 +65,7 @@ function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Fu
     rhs_factor = itime ? -1.0 : -1.0im
 
     if solver isa Symbol
-        return split_step(xh, ψ_input, g; T_max, dt, rhs_factor, nsaves, solver)
+        return split_step(xh, ψ_input, g; T_max, dt, rhs_factor, nsaves, solver, 𝛬)
     end
 
     # Initialise the coupling matrix and problem parameters.

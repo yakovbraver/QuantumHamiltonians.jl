@@ -1,6 +1,6 @@
 using QuantumHamiltonians
 using Test
-using LinearAlgebra: normalize, dot
+using LinearAlgebra: normalize, dot, \
 using Random
 
 # ~ 1.5 min
@@ -8,7 +8,7 @@ using Random
     include("1D.jl")
 end
 
-# ~ 1 min
+# ~ 2 min
 @testset "2D tests" begin
     include("2D.jl")
 end

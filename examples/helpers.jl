@@ -125,7 +125,7 @@ function plot_comps_2D(xs, ys, ψ; addheight=0)
     theme(:dark, size=(600, 200nc+20 + addheight))
     figs = [plot() for _ in 1:2nc]
     for c in 1:nc
-        figs[2(c-1)+1] = heatmap(xs, ys, abs2.(ψ[c])', c=CMAP)
+        figs[2(c-1)+1] = heatmap(xs, ys, abs2.(ψ[c])', c=cgrad(:Spectral, rev=true))
         figs[2(c-1)+2] = heatmap(xs, ys, angle.(ψ[c])', c=:coolwarm);
     end
     plot(figs..., layout=(nc, 2))

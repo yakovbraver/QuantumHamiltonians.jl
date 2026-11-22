@@ -73,7 +73,7 @@ Keyword arguments:
     * `ls_prec`: precodnitioner for the linear system. Currently only `:block_jacobi` is supported, and only for `XSpaceHamiltonian`.
     * `ls_kwargs`: a named tuple of keyword arguments to pass to the Krylov solver, such as `verbose` (0 or 1), `itmax`, `rtol`, `atol`, etc.
       Note that these are passed to the solver constructor [such as `KrylovJL_GMRES()`] rather than passing to `LinearSolve.solve()`.
-Any additional keyword arguments, such as `abstol`, `maiters`, `maxtime`, will be passed directly to `NonlinearSolve.solve()`.
+Any additional keyword arguments, such as `abstol`, `maxiters`, `maxtime`, will be passed directly to `NonlinearSolve.solve()`.
 Return a tuple `(xs, ys, …, ψ, μs)`, where `ψ` is a flattened x-space vector holding all components, while `μs` is a vector/scalar of the 
 found chemical potentials; if solving was performed under fixed 𝜇s given by the input `μ`, then the same input values are returned, i.e. `μs = μ`.
 """
