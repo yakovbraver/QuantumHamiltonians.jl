@@ -195,9 +195,8 @@ end
     @test isapprox.(sort(vals[indx]; by=imag), vals_true; atol=1e-2) |> all
 end
 
-@testset "1-component imaginary and real dynamics (all bases, all Hamiltonian kinds)" begin
+@testset "1-component imaginary and real dynamics (all bases, all Hamiltonian kinds; both split-step and exponential for x-space)" begin
     # Soliton in a harmonic potential; Na-23 parameters similar to https://doi.org/10.1103/PhysRevLett.87.130402 (https://arxiv.org/abs/cond-mat/0104549)
-    # TODO add split-step testing
 
     m = 3.8165e-26
     aₛ = 2.5e-9
@@ -225,6 +224,9 @@ end
     𝜓₀(x) = p * tanh(x/ξ) # soliton trial
     μ₀ = 40.0
 
+    LawsonEuler = QuantumHamiltonians.ODE_EXP.LawsonEuler(;krylov=true, m=5)
+    ETDRK4 = QuantumHamiltonians.ODE_EXP.ETDRK4(;krylov=true, m=5)
+
     for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace)
         M = basis == :cis ? (kind == :xspace ? 64 : 62) :
             basis == :sin ? 127 : 128
@@ -250,13 +252,16 @@ end
         # find soliton state using imaginary time
         T_max = 1.0
         dt = 1e-4
-        sol = propagate(qh, 𝜓₀, g; T_max, dt, itime=true, solver=QuantumHamiltonians.ODE_EXP.LawsonEuler(;krylov=true, m=5))
-        E_itime, μ_itime, N_itime = get_EμN(qh, sol.u[end], [g;;])
+        solvers = kind == :xspace ? (LawsonEuler, :strang2) : (LawsonEuler,)
+        for solver in solvers
+            sol = propagate(qh, 𝜓₀, g; T_max, dt, itime=true, solver)
+            E_itime, μ_itime, N_itime = get_EμN(qh, sol.u[end], [g;;])
 
-        # compare itime agains NR
-        @test N_itime[1] ≈ natoms atol=1e-10
-        @test E_itime ≈ E_nr rtol=1e-5
-        @test μ_itime[1] ≈ μ_nr[1] rtol=5e-4
+            # compare itime agains NR
+            @test N_itime[1] ≈ natoms atol=1e-10
+            @test E_itime ≈ E_nr rtol=1e-5
+            @test μ_itime[1] ≈ μ_nr[1] rtol=5e-4
+        end
 
         ### real-time test: calculate half-period of oscillations, check energy conservation and check that wf minimum is at roughly -5
 
@@ -269,17 +274,21 @@ end
         dt = 1e-3
         nsaves = 2
         G = kind == :xspace ? [g;;] : g # work-around for interface difference 
-        sol = propagate(qh, ψ₀, G; T_max, dt, itime=false, nsaves, solver=QuantumHamiltonians.ODE_EXP.ETDRK4(;krylov=true, m=5))
 
-        E_final = get_EμN(qh, sol.u[end], [g;;])[1]
-        E_initial = get_EμN(qh, sol.u[1], [g;;])[1]
-        @test E_final ≈ E_initial rtol=1e-4
+        solvers = kind == :xspace ? (ETDRK4, :strang2, :yoshida4) : (ETDRK4,)
+        for solver in solvers
+            sol = propagate(qh, ψ₀, G; T_max, dt, itime=false, nsaves, solver)
 
-        xs, ψ = make_wavefunction(qh, sol.u[end])
-        window = -7 .< xs .< 7
-        xs_reduced = xs[window]
-        ψ²_min, ix_min = findmin(abs2, ψ[1][window]) # find minimum of the density on 𝑥 ∈ (-7, 7)
-        @test xs_reduced[ix_min] ≈ -5.3 atol=0.5
-        @test ψ²_min < 0.0021
+            E_final = get_EμN(qh, sol.u[end], [g;;])[1]
+            E_initial = get_EμN(qh, sol.u[1], [g;;])[1]
+            @test E_final ≈ E_initial rtol=1e-4
+
+            xs, ψ = make_wavefunction(qh, sol.u[end])
+            window = -7 .< xs .< 7
+            xs_reduced = xs[window]
+            ψ²_min, ix_min = findmin(abs2, ψ[1][window]) # find minimum of the density on 𝑥 ∈ (-7, 7)
+            @test xs_reduced[ix_min] ≈ -5.3 atol=0.5
+            @test ψ²_min < 0.0021
+        end
     end
 end

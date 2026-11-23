@@ -1,4 +1,5 @@
 # Helper functions for plotting 1D multicomponent wave functions and dynamics maps
+using Plots, LaTeXStrings
 using LinearAlgebra: dot
 
 "Return optimal number `M` of harmonics for `basis`, approximately 2^p. Relevant for p-space GPE-related calculations, where FFT is performed repeatedly."

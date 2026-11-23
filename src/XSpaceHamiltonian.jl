@@ -54,9 +54,9 @@ Construct a `XSpaceHamiltonian` object using the coordinate-space functions stor
 `symmetrize_pA`: if true, the kinetic term (𝐩 - 𝐀)² will be applied in the symmetrized form as (𝐩² - 𝐩𝐀 - 𝐀𝐩 + 𝐀²); if false, then as (𝐩² - (𝐩𝐀) - 2𝐀𝐩 + 𝐀²).
 In symmetric form, the action of the map is ~2x slower, but it is more accurate because the resulting Hamiltonian is then Hermitian to machine precision.
 When diagonalising, symmetric form ensures higher accuracy. However, for higher number of harmonics (e.g. M = 128 in 2D) there seems to be no difference.
-When propagating GPE, symmetric form ensures better energy conservation. However, if propagating for "not too long" times (and depending on the problem), the non-symmetric form is often enough.
+When propagating GPE with exponential integrator, symmetric form ensures better energy conservation. However, if propagating for "not too long" times (and depending on the problem), the non-symmetric form is often enough.
 By default, `symmetrize_pA=false` for faster solving; for production, check against `symmetrize_pA=true`.
-If 𝐀 is not present, then the kinetic term is just 𝐩² and `symmetrize_pA` has no effect.
+If 𝐀 is not present, then the kinetic term is just 𝐩² and `symmetrize_pA` has no effect. For propagation with split-step, `symmetrize_pA` also has no effect.
 """
 function XSpaceHamiltonian(xlims::AbstractVector{Tuple{R, R}},
                            𝑈::AbstractMatrix{<:Union{Function, Nothing}},

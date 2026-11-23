@@ -1,9 +1,9 @@
 """
 Convenience caller for the 1-component case, where `ψ₀` is an analytic function or an array representing the discretised function and `g` is a number.
 """
-function propagate(xh::XSpaceHamiltonian{R}, ψ₀::Union{Function, AbstractArray{<:Number}}, g::R, 𝛬=nothing;
+function propagate(xh::XSpaceHamiltonian{R}, ψ₀::Union{Function, AbstractArray{<:Number}}, g::R, 𝛬::AbstractVector{<:Function}=[zero, zero];
                    T_max::R, dt::R, itime::Bool=false,
-                   solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true) : ODE_EXP.ETDRK4(;krylov=true)),
+                   solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true, m=5) : ODE_EXP.ETDRK4(;krylov=true, m=5)),
                    nsaves::Integer=0) where {R}
     propagate(xh, [ψ₀], [g;;], 𝛬; T_max, dt, itime, solver, nsaves)
 end
@@ -26,7 +26,7 @@ For imaginary-time GPE, the default is `LawsonEuler(;krylov=true, m=5)`, which i
 `nsaves` ≥ 0 shows how many intermediate solutions to save in addition to intial and final.
 For real-time GPE, the default is `ETDRK4(;krylov=true, m=5)`; lower order variants can also be used for quick results. `HochOst4` seems to conserve the energy even better, but is a bit slower.
 """
-function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}, AbstractVector{<:AbstractArray{<:Number}}}, g::AbstractMatrix{R}, 𝛬=nothing;
+function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}, AbstractVector{<:AbstractArray{<:Number}}}, g::AbstractMatrix{R}, 𝛬::AbstractVector{<:Function}=[zero, zero];
                    T_max::R, dt::R, itime::Bool=false,
                    solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true, m=5) : ODE_EXP.ETDRK4(;krylov=true, m=5)),
                    nsaves::Integer=0) where {R, T}
@@ -37,13 +37,15 @@ function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Fu
     (;xlims, B, nc, ft) = xh
 
     # determine if equation is real (in x-space)
-    eq_isreal = itime && T <: Real # below `eq_isreal` might change if initial state is complex
+    eq_isreal = solver isa Symbol && xh.basis == :cis ? false : # for split-step, if basis is cis, then we always assume the equation is complex for simplicity. This way we omit the possible optimisation for the case when initial state is real and there's no 𝐀 and doing itime. That would require copying the real state to a complex vector before and after FFT.
+                itime && T <: Real # below `eq_isreal` might change if initial state is complex
 
     # prepare the input wf
     if ψ₀ isa AbstractVector{<:Number} # `ψ₀` is already a flattened vector, but we might need to copy it into a complex array
         ψ₀_isreal = eltype(ψ₀) <: Real
         eq_isreal &= ψ₀_isreal
-        ψ_input = ψ₀_isreal && !eq_isreal ? complex(ψ₀) : ψ₀  # if the passed initial is real but equation is not, then convert; otherwise take as-is
+        ψ_input = ψ₀_isreal && !eq_isreal ? complex(ψ₀) : # if the passed initial is real but equation is not, then make a complex copy
+                  solver isa Symbol ? copy(ψ₀) : ψ₀ # otherwise, make a copy if doing split-step (will be mutating `ψ_input` during propagation), or make a reference if using DifferentialEquations
     elseif ψ₀ isa AbstractVector{<:AbstractArray{<:Number}} # then need to flatten each and put into a contiguous array
         ψ₀_arereal = all(eltype(ψ) <: Real for ψ in ψ₀)
         eq_isreal &= ψ₀_arereal
@@ -60,13 +62,13 @@ function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Fu
         end
     end
 
+    if solver isa Symbol # split-step branch. `ψ_input` is a copy of `ψ₀`, and it will be mutated
+        return split_step!(xh, ψ_input, g, 𝛬; T_max, dt, itime, nsaves, solver)
+    end
+
     # The equation i∂ₜ𝜓 = 𝐻𝜓 + 𝑔|𝜓|²𝜓 is coded as ∂ₜ𝜓 = -i𝐻𝜓 -i𝑔|𝜓|²𝜓.
     # In imaginary time, the equation is ∂ₜ𝜓 = -𝐻𝜓 -𝑔|𝜓|²𝜓. The factor multiplying 𝐻 and 𝑔 is called here `rhs_factor`
     rhs_factor = itime ? -1.0 : -1.0im
-
-    if solver isa Symbol
-        return split_step(xh, ψ_input, g; T_max, dt, rhs_factor, nsaves, solver, 𝛬)
-    end
 
     # Initialise the coupling matrix and problem parameters.
     # The split problem passes one shared parameter tuple to both the linear operator (`FunctionOperator`) and nonlinear part (encoded in `prob`).

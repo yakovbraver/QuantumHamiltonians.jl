@@ -1,21 +1,21 @@
 "A type for storing the solution of the time-dependent GPE at a number of time points."
-struct GPESolution{R}
+struct GPESolution{R, T}
     t::Vector{R}
-    u::Vector{Vector{Complex{R}}}
+    u::Vector{Vector{T}}
 end
 
 """
 Propagate the time-dependent GPE using split-step method, with `solver` being `:strang2` or `:yoshida4`.
-Return a solution object containing the funtion in the `u` field, and time moments in the `t` field.
+The initial state `u` will be mutated during solving.
 The equation is 𝜕ₜ𝜓 = 𝑟𝐻𝜓 + 𝑟𝑔|𝜓|²𝜓 with `rhs_factor` 𝑟 = -1 for imaginary-time solving and 𝑟 = -i for real-time.
 We split as 𝜕ₜ𝜓 = 𝐿𝜓 + 𝑀𝜓 where 𝐿 = 𝑟(𝐩 - 𝐀)² while 𝑀 = 𝑟(𝑈 + 𝑔|𝜓|²𝜓).
+Return a solution object `sol` with the intermediate solutions stored in `sol.u` and time moments in `sol.t`.
 Intermediate solutions are saved `nsaves` times in addition to intial and final.
 The less you save the faster it goes because not saving allows for combining the exponents between successive steps.
-`g` must not include the rhs_factor.
 For nonzero vector potential, `:strang2` requires `𝛬=[𝛬ˣ, 𝛬ʸ]` analytic functions satisfying `𝜕ⁱ𝛬ⁱ = 𝐴ⁱ`.
 """
-function split_step(xh::XSpaceHamiltonian{R, T}, u₀::AbstractVector{<:Number}, g::AbstractMatrix{R};
-                    T_max::R, dt::R, rhs_factor::Union{R, Complex{R}}=-1.0im, nsaves::Integer=0, solver::Symbol, 𝛬::Union{Nothing, AbstractVector{Function}}=nothing) where {R, T}
+function split_step!(xh::XSpaceHamiltonian{R}, u::AbstractVector{T}, g::AbstractMatrix{R}, 𝛬::AbstractVector{<:Function}=[zero, zero];
+                     T_max::R, dt::R, itime::Bool=false, nsaves::Integer=0, solver::Symbol) where {R, T}
     # prepare time moments
     ts = zero(R):dt:T_max
     n_t = length(ts)
@@ -24,33 +24,57 @@ function split_step(xh::XSpaceHamiltonian{R, T}, u₀::AbstractVector{<:Number},
     save_indices = round.(Int, range(1, n_t, length=nsaves)) # indices of time moments at which to save the solution
     (save_indices[end] == save_indices[end-1]) && pop!(save_indices) # last and pre-last might coincide, then remove one
     ts_saved = ts[save_indices] # time moments at which the solution will be saved
-    # prepare solution saving
-    us = [eltype(u₀)[] for _ in 1:length(ts_saved)]
-    us[1] = copy(u₀)
-    nsave = 2
+    # prepare solution saving. `T` is the type of `u`, and it reflects the type (real/complex) of equation since this was determined in `propagate!`
+    us = [T[] for _ in 1:length(ts_saved)]
+    us[1] = copy(u)
 
-    # buffers
-    uₚ = xh.buff_complex
-    u = xh.buff_complex2
-    copy!(u, u₀)
+    # prepare the p-space buffer
+    uₚ = T <: Real && xh.basis != :cis ? xh.buff_real : xh.buff_complex
+    # `u` is a copy of the input state, so it will be directly used for propagation
 
-    if any(!isempty, xh.A) # if vector potential is present
+    if any(!isempty, xh.A) # if at least one vector potential 𝐴 is present
         xh.basis == :cis || throw(ArgumentError("magnetic split-step propagation requires `basis=:cis`"))
         xh.nc == 1 || throw(ArgumentError("magnetic split-step propagation currently supports one component"))
         solver == :strang2 || throw(ArgumentError("magnetic split-step propagation currently supports only `solver=:strang2`"))
-        isnothing(𝛬) && throw(ArgumentError("magnetic split-step propagation requires passing the gauge phases array `𝛬`"))
-        return split_step_magnetic!(xh, u, uₚ, us, g; ts, save_indices, 𝛬, rhs_factor, dt)
-    end
-    
-    if solver == :strang2 # applies exp(ℎ𝐿/2)exp(ℎ𝑀)exp(ℎ𝐿/2) but combines adjacent 𝐿-exponents if not saving during the present step
-        b = rhs_factor * dt;
-        exp_L = @. exp(rhs_factor*dt*xh.∇²)
-        exp_L_2 = @. exp(rhs_factor*dt*xh.∇²/2)
+        any(==(zero), 𝛬[findall(!isempty, xh.A)]) && throw(ArgumentError("Each nonzero 𝐴ⁱ must have a matching nonzero 𝛬ⁱ"))
+        return strang2_magnetic(xh, u, uₚ, us, g, 𝛬; ts, save_indices, itime, dt)
+    else 
+        if solver == :strang2
+            return strang2!(xh, u, uₚ, us, g; ts, save_indices, itime, dt)
+        else
+            return yoshida4!(xh, u, uₚ, us, g; ts, save_indices, itime, dt)
+        end 
+    end    
+    return GPESolution(ts_saved, us) 
+end
 
+"""
+Propagate `u` using 2nd order Strang splitting. Save intermediate solutions to `us` and return a `GPESolution` object.
+Applies exp(ℎ𝐿/2)exp(ℎ𝑀)exp(ℎ𝐿/2) but combines adjacent 𝐿-exponents in real-time propagation when not saving during the present step.
+"""
+function strang2!(xh, u, uₚ, us, g; ts, save_indices, itime, dt)
+    exp_cis = itime ? exp : cis
+    n_t = length(ts)
+    nsave = 2
+
+    exp_L = @. exp_cis(-dt*xh.∇²)
+    exp_L_2 = @. exp_cis(-dt*xh.∇²/2)
+
+    if itime # we need to renormalise after every step, so combining steps is not possible. Therefore it is cleaner to have the itime case separately
+        for it in 2:n_t
+            apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
+            @. u *= exp_cis(-dt * (xh.U[1] + g[1] * abs2(u))) # apply exp(ℎ𝑀)
+            apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
+            normalize!(u, xh)
+            if it == save_indices[nsave]
+                us[nsave] = copy(u)
+                nsave += 1
+            end
+        end
+    else # real-time propagation
         apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
         for it in 2:n_t
-            # apply exp(ℎ𝑀)
-            @. u *= exp(b * (xh.U[1] + g[1] * abs2(u)))
+            @. u *= exp_cis(-dt * (xh.U[1] + g[1] * abs2(u))) # apply exp(ℎ𝑀)
             if it == save_indices[nsave] # if needs saving during this step, then apply exp(ℎ𝐿/2), save, and apply exp(ℎ𝐿/2) again to start the next step
                 apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
                 us[nsave] = copy(u)
@@ -63,23 +87,51 @@ function split_step(xh::XSpaceHamiltonian{R, T}, u₀::AbstractVector{<:Number},
                 apply_exp_p²!(u, uₚ, xh.ft, exp_L)
             end
         end
-    else # :yoshida4
-        # scheme coefficients
-        c = 1/(2-2^(1/3))
-        a1 = c/2; a2 = (1-c)/2;
-        b1, b2, b3 = [c, 1-2c, c] .* rhs_factor .* dt
-        # prepare exponentials that apply the Laplacian
-        exp_a₁L = @. exp(a1*rhs_factor*dt*xh.∇²)
-        exp_a₂L = @. exp(a2*rhs_factor*dt*xh.∇²)
-        exp_2a₁L = @. exp(2a1*rhs_factor*dt*xh.∇²)
+    end
+    return GPESolution(ts[save_indices], us)
+end
 
+"""
+Propagate `u` using 4th order Yoshida splitting. Save intermediate solutions to `us` and return a `GPESolution` object.
+Applies exp(ℎ𝑎₁𝐿) exp(ℎ𝑏₁𝑀)exp(ℎ𝑎₂𝐿) exp(ℎ𝑏₂𝑀)exp(ℎ𝑎₂𝐿) exp(ℎ𝑏₁𝑀)exp(ℎ𝑎₁𝐿) but combines adjacent 𝐿-exponents in real-time propagation and not saving during the present step.
+"""
+function yoshida4!(xh, u, uₚ, us, g; ts, save_indices, itime, dt)
+    exp_cis = itime ? exp : cis
+    n_t = length(ts)
+    nsave = 2
+
+    # scheme coefficients, including the minuses from the exponents
+    c = 1/(2-2^(1/3))
+    a1 = -c/2 * dt;  a2 = -(1-c)/2 * dt
+    b1 = -c   * dt;  b2 = -(1-2c)  * dt
+    # prepare exponentials that apply the Laplacian
+    exp_a₁L = @. exp_cis(a1 * xh.∇²)
+    exp_a₂L = @. exp_cis(a2 * xh.∇²)
+    exp_2a₁L = @. exp_cis(2a1 * xh.∇²)
+
+    if itime
+        for it in 2:n_t
+            apply_exp_p²!(u, uₚ, xh.ft, exp_a₁L)
+            @. u *= exp_cis(b1 * (xh.U[1] + g[1] * abs2(u)))
+            apply_exp_p²!(u, uₚ, xh.ft, exp_a₂L)
+            @. u *= exp_cis(b2 * (xh.U[1] + g[1] * abs2(u)))
+            apply_exp_p²!(u, uₚ, xh.ft, exp_a₂L)
+            @. u *= exp_cis(b1 * (xh.U[1] + g[1] * abs2(u)))
+            apply_exp_p²!(u, uₚ, xh.ft, exp_a₁L)
+            normalize!(u, xh)
+            if it == save_indices[nsave]
+                us[nsave] = copy(u)
+                nsave += 1
+            end
+        end
+    else # real-time propagation
         apply_exp_p²!(u, uₚ, xh.ft, exp_a₁L)
         for it in 2:n_t
-            @. u *= exp(b1 * (xh.U[1] + g[1] * abs2(u)))
+            @. u *= exp_cis(b1 * (xh.U[1] + g[1] * abs2(u)))
             apply_exp_p²!(u, uₚ, xh.ft, exp_a₂L)
-            @. u *= exp(b2 * (xh.U[1] + g[1] * abs2(u)))
+            @. u *= exp_cis(b2 * (xh.U[1] + g[1] * abs2(u)))
             apply_exp_p²!(u, uₚ, xh.ft, exp_a₂L)
-            @. u *= exp(b3 * (xh.U[1] + g[1] * abs2(u)))
+            @. u *= exp_cis(b1 * (xh.U[1] + g[1] * abs2(u)))
             
             if it == save_indices[nsave] # if needs saving during this step, then apply exp(𝑎₁ℎ𝐿), save, and apply exp(𝑎₁ℎ𝐿) again to start the next step
                 apply_exp_p²!(u, uₚ, xh.ft, exp_a₁L)
@@ -93,13 +145,16 @@ function split_step(xh::XSpaceHamiltonian{R, T}, u₀::AbstractVector{<:Number},
                 apply_exp_p²!(u, uₚ, xh.ft, exp_2a₁L)
             end
         end
-    end     
-    return GPESolution(ts_saved, us) 
+    end
+    return GPESolution(ts[save_indices], us)
 end
 
-"Propagate state `u` using split-step methods in the presence of a vector potential."
-function split_step_magnetic!(xh::XSpaceHamiltonian{R}, u, uₚ, us, g; ts, save_indices, 𝛬, rhs_factor, dt) where R
-    exp_cis = rhs_factor == -1 ? exp : cis
+"""
+Propagate `u` using 2nd order Strang splitting in the presence of a vector potential.
+Save intermediate solutions to `us` and return a `GPESolution` object.
+"""
+function strang2_magnetic(xh::XSpaceHamiltonian{R}, u, uₚ, us, g, 𝛬::AbstractVector{Function}; ts, save_indices, itime, dt) where R
+    exp_cis = itime ? exp : cis
     
     # resample the potential `U` because it contains unneeded (𝐀²)
     U = similar(xh.U[1, 1])
@@ -125,6 +180,7 @@ function split_step_magnetic!(xh::XSpaceHamiltonian{R}, u, uₚ, us, g; ts, save
     plan_backward_y = FFTW.plan_ifft(u_grid, 2)
     
     # sample the functions 𝛬ⁱ and store cis(𝛬ⁱ/𝛿) in flat vectors
+    # TODO handle the case when `𝛬[i] == zero`
     exp_iΛˣ = Vector{Complex{R}}(undef, xh.B)
     exp_iΛʸ = similar(exp_iΛˣ)
     for j in 1:nx, i in 1:nx
@@ -148,7 +204,7 @@ function split_step_magnetic!(xh::XSpaceHamiltonian{R}, u, uₚ, us, g; ts, save
         apply_gauge_kinetic!(u, u_grid, uₚ, uₚ_grid, exp_iΛˣ, exp_pˣ², plan_forward_x, plan_backward_x)
         @. u *= exp_cis(b * (U + g[1] * abs2(u)))
         
-        rhs_factor == -1 && normalize!(u, xh)
+        itime && normalize!(u, xh)
         if it == save_indices[nsave]
             us[nsave] = copy(u)
             nsave += 1
@@ -172,7 +228,7 @@ end
 
 """
 Apply the exponential exp(𝐩²) to the x-space state `u`, by transforming to p-space (and using uₚ as a buffer).
-The actual exponnetial factor in p-space given by `E`.
+The actual exponential factor in p-space given by `E`.
 Used during non-magnetic split-step integration.
 """
 function apply_exp_p²!(u, uₚ, ft, E)
