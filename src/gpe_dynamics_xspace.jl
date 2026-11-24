@@ -30,9 +30,22 @@ function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Fu
                    T_max::R, dt::R, itime::Bool=false,
                    solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true, m=5) : ODE_EXP.ETDRK4(;krylov=true, m=5)),
                    nsaves::Integer=0) where {R, T}
-    T_max < dt && throw(ArgumentError("`T_max < dt` is not allowed")) 
-    nsaves < 0 && throw(ArgumentError("`nsaves < 0` is not allowed")) 
-    (solver isa Symbol && !in(solver, (:strang2, :yoshida4))) && throw(ArgumentError("unsupported solver `$solver`. Available options: `:strang2`, `:yoshida4`, or a DifferentialEquations solver.")) 
+    T_max ≥ dt || throw(ArgumentError("`T_max < dt` is not allowed")) 
+    nsaves ≥ 0 || throw(ArgumentError("`nsaves < 0` is not allowed")) 
+    if solver isa Symbol
+        xh.nc == 1 || throw(ArgumentError("split-step propagation currently supports only one component."))
+        if any(!isempty, xh.A) # 𝐀 is present
+            solver == :strang2 || throw(ArgumentError("when vector potential is present, `solver` must be `:strang2` or a DifferentialEquations solver."))
+            any(==(zero), 𝛬[findall(!isempty, xh.A)]) && throw(ArgumentError("when using `:strang2, each nonzero 𝐴ⁱ must have a matching nonzero 𝛬ⁱ."))
+        else
+            if itime
+                solver in (:lie1, :_lie1) || throw(ArgumentError("when no vector potential is present and propagating in imaginary time, `solver` must be `:lie1`, `:_lie1`, or a DifferentialEquations solver."))
+            else
+                solver in (:strang2, :yoshida4) ||
+                throw(ArgumentError("when no vector potential is present and propagating in real time, `solver` must be `:strang2`, `:yoshida4`, or a DifferentialEquations solver.")) 
+            end
+        end
+    end
     
     (;xlims, B, nc, ft) = xh
 

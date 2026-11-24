@@ -5,9 +5,9 @@ struct GPESolution{R, T}
 end
 
 """
-Propagate the time-dependent GPE using split-step method, with `solver` being `:strang2` or `:yoshida4`.
+Propagate the time-dependent GPE using split-step method, with `solver` being `:strang2` or `:yoshida4` for real-time; `:lie1` or `:_lie1` for imaginary time.
 The initial state `u` will be mutated during solving.
-The equation is 𝜕ₜ𝜓 = 𝑟𝐻𝜓 + 𝑟𝑔|𝜓|²𝜓 with `rhs_factor` 𝑟 = -1 for imaginary-time solving and 𝑟 = -i for real-time.
+The equation is 𝜕ₜ𝜓 = 𝑟𝐻𝜓 + 𝑟𝑔|𝜓|²𝜓 with 𝑟 = -1 for imaginary-time solving and 𝑟 = -i for real-time.
 We split as 𝜕ₜ𝜓 = 𝐿𝜓 + 𝑀𝜓 where 𝐿 = 𝑟(𝐩 - 𝐀)² while 𝑀 = 𝑟(𝑈 + 𝑔|𝜓|²𝜓).
 Return a solution object `sol` with the intermediate solutions stored in `sol.u` and time moments in `sol.t`.
 Intermediate solutions are saved `nsaves` times in addition to intial and final.
@@ -32,60 +32,86 @@ function split_step!(xh::XSpaceHamiltonian{R}, u::AbstractVector{T}, g::Abstract
     uₚ = T <: Real && xh.basis != :cis ? xh.buff_real : xh.buff_complex
     # `u` is a copy of the input state, so it will be directly used for propagation
 
-    if any(!isempty, xh.A) # if at least one vector potential 𝐴 is present
-        xh.basis == :cis || throw(ArgumentError("magnetic split-step propagation requires `basis=:cis`"))
-        xh.nc == 1 || throw(ArgumentError("magnetic split-step propagation currently supports one component"))
-        solver == :strang2 || throw(ArgumentError("magnetic split-step propagation currently supports only `solver=:strang2`"))
-        any(==(zero), 𝛬[findall(!isempty, xh.A)]) && throw(ArgumentError("Each nonzero 𝐴ⁱ must have a matching nonzero 𝛬ⁱ"))
+    if any(!isempty, xh.A) # if at least one vector potential 𝐴 is present, then branch to magnetic split-step, which can also do itime
         return strang2_magnetic(xh, u, uₚ, us, g, 𝛬; ts, save_indices, itime, dt)
-    else 
-        if solver == :strang2
-            return strang2!(xh, u, uₚ, us, g; ts, save_indices, itime, dt)
+    else # no 𝐀 is present
+        if itime
+            return split_step_itime!(xh, u, uₚ, us, g; ts, save_indices, dt, solver)
+        elseif solver == :strang2
+            return strang2!(xh, u, uₚ, us, g; ts, save_indices, dt)
         else
-            return yoshida4!(xh, u, uₚ, us, g; ts, save_indices, itime, dt)
+            return yoshida4!(xh, u, uₚ, us, g; ts, save_indices, dt)
         end 
     end    
     return GPESolution(ts_saved, us) 
 end
 
 """
-Propagate `u` using 2nd order Strang splitting. Save intermediate solutions to `us` and return a `GPESolution` object.
-Applies exp(ℎ𝐿/2)exp(ℎ𝑀)exp(ℎ𝐿/2) but combines adjacent 𝐿-exponents in real-time propagation when not saving during the present step.
+Propagate `u` in imaginary time using 1st order Lie splitting exp(ℎ𝑀)exp(ℎ𝐿). Save intermediate solutions to `us` and return a `GPESolution` object.
+Used when vector potential 𝐀 is not present.
+For `solver=:lie1` (recommended), exp(ℎ𝑀) is the solution of 𝜕ₜ = -(𝑈 + 𝑔|𝜓|²)𝜓 with |𝜓|² frozen at the value in the beginning of this substep.
+For `solver=:_lie1`, exp(ℎ𝑀) means using the exact solution (with |𝜓|² variable), which is 𝜓(ℎ) = 𝜓ₒexp(-𝑈ℎ) / √(1 + 𝑔|𝜓₀|²(1 - exp(-2𝑈ℎ))/𝑈); See https://doi.org/10.1137/S1064827503422956.
+In our tests, 1st order splitting is more accurate than 2nd (or 4th), and `:lie1` always wins over `:_lie1`. Tested by comparing with Newton-Raphson results converged to machine precision.
 """
-function strang2!(xh, u, uₚ, us, g; ts, save_indices, itime, dt)
-    exp_cis = itime ? exp : cis
+function split_step_itime!(xh, u, uₚ, us, g; ts, save_indices, dt, solver)
     n_t = length(ts)
     nsave = 2
 
-    exp_L = @. exp_cis(-dt*xh.∇²)
-    exp_L_2 = @. exp_cis(-dt*xh.∇²/2)
+    exp_L = @. exp(-dt*xh.∇²)
 
-    if itime # we need to renormalise after every step, so combining steps is not possible. Therefore it is cleaner to have the itime case separately
+    if solver == :lie1 # splitting with frozen |𝜓|²
         for it in 2:n_t
-            apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
-            @. u *= exp_cis(-dt * (xh.U[1] + g[1] * abs2(u))) # apply exp(ℎ𝑀)
-            apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
+            apply_exp_p²!(u, uₚ, xh.ft, exp_L)
+            @. u *= exp(-dt * (xh.U[1] + g[1] * abs2(u))) # apply exp(ℎ𝑀)
             normalize!(u, xh)
             if it == save_indices[nsave]
                 us[nsave] = copy(u)
                 nsave += 1
             end
         end
-    else # real-time propagation
-        apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
+    else # splitting with variable |𝜓|²
+        # pre-compute exp(-𝑈ℎ) and 𝑔(1 - exp(-2𝑈ℎ))/𝑈)
+        e1 = @. exp(-dt*xh.U[1])
+        e2 = map(xh.U[1]) do U # compute the term 𝑔(1 - exp(-2𝑈ℎ))/𝑈; for 𝑈 = 0 exactly, enforce the limit 2ℎ𝑔; when 𝑈 is not exactly 0, expm1 / U converges to this limit by itself
+            iszero(U) ? 2dt*g[1] : g[1] * -expm1(-2dt*U) / U
+        end
         for it in 2:n_t
-            @. u *= exp_cis(-dt * (xh.U[1] + g[1] * abs2(u))) # apply exp(ℎ𝑀)
-            if it == save_indices[nsave] # if needs saving during this step, then apply exp(ℎ𝐿/2), save, and apply exp(ℎ𝐿/2) again to start the next step
-                apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
+            apply_exp_p²!(u, uₚ, xh.ft, exp_L)
+            @. u *= e1 / √( 1 + e2*abs2(u) ) # compute 𝜓(ℎ) = 𝜓ₒexp(-𝑈ℎ) / √(1 + 𝑔|𝜓₀|²(1 - exp(-2𝑈ℎ))/𝑈)
+            normalize!(u, xh)
+            if it == save_indices[nsave]
                 us[nsave] = copy(u)
                 nsave += 1
-                # apply exp(ℎ𝐿/2) to start the next iteration, but not needed in the very end
-                if it < n_t
-                    apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
-                end
-            else # if don't need to save during this step, then apply exp(ℎ𝐿)
-                apply_exp_p²!(u, uₚ, xh.ft, exp_L)
             end
+        end
+    end
+    return GPESolution(ts[save_indices], us)
+end
+
+"""
+Propagate `u` using 2nd order Strang splitting. Save intermediate solutions to `us` and return a `GPESolution` object.
+Applies exp(ℎ𝐿/2)exp(ℎ𝑀)exp(ℎ𝐿/2) but combines adjacent 𝐿-exponents in real-time propagation when not saving during the present step.
+"""
+function strang2!(xh, u, uₚ, us, g; ts, save_indices, dt)
+    n_t = length(ts)
+    nsave = 2
+
+    exp_L = @. cis(-dt*xh.∇²)
+    exp_L_2 = @. cis(-dt*xh.∇²/2)
+
+    apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
+    for it in 2:n_t
+        @. u *= cis(-dt * (xh.U[1] + g[1] * abs2(u))) # apply exp(ℎ𝑀)
+        if it == save_indices[nsave] # if needs saving during this step, then apply exp(ℎ𝐿/2), save, and apply exp(ℎ𝐿/2) again to start the next step
+            apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
+            us[nsave] = copy(u)
+            nsave += 1
+            # apply exp(ℎ𝐿/2) to start the next iteration, but not needed in the very end
+            if it < n_t
+                apply_exp_p²!(u, uₚ, xh.ft, exp_L_2)
+            end
+        else # if don't need to save during this step, then apply exp(ℎ𝐿)
+            apply_exp_p²!(u, uₚ, xh.ft, exp_L)
         end
     end
     return GPESolution(ts[save_indices], us)
@@ -95,8 +121,7 @@ end
 Propagate `u` using 4th order Yoshida splitting. Save intermediate solutions to `us` and return a `GPESolution` object.
 Applies exp(ℎ𝑎₁𝐿) exp(ℎ𝑏₁𝑀)exp(ℎ𝑎₂𝐿) exp(ℎ𝑏₂𝑀)exp(ℎ𝑎₂𝐿) exp(ℎ𝑏₁𝑀)exp(ℎ𝑎₁𝐿) but combines adjacent 𝐿-exponents in real-time propagation and not saving during the present step.
 """
-function yoshida4!(xh, u, uₚ, us, g; ts, save_indices, itime, dt)
-    exp_cis = itime ? exp : cis
+function yoshida4!(xh, u, uₚ, us, g; ts, save_indices, dt)
     n_t = length(ts)
     nsave = 2
 
@@ -105,45 +130,28 @@ function yoshida4!(xh, u, uₚ, us, g; ts, save_indices, itime, dt)
     a1 = -c/2 * dt;  a2 = -(1-c)/2 * dt
     b1 = -c   * dt;  b2 = -(1-2c)  * dt
     # prepare exponentials that apply the Laplacian
-    exp_a₁L = @. exp_cis(a1 * xh.∇²)
-    exp_a₂L = @. exp_cis(a2 * xh.∇²)
-    exp_2a₁L = @. exp_cis(2a1 * xh.∇²)
+    exp_a₁L = @. cis(a1 * xh.∇²)
+    exp_a₂L = @. cis(a2 * xh.∇²)
+    exp_2a₁L = @. cis(2a1 * xh.∇²)
 
-    if itime
-        for it in 2:n_t
+    apply_exp_p²!(u, uₚ, xh.ft, exp_a₁L)
+    for it in 2:n_t
+        @. u *= cis(b1 * (xh.U[1] + g[1] * abs2(u)))
+        apply_exp_p²!(u, uₚ, xh.ft, exp_a₂L)
+        @. u *= cis(b2 * (xh.U[1] + g[1] * abs2(u)))
+        apply_exp_p²!(u, uₚ, xh.ft, exp_a₂L)
+        @. u *= cis(b1 * (xh.U[1] + g[1] * abs2(u)))
+        
+        if it == save_indices[nsave] # if needs saving during this step, then apply exp(𝑎₁ℎ𝐿), save, and apply exp(𝑎₁ℎ𝐿) again to start the next step
             apply_exp_p²!(u, uₚ, xh.ft, exp_a₁L)
-            @. u *= exp_cis(b1 * (xh.U[1] + g[1] * abs2(u)))
-            apply_exp_p²!(u, uₚ, xh.ft, exp_a₂L)
-            @. u *= exp_cis(b2 * (xh.U[1] + g[1] * abs2(u)))
-            apply_exp_p²!(u, uₚ, xh.ft, exp_a₂L)
-            @. u *= exp_cis(b1 * (xh.U[1] + g[1] * abs2(u)))
-            apply_exp_p²!(u, uₚ, xh.ft, exp_a₁L)
-            normalize!(u, xh)
-            if it == save_indices[nsave]
-                us[nsave] = copy(u)
-                nsave += 1
-            end
-        end
-    else # real-time propagation
-        apply_exp_p²!(u, uₚ, xh.ft, exp_a₁L)
-        for it in 2:n_t
-            @. u *= exp_cis(b1 * (xh.U[1] + g[1] * abs2(u)))
-            apply_exp_p²!(u, uₚ, xh.ft, exp_a₂L)
-            @. u *= exp_cis(b2 * (xh.U[1] + g[1] * abs2(u)))
-            apply_exp_p²!(u, uₚ, xh.ft, exp_a₂L)
-            @. u *= exp_cis(b1 * (xh.U[1] + g[1] * abs2(u)))
-            
-            if it == save_indices[nsave] # if needs saving during this step, then apply exp(𝑎₁ℎ𝐿), save, and apply exp(𝑎₁ℎ𝐿) again to start the next step
+            us[nsave] = copy(u)
+            nsave += 1
+            # apply exp(𝑎₁ℎ𝐿) to start the next iteration, but not needed in the very end
+            if it < n_t
                 apply_exp_p²!(u, uₚ, xh.ft, exp_a₁L)
-                us[nsave] = copy(u)
-                nsave += 1
-                # apply exp(𝑎₁ℎ𝐿) to start the next iteration, but not needed in the very end
-                if it < n_t
-                    apply_exp_p²!(u, uₚ, xh.ft, exp_a₁L)
-                end
-            else # if don't need to save during this step, then apply exp(2𝑎₁ℎ𝐿)
-                apply_exp_p²!(u, uₚ, xh.ft, exp_2a₁L)
             end
+        else # if don't need to save during this step, then apply exp(2𝑎₁ℎ𝐿)
+            apply_exp_p²!(u, uₚ, xh.ft, exp_2a₁L)
         end
     end
     return GPESolution(ts[save_indices], us)

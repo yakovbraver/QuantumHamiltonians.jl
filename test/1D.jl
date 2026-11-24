@@ -252,12 +252,12 @@ end
         # find soliton state using imaginary time
         T_max = 1.0
         dt = 1e-4
-        solvers = kind == :xspace ? (LawsonEuler, :strang2) : (LawsonEuler,)
+        solvers = kind == :xspace ? (LawsonEuler, :lie1, :_lie1) : (LawsonEuler,)
         for solver in solvers
             sol = propagate(qh, 𝜓₀, g; T_max, dt, itime=true, solver)
             E_itime, μ_itime, N_itime = get_EμN(qh, sol.u[end], [g;;])
 
-            # compare itime agains NR
+            # compare itime agains NR. Using the same tolerance for all solvers, although `:lie1` is an order of magnitude more accurate than `:_lie1` and `LawsonEuler` (which are similar)
             @test N_itime[1] ≈ natoms atol=1e-10
             @test E_itime ≈ E_nr rtol=1e-5
             @test μ_itime[1] ≈ μ_nr[1] rtol=5e-4
