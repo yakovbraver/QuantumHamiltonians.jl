@@ -12,9 +12,9 @@ We split as 𝜕ₜ𝜓 = 𝐿𝜓 + 𝑀𝜓 where 𝐿 = 𝑟(𝐩 - 𝐀)² w
 Return a solution object `sol` with the intermediate solutions stored in `sol.u` and time moments in `sol.t`.
 Intermediate solutions are saved `nsaves` times in addition to intial and final.
 The less you save the faster it goes because not saving allows for combining the exponents between successive steps.
-For nonzero vector potential, `:strang2` requires `𝛬=[𝛬ˣ, 𝛬ʸ]` analytic functions satisfying `𝜕ⁱ𝛬ⁱ = 𝐴ⁱ`.
+For nonzero vector potential, `:strang2` requires passing a matrix `𝛬` of analytic functions satisfying `𝜕ⁱ𝛬ⁱ = 𝐴ⁱ`, stored in the same shape as `xh.A`.
 """
-function split_step!(xh::XSpaceHamiltonian{R}, u::AbstractVector{T}, g::AbstractMatrix{R}, 𝛬::AbstractVector{<:Function}=[zero, zero];
+function split_step!(xh::XSpaceHamiltonian{R}, u::AbstractVector{T}, g::AbstractMatrix{R}, 𝛬::AbstractMatrix{<:Function}=fill(zero, size(xh.A));
                      T_max::R, dt::R, itime::Bool=false, nsaves::Integer=0, solver::Symbol) where {R, T}
     # prepare time moments
     ts = zero(R):dt:T_max
@@ -32,8 +32,8 @@ function split_step!(xh::XSpaceHamiltonian{R}, u::AbstractVector{T}, g::Abstract
     uₚ = T <: Real && xh.basis != :cis ? xh.buff_real : xh.buff_complex
     # `u` is a copy of the input state, so it will be directly used for propagation
 
-    if any(!isempty, xh.A) # if at least one vector potential 𝐴 is present, then branch to magnetic split-step, which can also do itime
-        return strang2_magnetic(xh, u, uₚ, us, g, 𝛬; ts, save_indices, itime, dt)
+    if any(!isempty, xh.A) # if at least one vector potential 𝐴 is present, then branch to split-step with 𝐴, which can also do itime
+        return strang2_with_A!(xh, u, uₚ, us, g, 𝛬; ts, save_indices, itime, dt)
     else # no 𝐀 is present
         if itime
             return split_step_itime!(xh, u, uₚ, us, g; ts, save_indices, dt, solver)
@@ -161,7 +161,7 @@ end
 Propagate `u` using 2nd order Strang splitting in the presence of a vector potential.
 Save intermediate solutions to `us` and return a `GPESolution` object.
 """
-function strang2_magnetic(xh::XSpaceHamiltonian{R}, u, uₚ, us, g, 𝛬::AbstractVector{Function}; ts, save_indices, itime, dt) where R
+function strang2_with_A!(xh::XSpaceHamiltonian{R}, u, uₚ, us, g, 𝛬::AbstractMatrix{Function}; ts, save_indices, itime, dt) where R
     exp_cis = itime ? exp : cis
     
     # resample the potential `U` because it contains unneeded (𝐀²)

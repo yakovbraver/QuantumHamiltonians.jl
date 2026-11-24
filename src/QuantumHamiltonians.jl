@@ -115,11 +115,11 @@ The information of the basis and problem dimensions is contained in `xh`.
 end
 
 """
-Calculate the integral ∫𝑣d𝑉 for `v` representing single-component x-space vectors.
+Calculate the integral ∫𝑣d𝑉 for `v` representing an x-space state (either flattened or not) of a single component.
 For cis and sin basis, this is `sum(v)`, but for cos we have to treat the edges.
 The information of the basis and problem dimensions is contained in `xh`.
 """
-@views function integrate(v::AbstractVector{<:Number}, qh::Union{XSpaceHamiltonian, PSpaceHamiltonian})
+@views function integrate(v::AbstractArray{<:Number}, qh::Union{XSpaceHamiltonian, PSpaceHamiltonian})
     s = if qh.basis != :cos
         sum(v)
     else

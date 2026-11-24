@@ -386,7 +386,7 @@ end
 """
 For a state `ψ`, return a tuple `(E, μ, N)`, where `E` is mean energy per particle, `μ` is a vector of chemical potentials of each component,
 and `N` is a vector of particle numbers in each component.
-`state_is_pspace=true` means that `ψ` is a flattened vector in p-space, and a flattende x-space vector otherwise.
+`state_is_pspace=true` means that `ψ` is a flattened vector in p-space, and a flattened x-space vector otherwise.
 If `ψ` is given in x-space, it is allowed to contain extra `nc` elements representing the chemical potetnials, as returned by [`find_stationary`](@ref).
 By default, `makereal=true` so that the returned `E` and `μ` are made real (by dropping imaginary part). Set `makereal=false` if you consider a decaying state, whereby imaginary part is important.
 """

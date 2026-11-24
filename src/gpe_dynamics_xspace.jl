@@ -1,11 +1,14 @@
 """
-Convenience caller for the 1-component case, where `ψ₀` is an analytic function or an array representing the discretised function and `g` is a number.
+Convenience caller for the 1-component case, where:
+    * `ψ₀` is an analytic function or an array representing the discretised function
+    * `g` is a number
+    * `𝛬` is a vector of integrals of 𝐴
 """
-function propagate(xh::XSpaceHamiltonian{R}, ψ₀::Union{Function, AbstractArray{<:Number}}, g::R, 𝛬::AbstractVector{<:Function}=[zero, zero];
+function propagate(xh::XSpaceHamiltonian{R}, ψ₀::Union{Function, AbstractArray{<:Number}}, g::R, 𝛬::AbstractVector{<:Function}=fill(zero, size(xh.L));
                    T_max::R, dt::R, itime::Bool=false,
                    solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true, m=5) : ODE_EXP.ETDRK4(;krylov=true, m=5)),
                    nsaves::Integer=0) where {R}
-    propagate(xh, [ψ₀], [g;;], 𝛬; T_max, dt, itime, solver, nsaves)
+    propagate(xh, [ψ₀], [g;;], reshape(𝛬, (1, length(xh.L))); T_max, dt, itime, solver, nsaves) # rehspae 𝛬 into a matrix it match the shape of `xh.A`
 end
 
 """
@@ -26,7 +29,7 @@ For imaginary-time GPE, the default is `LawsonEuler(;krylov=true, m=5)`, which i
 `nsaves` ≥ 0 shows how many intermediate solutions to save in addition to intial and final.
 For real-time GPE, the default is `ETDRK4(;krylov=true, m=5)`; lower order variants can also be used for quick results. `HochOst4` seems to conserve the energy even better, but is a bit slower.
 """
-function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}, AbstractVector{<:AbstractArray{<:Number}}}, g::AbstractMatrix{R}, 𝛬::AbstractVector{<:Function}=[zero, zero];
+function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Function}, AbstractVector{<:Number}, AbstractVector{<:AbstractArray{<:Number}}}, g::AbstractMatrix{R}, 𝛬::AbstractMatrix{<:Function}=fill(zero, size(xh.A));
                    T_max::R, dt::R, itime::Bool=false,
                    solver=(itime ? ODE_EXP.LawsonEuler(;krylov=true, m=5) : ODE_EXP.ETDRK4(;krylov=true, m=5)),
                    nsaves::Integer=0) where {R, T}

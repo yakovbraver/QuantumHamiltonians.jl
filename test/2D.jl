@@ -193,7 +193,7 @@ end
 
         # test hermiticity
         defect = dot(v1, qh*v2) - dot(qh*v1, v2) # if `symmetrize_pA`, the nonhermiticity defect should be on the order of machine precision
-        @test defect ≈ 0 atol=(symmetrize_pA ? 1e-13 : 0.3) 
+        @test abs(defect) < (symmetrize_pA ? 1e-13 : 0.3) 
 
         # test diagonalisation
         for kwargs in ((;),
@@ -348,6 +348,11 @@ end
     g = 100.0
     μ₀ = 5.0
 
+    # imaginary time parameters
+    T_max = 1.0
+    dt = 1e-3
+    LawsonEuler = QuantumHamiltonians.ODE_EXP.LawsonEuler(;krylov=true, m=5)
+
     for basis in (:cis, :sin, :cos), kind in (:dense, :sparse, :xspace)
         M = basis == :cis ? 16 :
             basis == :sin ? 31 : 32
@@ -360,6 +365,8 @@ end
             qh = PSpaceHamiltonian{kind}([xlimits, xlimits], 𝑈; basis, 𝑈_iseven=true, M, kwargs...)
         end
         
+        ### stationary state using Newton-Raphson
+
         xs, ys, ψ_nr, μ_nr = find_stationary(qh, [𝜓₀], [g;;], μ₀, natoms; searchreal=true)
         if kind != :xspace
             E, μ, N = get_EμN(qh, ψ_nr, [g;;]; state_is_pspace=false)
@@ -369,21 +376,37 @@ end
 
         @test E ≈ 5.79206 atol=1e-5
         @test μ[1] ≈ 8.28601 atol=1e-5
-        @test μ[1] ≈ μ_nr[1] atol=1e-12
-        @test N[1] ≈ natoms atol=1e-12
+        @test μ[1] ≈ μ_nr[1] atol=1e-12 # check for consistency with `get_EμN`
+        @test N[1] ≈ natoms  atol=1e-12 # check for consistency with `get_EμN`
 
         if kind == :xspace
-            @views xs, ys, ψ = make_wavefunction(qh, ψ_nr)
+            xs, ys, ψ = make_wavefunction(qh, ψ_nr)
         else
-            @views xs, ys, ψ = QuantumHamiltonians.make_wavefunction_xspace(qh, ψ_nr)
+            xs, ys, ψ = QuantumHamiltonians.make_wavefunction_xspace(qh, ψ_nr)
         end
 
         @test ψ[1][end÷2, end÷2] ≈ 0.28 atol=0.01 # checking wf value at the centre
-    end
 
+        ### stationary state using imaginary time
+
+        if kind == :xspace || basis == :cis # x-space works well for all bases, but p-space only converges reliably for cis
+            solvers = kind == :xspace ? (LawsonEuler, :lie1, :_lie1) : (LawsonEuler,)
+            for solver in solvers
+                sol = propagate(qh, 𝜓₀, g; T_max, dt, itime=true, solver)
+                E, μ, N = get_EμN(qh, sol.u[end], [g;;])
+
+                @test E ≈ 5.79206 atol=0.02
+                @test μ[1] ≈ 8.28601 atol=0.02
+                @test N[1] ≈ natoms  atol=1e-12 # check for consistency with `get_EμN`
+
+                xs, ys, ψ = make_wavefunction(qh, sol.u[end])
+                @test ψ[1][end÷2, end÷2] ≈ 0.28 atol=0.01 # checking wf value at the centre
+            end
+        end
+    end
 end
 
-@testset "1-component GPE dynamics (x-space, cis basis, w/ and w/o vector potential)" begin
+@testset "1-component GPE dynamics (x-space, cis basis, w/ and w/o vector potential, split-step and exponential)" begin
     """
     For each state, detect the vortex and claculates its (r, ϕ) coordinates. `ψs` is a vector of flattened state vectors at each time point.
     `x_bound` is the maximum x of the windows in which to search for the vortex. The window is [-x_bound, x_bound] in both x and y.
@@ -449,7 +472,7 @@ end
         clamp!(ψTF, 0, Inf)
         @. ψTF = √ψTF
 
-        xs, ys, u, μ_gnd = find_stationary(xh, [ψTF], [g;;], μ_TF, natoms; reltol=1e-5, show_trace=Val(false))
+        xs, ys, u, μ_gnd = find_stationary(xh, [ψTF], [g;;], μ_TF, natoms; reltol=1e-5)
         xs, ys, ψ_gnd = make_wavefunction(xh, u)
 
         ξ = 1/√(2μ_gnd[1]) # healing length
@@ -478,7 +501,7 @@ end
                 rϕ_atol = 1e-2
             end
 
-            sol = propagate(xh, [ψ_ofc], [g;;], [𝛬ˣ, 𝛬ʸ]; T_max, dt, nsaves, solver) # can always pass gauge phases -- will be ignored if not needed
+            sol = propagate(xh, ψ_ofc, g, [𝛬ˣ, 𝛬ʸ]; T_max, dt, nsaves, solver) # can always pass gauge phases -- will be ignored if not needed
 
             E₀ = get_EμN(xh, sol.u[1], [g;;])[1]
             ΔE = map(sol.u) do u

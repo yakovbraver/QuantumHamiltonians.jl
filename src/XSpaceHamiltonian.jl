@@ -10,7 +10,7 @@ Spatial dimensions are treated in the linearised form. A function 𝑓(𝑥, �
 """
 mutable struct XSpaceHamiltonian{R, T, S, FourierTransformer} <: LM.LinearMap{T}
     xlims::Vector{Tuple{R, R}}
-    L::Vector{R}
+    L::Vector{R} # lengths of the real-space domain in each dimension
     B::Int  # "block size" -- number of points in the contiguous array corresponding to each component
     δ::R    # coefficient of the momentum term: -i𝛿∇ (same for all components)
     nc::Int # number of components
