@@ -158,7 +158,14 @@ function yoshida4!(xh, u, uₚ, us, g; ts, save_indices, dt)
 end
 
 """
-Propagate `u` using 2nd order Strang splitting in the presence of a vector potential.
+Propagate `u` using 2nd order Strang splitting
+    exp(ℎ𝑀/2)exp(ℎ𝐿/2)exp(ℎ𝑀/2)
+for nonzero vector potential.
+The middle exponent with the linear operator 𝐿 = 𝑟(𝐩 - 𝐀)² is also Strang-split into
+    exp(ℎ𝑟(𝑝ˣ - 𝐴ˣ)²/2)exp(ℎ𝑟(𝑝ʸ - 𝐴ʸ)²)exp(ℎ𝑟(𝑝ˣ - 𝐴ˣ)²/2).
+Each exponent is then applied as
+    exp(ℎ𝑟(𝑝ʸ - 𝐴ʸ)²) = exp(i𝛬ʸ)exp(ℎ𝑟𝑝ʸ²)exp(-i𝛬ʸ),
+which is an exact identity.
 Save intermediate solutions to `us` and return a `GPESolution` object.
 """
 function strang2_with_A!(xh::XSpaceHamiltonian{R}, u, uₚ, us, g, 𝛬::AbstractMatrix{Function}; ts, save_indices, itime, dt) where R
@@ -187,29 +194,39 @@ function strang2_with_A!(xh::XSpaceHamiltonian{R}, u, uₚ, us, g, 𝛬::Abstrac
     plan_forward_y = FFTW.plan_fft(u_grid, 2)
     plan_backward_y = FFTW.plan_ifft(u_grid, 2)
     
-    # sample the functions 𝛬ⁱ and store cis(𝛬ⁱ/𝛿) in flat vectors
-    # TODO handle the case when `𝛬[i] == zero`
-    exp_iΛˣ = Vector{Complex{R}}(undef, xh.B)
-    exp_iΛʸ = similar(exp_iΛˣ)
-    for j in 1:nx, i in 1:nx
-        flat = i + (j - 1) * nx
-        x, y = xh.ft.xs[i, 1], xh.ft.xs[j, 2]
-        exp_iΛˣ[flat] = cis(𝛬[1](x, y) / xh.δ) # each call to 𝛬[i] gives (4 allocations: 80 bytes). If `𝛬` is a tuple, then allocations go away, but anyway we will generalise to matrix 𝛬 for the multicomponent case
-        exp_iΛʸ[flat] = cis(𝛬[2](x, y) / xh.δ)
+    # sample the functions 𝛬ⁱ and store cis(𝛬ˣ/𝛿) and cis((𝛬ˣ-𝛬ʸ)/𝛿)
+    𝛬ˣ_iszero = 𝛬[1] == zero
+    cis_Λˣ = Vector{Complex{R}}(undef, (𝛬ˣ_iszero ? 0 : xh.B))
+    if !𝛬ˣ_iszero # then sample cis(𝛬ˣ/𝛿)
+        cis_𝛬ˣ(x, y) = cis(𝛬[1](x, y) / xh.δ) # each call to 𝛬[i] gives (4 allocations: 80 bytes)
+        sample!(cis_Λˣ, cis_𝛬ˣ, xh.ft.xs)
     end
+    cis_Λˣ_Λʸ = Vector{Complex{R}}(undef, xh.B) # at least one of 𝛬ˣ, 𝛬ʸ is not zero, so cis((𝛬ˣ-𝛬ʸ)/𝛿) will always be needed.
+    _𝛬 = replace(𝛬, zero => Returns(0)) # replace so that _𝛬 can be safely called with two arguments
+    cis_𝛬ˣ_𝛬ʸ(x, y) = cis((_𝛬[1](x, y) - _𝛬[2](x, y)) / xh.δ)
+    sample!(cis_Λˣ_Λʸ, cis_𝛬ˣ_𝛬ʸ, xh.ft.xs)
 
-    exp_pˣ² = exp_cis.(-(dt / 2) .* xh.∇[1].^2)
-    exp_pʸ² = exp_cis.(-dt .* xh.∇[2].^2)
+    exp_pˣ² = @. exp_cis(-dt/2 * xh.∇[1]^2)
+    exp_pʸ² = @. exp_cis(-dt * xh.∇[2]^2)
 
     n_t = length(ts)
     nsave = 2
-    b = -dt/2
+    b = -dt / 2
 
+    # checked that none of this gives any difference (i.e. the resulting evolution is identical):
+    #   * alternating 𝐾ˣ and 𝐾ʸ order on every other iteration [where 𝐾ⁱ = (𝑝ⁱ - 𝐴ⁱ)²]
+    #   * changing the order of 𝑀 and 𝐿 splitting (with and without alternating the order of 𝐾ˣ and 𝐾ʸ in the two applications of 𝐿)
     for it in 2:n_t
         @. u *= exp_cis(b * (U + g[1] * abs2(u)))
-        apply_gauge_kinetic!(u, u_grid, uₚ, uₚ_grid, exp_iΛˣ, exp_pˣ², plan_forward_x, plan_backward_x)
-        apply_gauge_kinetic!(u, u_grid, uₚ, uₚ_grid, exp_iΛʸ, exp_pʸ², plan_forward_y, plan_backward_y)
-        apply_gauge_kinetic!(u, u_grid, uₚ, uₚ_grid, exp_iΛˣ, exp_pˣ², plan_forward_x, plan_backward_x)
+
+        @. u *= conj(cis_Λˣ) # compiler optimises `conj` to no extra cost
+        apply_exp_p²!(u_grid, uₚ, uₚ_grid, exp_pˣ², plan_forward_x, plan_backward_x)
+        @. u *= cis_Λˣ_Λʸ
+        apply_exp_p²!(u_grid, uₚ, uₚ_grid, exp_pʸ², plan_forward_y, plan_backward_y)
+        @. u *= conj(cis_Λˣ_Λʸ)
+        apply_exp_p²!(u_grid, uₚ, uₚ_grid, exp_pˣ², plan_forward_x, plan_backward_x)
+        @. u *= cis_Λˣ
+
         @. u *= exp_cis(b * (U + g[1] * abs2(u)))
         
         itime && normalize!(u, xh)
@@ -222,26 +239,23 @@ function strang2_with_A!(xh::XSpaceHamiltonian{R}, u, uₚ, us, g, 𝛬::Abstrac
 end
 
 """
-Apply the Strang-split version of exp((𝐩 - 𝐀)²) to the x-space state `u`, by transforming to p-space (and using uₚ as a buffer).
-Used during magnetic split-step integration.
+Apply the exponential exp(𝑝ⁱ²) to the x-space state `u`, by transforming to p-space (and using uₚ as a buffer).
+Used during split-step integration with nonzero vector potential.
 """
-function apply_gauge_kinetic!(u, u_grid, uₚ, uₚ_grid, exp_iΛⁱ, exp_pⁱ², plan_forward, plan_backward)
-    @. u *= conj(exp_iΛⁱ)
+function apply_exp_p²!(u_grid, uₚ, uₚ_grid, exp_pⁱ², plan_forward, plan_backward)
     mul!(uₚ_grid, plan_forward, u_grid)
     @. uₚ *= exp_pⁱ²
     mul!(u_grid, plan_backward, uₚ_grid)
-    @. u *= exp_iΛⁱ
     return
 end
 
 """
 Apply the exponential exp(𝐩²) to the x-space state `u`, by transforming to p-space (and using uₚ as a buffer).
-The actual exponential factor in p-space given by `E`.
-Used during non-magnetic split-step integration.
+Used during split-step integration with zero vector potential.
 """
-function apply_exp_p²!(u, uₚ, ft, E)
+function apply_exp_p²!(u, uₚ, ft::FourierTransformerX, exp_p²)
     transform!(uₚ, ft, u; direction=:forward)
-    uₚ .*= E
+    uₚ .*= exp_p²
     transform!(u, ft, uₚ; direction=:backward, normalise=true)
     return
 end
