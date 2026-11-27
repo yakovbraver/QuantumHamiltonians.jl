@@ -38,14 +38,18 @@ function propagate(xh::XSpaceHamiltonian{R, T}, ψ₀::Union{AbstractVector{<:Fu
     if solver isa Symbol
         xh.nc == 1 || throw(ArgumentError("split-step propagation currently supports only one component."))
         if any(!isempty, xh.A) # 𝐀 is present
-            solver == :strang2 || throw(ArgumentError("when vector potential is present, `solver` must be `:strang2` or a DifferentialEquations solver."))
-            any(==(zero), 𝛬[findall(!isempty, xh.A)]) && throw(ArgumentError("when using `:strang2, each nonzero 𝐴ⁱ must have a matching nonzero 𝛬ⁱ."))
+            any(==(zero), 𝛬[findall(!isempty, xh.A)]) && throw(ArgumentError("when using split-step, each nonzero 𝐴ⁱ must have a matching nonzero 𝛬ⁱ."))
+            if itime
+                solver == :lie1 || throw(ArgumentError("when vector potential is present and propagating in imaginary time, `solver` must be `:lie1` or a DifferentialEquations.jl solver."))
+            else
+                solver == :strang2 || throw(ArgumentError("when vector potential is present and propagating in real time, `solver` must be `:strang2` or a DifferentialEquations.jl solver."))
+            end
         else
             if itime
-                solver in (:lie1, :_lie1) || throw(ArgumentError("when no vector potential is present and propagating in imaginary time, `solver` must be `:lie1`, `:_lie1`, or a DifferentialEquations solver."))
+                solver in (:lie1, :_lie1) || throw(ArgumentError("when no vector potential is present and propagating in imaginary time, `solver` must be `:lie1`, `:_lie1`, or a DifferentialEquations.jl solver."))
             else
                 solver in (:strang2, :yoshida4) ||
-                throw(ArgumentError("when no vector potential is present and propagating in real time, `solver` must be `:strang2`, `:yoshida4`, or a DifferentialEquations solver.")) 
+                throw(ArgumentError("when no vector potential is present and propagating in real time, `solver` must be `:strang2`, `:yoshida4`, or a DifferentialEquations.jl solver.")) 
             end
         end
     end

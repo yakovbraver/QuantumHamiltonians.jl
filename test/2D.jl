@@ -462,8 +462,8 @@ end
     dt = 1e-2 |> Float64
     nsaves = 50
 
-    for A_present in (false, true)
-        𝐴 = A_present ? [𝐴ˣ, 𝐴ʸ] : [nothing, nothing]
+    for A_iszero in (true, false)
+        𝐴 = A_iszero ? [nothing, nothing] : [𝐴ˣ, 𝐴ʸ]
         xh = XSpaceHamiltonian([xlimits, xlimits], 𝑈, 𝐴; basis=:cis, M, δ=1/√2)
 
         # Thomas-Fermi trial wf for ground state search
@@ -485,7 +485,7 @@ end
         end 
 
         for solver in (:strang2, :yoshida4, QuantumHamiltonians.ODE_EXP.ETDRK4(;krylov=true, m=5))
-            if !A_present
+            if A_iszero
                 E_drift = solver == :strang2 ? 3e-7 :
                           solver == :yoshida4 ? 6e-9 : 5e-7
                 ω_fit_true = 0.10105
@@ -493,7 +493,7 @@ end
                 ϕ_end_true = 5.01652021288370
                 rϕ_atol = 1e-14
             else
-                solver == :yoshida4 && continue # Yoshida is not yet supported when 𝐴 is present
+                solver == :yoshida4 && continue # Yoshida is not yet supported for nonzero 𝐀
                 E_drift = solver == :strang2 ? 1e-4 : 4e-7
                 ω_fit_true = 0.0515
                 r_end_true = 2.40
